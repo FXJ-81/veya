@@ -33,12 +33,19 @@ function SignInForm() {
   const onSubmit = async (data: FormData) => {
     setError("");
     const res = await signIn("credentials", {
-      email: data.email,
+      email: data.email.trim().toLowerCase(),
       password: data.password,
       redirect: false,
     });
+    console.log("[sign-in] signIn result:", { error: res?.error, status: res?.status, url: res?.url });
     if (res?.error) {
-      setError(res.error === "CredentialsSignin" ? "Invalid email or password" : res.error);
+      const message =
+        res.error === "CredentialsSignin"
+          ? "Invalid email or password"
+          : typeof res.error === "string"
+            ? res.error
+            : "Sign in failed";
+      setError(message);
       return;
     }
     router.push(callbackUrl);
@@ -70,7 +77,7 @@ function SignInForm() {
             animate={{ opacity: 1, x: 0 }}
             className="mt-4 text-success text-sm"
           >
-            Account created. Sign in with your email and password.
+            Account created! Please sign in.
           </motion.p>
         )}
         {error && (

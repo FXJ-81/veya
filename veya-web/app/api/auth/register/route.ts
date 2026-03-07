@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
 import { z } from "zod";
-import { prisma } from "@/lib/prisma";
+import { prisma } from "@/lib/prisma"; // Prisma client from lib/prisma.ts
 
 const schema = z.object({
   name: z.string().optional().transform((s) => (s?.trim() || undefined)),
@@ -19,6 +19,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
+  console.log("[register] Parsed body keys:", body && typeof body === "object" ? Object.keys(body as object) : "not object");
   const parsed = schema.safeParse(body);
   if (!parsed.success) {
     const firstError = parsed.error.errors[0];
@@ -28,19 +29,21 @@ export async function POST(req: Request) {
   }
 
   const { name, email, password } = parsed.data;
+  console.log("[register] Validation OK. email:", email, "name:", name ?? "(empty)");
 
   try {
-    console.log("[register] Checking existing user for:", email);
+    console.log("[register] Step 1: Checking existing user for:", email);
     const existing = await prisma.user.findUnique({ where: { email } });
     if (existing) {
       console.log("[register] Email already registered:", email);
       return NextResponse.json({ error: "Email already registered" }, { status: 409 });
     }
 
-    console.log("[register] Hashing password");
+    console.log("[register] Step 2: Hashing password with bcrypt");
     const hashed = await hash(password, 12);
+    console.log("[register] Step 2 done: password hashed");
 
-    console.log("[register] Creating user in database");
+    console.log("[register] Step 3: Creating user in database via Prisma");
     const user = await prisma.user.create({
       data: { name: name ?? null, email, password: hashed },
     });
@@ -55,7 +58,7 @@ export async function POST(req: Request) {
     console.error("[register] Database or server error:", e);
     const message = e instanceof Error ? e.message : "Unknown error";
     return NextResponse.json(
-      { error: process.env.NODE_ENV === "development" ? message : "Sign up failed. Try again." },
+      { error: message },
       { status: 500 }
     );
   }

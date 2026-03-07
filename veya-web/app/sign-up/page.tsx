@@ -13,7 +13,7 @@ import { Button } from "@/components/ui/Button";
 
 const schema = z
   .object({
-    name: z.string().min(1, "Name required"),
+    name: z.string().optional(),
     email: z.string().email("Invalid email"),
     password: z.string().min(8, "At least 8 characters"),
     confirmPassword: z.string(),
@@ -43,8 +43,10 @@ export default function SignUpPage() {
 
   const onSubmit = async (data: FormData) => {
     setError("");
+    const registerUrl = "/api/auth/register";
+    console.log("[sign-up] Submitting to", registerUrl, { email: data.email });
     try {
-      const res = await fetch("/api/auth/register", {
+      const res = await fetch(registerUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -53,27 +55,26 @@ export default function SignUpPage() {
           password: data.password,
         }),
       });
-      const json = await res.json().catch(() => ({}));
+      const json = await res.json().catch((parseErr) => {
+        console.error("[sign-up] Response not JSON:", parseErr);
+        return {};
+      });
+      console.log("[sign-up] API response:", { status: res.status, ok: res.ok, json });
+
       if (!res.ok) {
-        const message = typeof json.error === "string" ? json.error : "Sign up failed";
+        const message =
+          typeof json.error === "string"
+            ? json.error
+            : json.error ?? res.statusText ?? "Sign up failed";
         setError(message);
         return;
       }
 
-      const signInRes = await signIn("credentials", {
-        email: data.email.trim().toLowerCase(),
-        password: data.password,
-        redirect: false,
-      });
-      if (signInRes?.error) {
-        router.push("/sign-in?created=1");
-        return;
-      }
-      router.push("/dashboard");
-      router.refresh();
+      console.log("[sign-up] Account created, redirecting to sign-in");
+      router.push("/sign-in?created=1");
     } catch (err) {
       console.error("[sign-up] Submit error:", err);
-      setError("Something went wrong. Try again.");
+      setError(err instanceof Error ? err.message : "Something went wrong. Try again.");
     }
   };
 
