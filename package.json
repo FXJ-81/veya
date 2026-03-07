@@ -1,0 +1,28 @@
+{
+  "name": "veya",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Veya - Your money. Your rules. Subscription management with AI coaching.",
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "test": "turbo test",
+    "clean": "turbo clean && rm -rf node_modules",
+    "db:generate": "npm run generate --workspace=@veya/api",
+    "db:push": "npm run db:push --workspace=@veya/api",
+    "db:migrate": "npm run migrate --workspace=@veya/api",
+    "db:seed": "npm run seed --workspace=@veya/api"
+  },
+  "devDependencies": {
+    "turbo": "^2.3.0"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "packageManager": "npm@10.2.0",
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}

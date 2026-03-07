@@ -1,0 +1,177 @@
+// Veya - Prisma Schema
+// PostgreSQL 16
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String
+  email         String    @unique
+  passwordHash  String    @map("password_hash")
+  avatar        String?
+  plan          Plan      @default(FREE)
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  subscriptions    Subscription[]
+  aiConversations   AiConversation[]
+  notifications    Notification[]
+  spendingHistory  SpendingHistory[]
+  userSettings     UserSettings?
+  familyMemberships FamilyMember[]
+  ownedFamilies    Family[]          @relation("FamilyAdmin")
+}
+
+enum Plan {
+  FREE
+  PREMIUM
+}
+
+model Subscription {
+  id           String       @id @default(cuid())
+  userId       String       @map("user_id")
+  name         String
+  category     String
+  price        Decimal      @db.Decimal(10, 2)
+  billingCycle BillingCycle @map("billing_cycle")
+  startDate    DateTime     @map("start_date") @db.Date
+  nextRenewal  DateTime     @map("next_renewal") @db.Date
+  status       SubStatus    @default(ACTIVE)
+  logoUrl      String?      @map("logo_url")
+  notes        String?
+  isShared     Boolean      @default(false) @map("is_shared")
+  color        String?      @default("#5b6ef5")
+  createdAt    DateTime     @default(now()) @map("created_at")
+  updatedAt    DateTime     @updatedAt @map("updated_at")
+
+  user              User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sharedSubscription SharedSubscription?
+  alternative       Alternative?
+}
+
+enum BillingCycle {
+  MONTHLY
+  YEARLY
+  WEEKLY
+  CUSTOM
+}
+
+enum SubStatus {
+  ACTIVE
+  PAUSED
+  CANCELLED
+}
+
+model Family {
+  id         String   @id @default(cuid())
+  name       String
+  adminId    String   @map("admin_id")
+  inviteCode String   @unique @map("invite_code")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  admin    User              @relation("FamilyAdmin", fields: [adminId], references: [id], onDelete: Cascade)
+  members  FamilyMember[]
+  sharedSubscriptions SharedSubscription[]
+}
+
+model FamilyMember {
+  id       String   @id @default(cuid())
+  familyId String  @map("family_id")
+  userId   String  @map("user_id")
+  role     FamilyRole @default(MEMBER)
+  joinedAt DateTime @default(now()) @map("joined_at")
+
+  family Family @relation(fields: [familyId], references: [id], onDelete: Cascade)
+  user   User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([familyId, userId])
+  @@map("family_members")
+}
+
+enum FamilyRole {
+  ADMIN
+  MEMBER
+}
+
+model SharedSubscription {
+  id             String   @id @default(cuid())
+  subscriptionId String  @map("subscription_id")
+  familyId       String  @map("family_id")
+  splitType      String  @map("split_type") // "equal" | "custom"
+  splits         Json    // e.g. [{"userId": "xxx", "percent": 50}]
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+  family       Family       @relation(fields: [familyId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId])
+  @@map("shared_subscriptions")
+}
+
+model AiConversation {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  messages  Json     // Array of { role, content, timestamp }
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  sentAt    DateTime @default(now()) @map("sent_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model SpendingHistory {
+  id                    String   @id @default(cuid())
+  userId                String   @map("user_id")
+  month                 Int
+  year                  Int
+  total                 Decimal  @db.Decimal(12, 2)
+  breakdownByCategory   Json     @map("breakdown_by_category")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, month, year])
+  @@map("spending_history")
+}
+
+model UserSettings {
+  id                String   @id @default(cuid())
+  userId            String   @unique @map("user_id")
+  notificationPrefs Json    @map("notification_prefs") // { renewalReminder: 1, weeklySummary: true, ... }
+  appearance        Json    // { theme: "dark", accentColor: "#5b6ef5" }
+  budgetLimit       Decimal? @map("budget_limit") @db.Decimal(10, 2)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_settings")
+}
+
+model Alternative {
+  id                 String   @id @default(cuid())
+  subscriptionId    String   @map("subscription_id")
+  alternativeName   String   @map("alternative_name")
+  alternativePrice  Decimal  @map("alternative_price") @db.Decimal(10, 2)
+  savings           Decimal  @db.Decimal(10, 2)
+
+  subscription Subscription @relation(fields: [subscriptionId], references: [id], onDelete: Cascade)
+
+  @@unique([subscriptionId])
+  @@map("alternatives")
+}
