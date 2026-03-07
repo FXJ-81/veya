@@ -1,0 +1,158 @@
+"use client";
+
+import { useEffect } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
+import Link from "next/link";
+import { motion } from "framer-motion";
+import { Sidebar } from "@/components/layout/Sidebar";
+import { HeroCard } from "@/components/dashboard/HeroCard";
+import { StatsRow } from "@/components/dashboard/StatsRow";
+import { RenewalCard } from "@/components/dashboard/RenewalCard";
+import { AITipCard } from "@/components/dashboard/AITipCard";
+import { CategoryDonut } from "@/components/analytics/CategoryDonut";
+import { useSubscriptions } from "@/hooks/useSubscriptions";
+import { useAnalytics } from "@/hooks/useAnalytics";
+import { getGreeting, formatCurrency } from "@/lib/utils";
+import { Skeleton } from "@/components/ui/Skeleton";
+
+export default function DashboardPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const { data: subs, isLoading: subsLoading } = useSubscriptions();
+  const { data: analytics, isLoading: analyticsLoading } = useAnalytics();
+
+  useEffect(() => {
+    if (status === "unauthenticated") {
+      router.push("/sign-in");
+    }
+  }, [status, router]);
+
+  if (status === "loading" || status === "unauthenticated") {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <Skeleton className="h-12 w-48" />
+      </div>
+    );
+  }
+
+  const activeSubs = subs?.filter((s) => s.status === "active") ?? [];
+  const monthlyTotal = activeSubs.reduce((sum, s) => {
+    const perMonth =
+      s.billingCycle === "yearly"
+        ? s.price / 12
+        : s.billingCycle === "weekly"
+          ? s.price * 4.33
+          : s.price;
+    return sum + perMonth;
+  }, 0);
+  const renewals = activeSubs
+    .sort(
+      (a, b) =>
+        new Date(a.nextRenewal).getTime() - new Date(b.nextRenewal).getTime()
+    )
+    .slice(0, 6);
+
+  const stats = [
+    {
+      label: "Yearly projection",
+      value: formatCurrency((analytics?.yearlyProjection ?? monthlyTotal * 12)),
+    },
+    {
+      label: "Active subs",
+      value: activeSubs.length,
+      sub: "subscriptions",
+    },
+    {
+      label: "Paused",
+      value: subs?.filter((s) => s.status === "paused").length ?? 0,
+    },
+    {
+      label: "Avg cost",
+      value:
+        activeSubs.length > 0
+          ? formatCurrency(monthlyTotal / activeSubs.length)
+          : "$0",
+      sub: "per sub/mo",
+    },
+  ];
+
+  return (
+    <div className="min-h-screen bg-background">
+      <Sidebar />
+      <main className="pl-56 pr-6 py-8">
+        <motion.header
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8"
+        >
+          <div>
+            <h1 className="text-2xl font-bold text-text-primary">
+              {getGreeting()} {session?.user?.name?.split(" ")[0] ?? "there"} 👋
+            </h1>
+            <p className="text-text-secondary text-sm mt-1">
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "long",
+                month: "long",
+                day: "numeric",
+              })}
+            </p>
+          </div>
+          <Link
+            href="/settings"
+            className="rounded-full h-10 w-10 border border-border bg-card flex items-center justify-center text-text-secondary hover:text-text-primary"
+          >
+            🔔
+          </Link>
+        </motion.header>
+
+        <div className="space-y-8">
+          <HeroCard
+            monthlyTotal={monthlyTotal}
+            trend={analytics ? (monthlyTotal > 0 ? -5 : 0) : undefined}
+            label="Monthly spend"
+          />
+          <StatsRow stats={stats} />
+
+          <div>
+            <h2 className="text-lg font-semibold text-text-primary mb-4">
+              Upcoming renewals
+            </h2>
+            <div className="flex gap-4 overflow-x-auto pb-2">
+              {subsLoading ? (
+                <Skeleton className="h-32 w-48 flex-shrink-0 rounded-xl" />
+              ) : renewals.length === 0 ? (
+                <p className="text-text-secondary text-sm">
+                  No upcoming renewals. Add subscriptions to see them here.
+                </p>
+              ) : (
+                renewals.map((sub, i) => (
+                  <RenewalCard key={sub.id} subscription={sub} index={i} />
+                ))
+              )}
+            </div>
+          </div>
+
+          <AITipCard />
+
+          <div className="grid lg:grid-cols-2 gap-6">
+            <div>
+              <h2 className="text-lg font-semibold text-text-primary mb-4">
+                Spending breakdown
+              </h2>
+              {analyticsLoading ? (
+                <Skeleton className="h-64 rounded-2xl" />
+              ) : analytics?.categoryBreakdown?.length ? (
+                <CategoryDonut data={analytics.categoryBreakdown} />
+              ) : (
+                <div className="rounded-2xl border border-border bg-card p-8 text-center text-text-secondary text-sm">
+                  Add subscriptions to see breakdown.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </main>
+    </div>
+  );
+}
