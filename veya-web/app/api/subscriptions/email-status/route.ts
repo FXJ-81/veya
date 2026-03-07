@@ -6,10 +6,11 @@ export async function GET(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  // Connected if they signed in with Google (no separate "Connect Gmail" step)
   const account = await prisma.account.findFirst({
     where: {
       userId: authUser.id,
-      provider: "google-gmail",
+      provider: { in: ["google", "google-gmail"] },
     },
   });
   return NextResponse.json({ connected: !!account?.refresh_token });
