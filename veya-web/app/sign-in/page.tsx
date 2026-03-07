@@ -25,7 +25,13 @@ function SignInForm() {
   const created = searchParams.get("created") === "1";
   const verified = searchParams.get("verified") === "1";
   const errorParam = searchParams.get("error");
-  const [error, setError] = useState(errorParam ? decodeURIComponent(errorParam.replace(/\+/g, " ")) : "");
+  const errorMessage =
+    errorParam === "OAuthAccountNotLinked"
+      ? "This email is already registered with a password. Sign in with your email and password above."
+      : errorParam
+        ? decodeURIComponent(errorParam.replace(/\+/g, " "))
+        : "";
+  const [error, setError] = useState(errorMessage);
   const {
     register,
     handleSubmit,
