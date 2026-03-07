@@ -1,0 +1,9 @@
+# Root-level ignores (avoid committing build artifacts / old structure)
+node_modules
+.next
+apps/
+.env
+.env.local
+*.log
+.DS_Store
+.vercel
