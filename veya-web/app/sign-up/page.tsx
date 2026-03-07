@@ -43,31 +43,38 @@ export default function SignUpPage() {
 
   const onSubmit = async (data: FormData) => {
     setError("");
-    const res = await fetch("/api/auth/register", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        name: data.name,
-        email: data.email,
+    try {
+      const res = await fetch("/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: data.name?.trim() || undefined,
+          email: data.email.trim().toLowerCase(),
+          password: data.password,
+        }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        const message = typeof json.error === "string" ? json.error : "Sign up failed";
+        setError(message);
+        return;
+      }
+
+      const signInRes = await signIn("credentials", {
+        email: data.email.trim().toLowerCase(),
         password: data.password,
-      }),
-    });
-    const json = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      setError(json.error ?? "Sign up failed");
-      return;
+        redirect: false,
+      });
+      if (signInRes?.error) {
+        router.push("/sign-in?created=1");
+        return;
+      }
+      router.push("/dashboard");
+      router.refresh();
+    } catch (err) {
+      console.error("[sign-up] Submit error:", err);
+      setError("Something went wrong. Try again.");
     }
-    const signInRes = await signIn("credentials", {
-      email: data.email,
-      password: data.password,
-      redirect: false,
-    });
-    if (signInRes?.error) {
-      setError("Account created. Please sign in.");
-      return;
-    }
-    router.push("/dashboard");
-    router.refresh();
   };
 
   return (

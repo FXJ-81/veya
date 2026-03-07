@@ -22,6 +22,7 @@ function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
+  const created = searchParams.get("created") === "1";
   const [error, setError] = useState("");
   const {
     register,
@@ -63,6 +64,15 @@ function SignInForm() {
       >
         <h1 className="text-2xl font-bold text-text-primary">Sign in</h1>
         <p className="mt-1 text-text-secondary">Welcome back to Veya</p>
+        {created && (
+          <motion.p
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="mt-4 text-success text-sm"
+          >
+            Account created. Sign in with your email and password.
+          </motion.p>
+        )}
         {error && (
           <motion.p
             initial={{ opacity: 0, x: -8 }}
