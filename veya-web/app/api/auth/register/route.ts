@@ -1,8 +1,6 @@
 import { NextResponse } from "next/server";
 import { hash } from "bcryptjs";
-import { randomBytes } from "crypto";
 import { z } from "zod";
-import sgMail from "@sendgrid/mail";
 import { prisma } from "@/lib/prisma";
 
 const schema = z.object({
@@ -51,48 +49,10 @@ export async function POST(req: Request) {
     });
     console.log("[register] User created:", user.id, user.email);
 
-    // Email verification: send link via SendGrid
-    const verifyToken = randomBytes(32).toString("hex");
-    const verifyExpires = new Date(Date.now() + 24 * 60 * 60 * 1000); // 24h
-    await prisma.verificationToken.deleteMany({
-      where: { identifier: `verify:${email}` },
-    });
-    await prisma.verificationToken.create({
-      data: {
-        identifier: `verify:${email}`,
-        token: verifyToken,
-        expires: verifyExpires,
-      },
-    });
-    const apiKey = process.env.SENDGRID_API_KEY;
-    const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-    const verifyLink = `${baseUrl}/api/auth/verify-email?token=${verifyToken}`;
-    const fromEmail = process.env.SENDGRID_FROM_EMAIL ?? "noreply@veya.app";
-    if (apiKey) {
-      sgMail.setApiKey(apiKey);
-      try {
-        await sgMail.send({
-          to: email,
-          from: fromEmail,
-          subject: "Verify your Veya email",
-          text: `Click to verify your email (link valid 24 hours): ${verifyLink}`,
-          html: `
-            <p>Thanks for signing up. Click the link below to verify your email:</p>
-            <p><a href="${verifyLink}">Verify email</a></p>
-            <p>This link expires in 24 hours. If you didn't create an account, you can ignore this email.</p>
-          `,
-        });
-      } catch (err) {
-        console.error("[register] SendGrid verify email error:", err);
-        // Still return success; user is created, they can request a new link later if we add that
-      }
-    }
-
     return NextResponse.json({
       id: user.id,
       email: user.email,
       name: user.name,
-      message: "Account created. Check your email to verify before signing in.",
     });
   } catch (e) {
     console.error("[register] Database or server error:", e);

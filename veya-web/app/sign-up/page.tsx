@@ -166,6 +166,21 @@ export default function SignUpPage() {
             Get Started Free
           </Button>
         </form>
+        <div className="mt-6 flex items-center gap-3">
+          <span className="flex-1 h-px bg-border" />
+          <span className="text-text-tertiary text-sm">or</span>
+          <span className="flex-1 h-px bg-border" />
+        </div>
+        <div className="mt-6">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full"
+            onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
+          >
+            Continue with Google
+          </Button>
+        </div>
         <p className="mt-6 text-center text-text-secondary text-sm">
           Already have an account?{" "}
           <Link href="/sign-in" className="text-accent hover:underline">

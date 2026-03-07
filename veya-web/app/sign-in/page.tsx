@@ -79,7 +79,7 @@ function SignInForm() {
             animate={{ opacity: 1, x: 0 }}
             className="mt-4 text-success text-sm"
           >
-            Account created! Check your email to verify, then sign in.
+            Account created! Sign in below.
           </motion.p>
         )}
         {verified && (
@@ -133,18 +133,21 @@ function SignInForm() {
             Sign In
           </Button>
         </form>
-        {process.env.NEXT_PUBLIC_GOOGLE_ENABLED === "true" && (
-          <div className="mt-6">
-            <Button
-              type="button"
-              variant="secondary"
-              className="w-full"
-              onClick={() => signIn("google", { callbackUrl })}
-            >
-              Continue with Google
-            </Button>
-          </div>
-        )}
+        <div className="mt-6 flex items-center gap-3">
+          <span className="flex-1 h-px bg-border" />
+          <span className="text-text-tertiary text-sm">or</span>
+          <span className="flex-1 h-px bg-border" />
+        </div>
+        <div className="mt-6">
+          <Button
+            type="button"
+            variant="secondary"
+            className="w-full"
+            onClick={() => signIn("google", { callbackUrl })}
+          >
+            Continue with Google
+          </Button>
+        </div>
         <p className="mt-6 text-center text-text-secondary text-sm">
           Don&apos;t have an account?{" "}
           <Link href="/sign-up" className="text-accent hover:underline">
