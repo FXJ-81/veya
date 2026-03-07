@@ -10,11 +10,29 @@ export default function ForgotPasswordPage() {
   const [email, setEmail] = useState("");
   const [sent, setSent] = useState(false);
   const [error, setError] = useState("");
+  const [loading, setLoading] = useState(false);
 
   const onSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setError("");
-    setSent(true);
+    setLoading(true);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: email.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setError(data.error ?? "Something went wrong. Try again.");
+        return;
+      }
+      setSent(true);
+    } catch {
+      setError("Something went wrong. Try again.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -41,7 +59,7 @@ export default function ForgotPasswordPage() {
         {sent ? (
           <p className="mt-6 text-text-secondary text-sm">
             If an account exists for that email, we&apos;ve sent a reset link.
-            Check your inbox. (Configure email provider in production.)
+            Check your inbox and use the link within 1 hour.
           </p>
         ) : (
           <form onSubmit={onSubmit} className="mt-6 space-y-4">
@@ -53,7 +71,7 @@ export default function ForgotPasswordPage() {
               required
             />
             {error && <p className="text-danger text-sm">{error}</p>}
-            <Button type="submit" className="w-full">
+            <Button type="submit" className="w-full" isLoading={loading}>
               Send reset link
             </Button>
           </form>
