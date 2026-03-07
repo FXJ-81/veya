@@ -71,7 +71,7 @@ export default function SignUpPage() {
       }
 
       console.log("[sign-up] Account created, redirecting to sign-in");
-      router.push("/sign-in?created=1");
+      router.push("/sign-in?created=1"); // "Check your email to verify" is shown on sign-in
     } catch (err) {
       console.error("[sign-up] Submit error:", err);
       setError(err instanceof Error ? err.message : "Something went wrong. Try again.");

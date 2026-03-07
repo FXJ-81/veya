@@ -23,7 +23,9 @@ function SignInForm() {
   const searchParams = useSearchParams();
   const callbackUrl = searchParams.get("callbackUrl") ?? "/dashboard";
   const created = searchParams.get("created") === "1";
-  const [error, setError] = useState("");
+  const verified = searchParams.get("verified") === "1";
+  const errorParam = searchParams.get("error");
+  const [error, setError] = useState(errorParam ? decodeURIComponent(errorParam.replace(/\+/g, " ")) : "");
   const {
     register,
     handleSubmit,
@@ -77,7 +79,16 @@ function SignInForm() {
             animate={{ opacity: 1, x: 0 }}
             className="mt-4 text-success text-sm"
           >
-            Account created! Please sign in.
+            Account created! Check your email to verify, then sign in.
+          </motion.p>
+        )}
+        {verified && (
+          <motion.p
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="mt-4 text-success text-sm"
+          >
+            Email verified! You can sign in now.
           </motion.p>
         )}
         {error && (

@@ -44,7 +44,11 @@ export async function POST(req: Request) {
 
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const resetLink = `${baseUrl}/reset-password?token=${token}`;
-  const fromEmail = process.env.SENDGRID_FROM_EMAIL ?? "noreply@veya.app";
+  const fromEmail = (process.env.SENDGRID_FROM_EMAIL || "").trim() || "noreply@veya.app";
+
+  if (!process.env.SENDGRID_FROM_EMAIL?.trim()) {
+    console.warn("[forgot-password] SENDGRID_FROM_EMAIL is not set. SendGrid requires a verified sender.");
+  }
 
   sgMail.setApiKey(apiKey);
   try {
@@ -59,10 +63,14 @@ export async function POST(req: Request) {
         <p>If you didn't request this, you can ignore this email.</p>
       `,
     });
-  } catch (err) {
-    console.error("SendGrid error:", err);
+  } catch (err: unknown) {
+    const msg = err && typeof err === "object" && "response" in err
+      ? (err as { response?: { body?: { errors?: unknown } } }).response?.body?.errors
+      : err instanceof Error ? err.message : String(err);
+    console.error("[forgot-password] SendGrid error:", msg || err);
+    const isDev = process.env.NODE_ENV !== "production";
     return NextResponse.json(
-      { error: "Failed to send email. Try again later." },
+      { error: isDev && msg ? `Email failed: ${JSON.stringify(msg)}` : "Failed to send email. Try again later." },
       { status: 500 }
     );
   }

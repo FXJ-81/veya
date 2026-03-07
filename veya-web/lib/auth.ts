@@ -15,11 +15,14 @@ export const authOptions: NextAuthOptions = {
       async authorize(credentials) {
         if (!credentials?.email || !credentials?.password) return null;
         const user = await prisma.user.findUnique({
-          where: { email: credentials.email },
+          where: { email: credentials.email.trim().toLowerCase() },
         });
         if (!user?.password) return null;
         const valid = await compare(credentials.password, user.password);
         if (!valid) return null;
+        if (!user.emailVerified) {
+          throw new Error("Please verify your email before signing in. Check your inbox for the link.");
+        }
         return {
           id: user.id,
           email: user.email,

@@ -1,6 +1,15 @@
 export type BillingCycle = "monthly" | "yearly" | "weekly";
 export type SubscriptionStatus = "active" | "paused" | "cancelled";
 
+export interface DiscoverSuggestion {
+  name: string;
+  category: string;
+  price: number;
+  billingCycle: BillingCycle;
+  nextRenewal: string;
+  startDate: string;
+}
+
 export interface Subscription {
   id: string;
   userId: string;
