@@ -1,55 +1,116 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
+import {
+  computeSubscriptionHealthScore,
+  monthlySpendInCalendarMonth,
+  pricePerMonth,
+} from "@/lib/subscriptionBilling";
+
+const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+
+function round2(n: number) {
+  return Math.round(n * 100) / 100;
+}
 
 export async function GET(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
+  /** Active only: paused excluded from all months; future projections = active only (per product spec). */
   const subs = await prisma.subscription.findMany({
     where: { userId: authUser.id, status: "active" },
   });
 
   const now = new Date();
-  const monthlySpend: { month: number; year: number; total: number; label: string }[] = [];
-  for (let i = 11; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    const month = d.getMonth();
-    const year = d.getFullYear();
+  const year = now.getFullYear();
+  const currentMonthIndex = now.getMonth();
+
+  const monthlySpend: {
+    month: number;
+    year: number;
+    total: number;
+    label: string;
+    period: "past" | "current" | "future";
+    contributors: { name: string; amount: number }[];
+  }[] = [];
+
+  for (let monthIndex = 0; monthIndex < 12; monthIndex++) {
+    let period: "past" | "current" | "future";
+    if (monthIndex < currentMonthIndex) period = "past";
+    else if (monthIndex === currentMonthIndex) period = "current";
+    else period = "future";
+
+    const contributors: { name: string; amount: number }[] = [];
     let total = 0;
+
     for (const s of subs) {
-      const cycleMonths = s.billingCycle === "yearly" ? 12 : s.billingCycle === "weekly" ? 1 / 4.33 : 1;
-      const pricePerMonth = s.billingCycle === "yearly" ? s.price / 12 : s.billingCycle === "weekly" ? s.price * 4.33 : s.price;
-      total += pricePerMonth;
+      const raw = monthlySpendInCalendarMonth(
+        { startDate: s.startDate, price: s.price, billingCycle: s.billingCycle },
+        year,
+        monthIndex
+      );
+      if (raw <= 0) continue;
+
+      total += raw;
+      contributors.push({ name: s.name, amount: round2(raw) });
     }
+
+    contributors.sort((a, b) => b.amount - a.amount);
+
     monthlySpend.push({
-      month: month + 1,
+      month: monthIndex + 1,
       year,
-      total,
-      label: d.toLocaleString("default", { month: "short", year: "2-digit" }),
+      total: round2(total),
+      label: MONTH_SHORT[monthIndex],
+      period,
+      contributors,
     });
   }
 
   const categoryMap = new Map<string, { total: number; count: number }>();
   for (const s of subs) {
-    const perMonth = s.billingCycle === "yearly" ? s.price / 12 : s.billingCycle === "weekly" ? s.price * 4.33 : s.price;
+    const perMonth = pricePerMonth(s.price, s.billingCycle);
     const cur = categoryMap.get(s.category) ?? { total: 0, count: 0 };
     cur.total += perMonth;
     cur.count += 1;
     categoryMap.set(s.category, cur);
   }
-  const categoryBreakdown = Array.from(categoryMap.entries()).map(([category, v]) => ({
+
+  const categoryTotals = Array.from(categoryMap.entries()).map(([category, v]) => ({
     category,
     total: Math.round(v.total * 100) / 100,
     count: v.count,
   }));
 
-  const totalThisMonth = monthlySpend[monthlySpend.length - 1]?.total ?? 0;
-  const yearlyProjection = totalThisMonth * 12;
-  const score = Math.min(100, Math.max(0, Math.round(100 - totalThisMonth * 2)));
+  const categorySum = categoryTotals.reduce((acc, c) => acc + c.total, 0);
+  const categoryBreakdown = categoryTotals
+    .sort((a, b) => b.total - a.total)
+    .map((c) => ({
+      ...c,
+      percentage: categorySum > 0 ? Math.round((c.total / categorySum) * 1000) / 10 : 0,
+    }));
+
+  const totalThisMonth =
+    monthlySpend.find((m) => m.period === "current")?.total ?? 0;
+  const yearlyProjection = Math.round(totalThisMonth * 12 * 100) / 100;
+
+  const score = computeSubscriptionHealthScore(
+    subs.map((s) => ({
+      price: s.price,
+      billingCycle: s.billingCycle,
+      category: s.category,
+    })),
+    totalThisMonth
+  );
+
   const insights = [
-    totalThisMonth > 100 ? `You're spending $${totalThisMonth.toFixed(0)}/mo on subscriptions. Review unused services.` : "Your subscription spend is under control.",
-    categoryBreakdown.length > 0 ? `Top category: ${categoryBreakdown[0].category} ($${categoryBreakdown[0].total.toFixed(2)}/mo).` : "Add subscriptions to get insights.",
+    totalThisMonth > 100
+      ? `You're spending $${totalThisMonth.toFixed(0)}/mo on subscriptions. Review unused services.`
+      : "Your subscription spend is under control.",
+    categoryBreakdown.length > 0
+      ? `Top category: ${categoryBreakdown[0].category} ($${categoryBreakdown[0].total.toFixed(2)}/mo).`
+      : "Add subscriptions to get insights.",
   ];
 
   return NextResponse.json({

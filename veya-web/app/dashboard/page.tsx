@@ -14,13 +14,18 @@ import { CategoryDonut } from "@/components/analytics/CategoryDonut";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { getGreeting, formatCurrency } from "@/lib/utils";
+import { hasSubscriptionStarted, pricePerMonth } from "@/lib/subscriptionBilling";
 import { Skeleton } from "@/components/ui/Skeleton";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const { data: subs, isLoading: subsLoading } = useSubscriptions();
-  const { data: analytics, isLoading: analyticsLoading } = useAnalytics();
+  const { data: subs, isLoading: subsLoading, isFetching: subsFetching } = useSubscriptions();
+  const {
+    data: analytics,
+    isLoading: analyticsLoading,
+    isFetching: analyticsFetching,
+  } = useAnalytics();
 
   useEffect(() => {
     if (status === "unauthenticated") {
@@ -37,15 +42,9 @@ export default function DashboardPage() {
   }
 
   const activeSubs = subs?.filter((s) => s.status === "active") ?? [];
-  const monthlyTotal = activeSubs.reduce((sum, s) => {
-    const perMonth =
-      s.billingCycle === "yearly"
-        ? s.price / 12
-        : s.billingCycle === "weekly"
-          ? s.price * 4.33
-          : s.price;
-    return sum + perMonth;
-  }, 0);
+  const monthlyTotal = activeSubs
+    .filter((s) => hasSubscriptionStarted(new Date(s.startDate)))
+    .reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0);
   const renewals = activeSubs
     .sort(
       (a, b) =>
@@ -106,7 +105,18 @@ export default function DashboardPage() {
           </Link>
         </motion.header>
 
-        <div className="space-y-8">
+        <div
+          className={`space-y-8 transition-opacity duration-200 ${
+            (subsFetching && subs != null) || (analyticsFetching && analytics != null)
+              ? "opacity-[0.88]"
+              : "opacity-100"
+          }`}
+        >
+          {(subsFetching && subs != null) || (analyticsFetching && analytics != null) ? (
+            <p className="text-xs font-medium text-text-tertiary -mt-4 mb-2 animate-pulse">
+              Updating figures…
+            </p>
+          ) : null}
           <HeroCard
             monthlyTotal={monthlyTotal}
             trend={analytics ? (monthlyTotal > 0 ? -5 : 0) : undefined}

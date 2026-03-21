@@ -7,7 +7,7 @@ const createSchema = z.object({
   name: z.string().min(1),
   category: z.string().min(1),
   price: z.number().positive(),
-  billingCycle: z.enum(["monthly", "yearly", "weekly"]),
+  billingCycle: z.enum(["monthly", "yearly", "weekly", "custom"]),
   startDate: z.string(),
   nextRenewal: z.string(),
   status: z.enum(["active", "paused", "cancelled"]).optional(),

@@ -2,6 +2,7 @@
 
 import { useQuery } from "@tanstack/react-query";
 import type { MonthlySpend, SpendingBreakdown } from "@/types";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 
 interface AnalyticsData {
   score: number;
@@ -19,7 +20,8 @@ async function fetchAnalytics(): Promise<AnalyticsData> {
 
 export function useAnalytics() {
   return useQuery({
-    queryKey: ["analytics"],
+    queryKey: QUERY_KEYS.analytics.bundle,
     queryFn: fetchAnalytics,
+    staleTime: 0,
   });
 }

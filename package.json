@@ -1,0 +1,11 @@
+{
+  "name": "finance-app",
+  "private": true,
+  "workspaces": ["veya-web"],
+  "scripts": {
+    "dev": "npm run dev -w veya-web",
+    "build": "npm run build -w veya-web",
+    "start": "npm run start -w veya-web",
+    "lint": "npm run lint -w veya-web"
+  }
+}

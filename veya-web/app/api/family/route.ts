@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
+import { pricePerMonth } from "@/lib/subscriptionBilling";
 import { randomBytes } from "crypto";
 
 export async function GET(req: Request) {
@@ -23,10 +24,10 @@ export async function GET(req: Request) {
   const subs = await prisma.subscription.findMany({
     where: { userId: { in: familyUserIds }, status: "active" },
   });
-  const totalMonthlySpend = subs.reduce((sum, s) => {
-    const perMonth = s.billingCycle === "yearly" ? s.price / 12 : s.billingCycle === "weekly" ? s.price * 4.33 : s.price;
-    return sum + perMonth;
-  }, 0);
+  const totalMonthlySpend = subs.reduce(
+    (sum, s) => sum + pricePerMonth(s.price, s.billingCycle),
+    0
+  );
 
   return NextResponse.json({
     family: {

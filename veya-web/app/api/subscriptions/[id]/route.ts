@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import type { Prisma } from "@prisma/client";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
@@ -7,7 +8,7 @@ const updateSchema = z.object({
   name: z.string().min(1).optional(),
   category: z.string().min(1).optional(),
   price: z.number().positive().optional(),
-  billingCycle: z.enum(["monthly", "yearly", "weekly"]).optional(),
+  billingCycle: z.enum(["monthly", "yearly", "weekly", "custom"]).optional(),
   startDate: z.string().optional(),
   nextRenewal: z.string().optional(),
   status: z.enum(["active", "paused", "cancelled"]).optional(),
@@ -57,9 +58,18 @@ export async function PATCH(
     where: { id, userId: authUser.id },
   });
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
-  const data = parsed.data as Record<string, unknown>;
-  if (data.startDate) data.startDate = new Date(data.startDate as string);
-  if (data.nextRenewal) data.nextRenewal = new Date(data.nextRenewal as string);
+  const p = parsed.data;
+  const data: Prisma.SubscriptionUpdateInput = {};
+  if (p.name !== undefined) data.name = p.name;
+  if (p.category !== undefined) data.category = p.category;
+  if (p.price !== undefined) data.price = p.price;
+  if (p.billingCycle !== undefined) data.billingCycle = p.billingCycle;
+  if (p.startDate !== undefined) data.startDate = new Date(p.startDate);
+  if (p.nextRenewal !== undefined) data.nextRenewal = new Date(p.nextRenewal);
+  if (p.status !== undefined) data.status = p.status;
+  if (p.notes !== undefined) data.notes = p.notes;
+  if (p.isShared !== undefined) data.isShared = p.isShared;
+  if (p.color !== undefined) data.color = p.color;
   const sub = await prisma.subscription.update({
     where: { id },
     data,

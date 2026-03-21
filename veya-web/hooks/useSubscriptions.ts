@@ -2,6 +2,8 @@
 
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Subscription } from "@/types";
+import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
+import { QUERY_KEYS } from "@/lib/queryKeys";
 
 async function fetchSubscriptions(): Promise<Subscription[]> {
   const res = await fetch("/api/subscriptions");
@@ -11,8 +13,9 @@ async function fetchSubscriptions(): Promise<Subscription[]> {
 
 export function useSubscriptions() {
   return useQuery({
-    queryKey: ["subscriptions"],
+    queryKey: QUERY_KEYS.subscriptions,
     queryFn: fetchSubscriptions,
+    staleTime: 0,
   });
 }
 
@@ -30,9 +33,11 @@ export function useSubscriptionMutations() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? "Failed to create");
       }
-      return res.json();
+      return (await res.json()) as Subscription;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["subscriptions"] }),
+    onSuccess: async () => {
+      await invalidateAfterSubscriptionChange(qc);
+    },
   });
 
   const update = useMutation({
@@ -46,9 +51,11 @@ export function useSubscriptionMutations() {
         const err = await res.json().catch(() => ({}));
         throw new Error(err.error ?? "Failed to update");
       }
-      return res.json();
+      return (await res.json()) as Subscription;
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["subscriptions"] }),
+    onSuccess: async () => {
+      await invalidateAfterSubscriptionChange(qc);
+    },
   });
 
   const remove = useMutation({
@@ -56,7 +63,9 @@ export function useSubscriptionMutations() {
       const res = await fetch(`/api/subscriptions/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
     },
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["subscriptions"] }),
+    onSuccess: async () => {
+      await invalidateAfterSubscriptionChange(qc);
+    },
   });
 
   return { create, update, remove };

@@ -1,11 +1,14 @@
 "use client";
 
+import { useEffect } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { toDateInputValue } from "@/lib/utils";
+import type { Subscription } from "@/types";
 
 const schema = z.object({
   name: z.string().min(1, "Name required"),
@@ -19,20 +22,19 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-interface AddSubscriptionModalProps {
+interface EditSubscriptionModalProps {
   open: boolean;
+  subscription: Subscription | null;
   onClose: () => void;
-  onSubmit: (data: FormData) => Promise<void>;
-  defaultDate?: string;
+  onSubmit: (id: string, data: FormData) => Promise<void>;
 }
 
-export function AddSubscriptionModal({
+export function EditSubscriptionModal({
   open,
+  subscription,
   onClose,
   onSubmit,
-  defaultDate,
-}: AddSubscriptionModalProps) {
-  const today = defaultDate ?? new Date().toISOString().slice(0, 10);
+}: EditSubscriptionModalProps) {
   const {
     register,
     handleSubmit,
@@ -42,19 +44,41 @@ export function AddSubscriptionModal({
     resolver: zodResolver(schema),
     defaultValues: {
       billingCycle: "monthly",
-      startDate: today,
-      nextRenewal: today,
+      name: "",
+      category: "",
+      price: 0,
+      startDate: "",
+      nextRenewal: "",
+      notes: "",
     },
   });
 
+  useEffect(() => {
+    if (!open || !subscription) return;
+    const bc = subscription.billingCycle;
+    const billingCycle =
+      bc === "monthly" || bc === "yearly" || bc === "weekly" || bc === "custom"
+        ? bc
+        : "monthly";
+    reset({
+      name: subscription.name,
+      category: subscription.category,
+      price: subscription.price,
+      billingCycle,
+      startDate: toDateInputValue(subscription.startDate),
+      nextRenewal: toDateInputValue(subscription.nextRenewal),
+      notes: subscription.notes ?? "",
+    });
+  }, [open, subscription, reset]);
+
   const handleFormSubmit = async (data: FormData) => {
-    await onSubmit(data);
-    reset();
+    if (!subscription) return;
+    await onSubmit(subscription.id, data);
     onClose();
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Add subscription">
+    <Modal open={open} onClose={onClose} title="Edit subscription">
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">
@@ -138,7 +162,7 @@ export function AddSubscriptionModal({
           </label>
           <textarea
             {...register("notes")}
-            className="w-full rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary placeholder-text-tertiary focus:border-accent focus:outline-none min-h-[80px]"
+            className="w-full rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary placeholder-text-tertiary focus:border-accent focus:outline-none min-h-[100px]"
             placeholder="Optional notes"
           />
         </div>
@@ -147,7 +171,7 @@ export function AddSubscriptionModal({
             Cancel
           </Button>
           <Button type="submit" isLoading={isSubmitting} className="flex-1">
-            Add
+            Save changes
           </Button>
         </div>
       </form>

@@ -14,7 +14,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 export default function AnalyticsPage() {
   const { status } = useSession();
   const router = useRouter();
-  const { data: analytics, isLoading } = useAnalytics();
+  const { data: analytics, isLoading, isFetching } = useAnalytics();
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -28,13 +28,20 @@ export default function AnalyticsPage() {
     <div className="min-h-screen bg-background">
       <Sidebar />
       <main className="pl-56 pr-6 py-8">
-        <motion.h1
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          className="text-2xl font-bold text-text-primary mb-8"
-        >
-          Analytics
-        </motion.h1>
+        <div className="flex flex-wrap items-center gap-3 mb-8">
+          <motion.h1
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            className="text-2xl font-bold text-text-primary"
+          >
+            Analytics
+          </motion.h1>
+          {isFetching && analytics != null && (
+            <span className="text-xs font-medium text-text-tertiary animate-pulse">
+              Updating…
+            </span>
+          )}
+        </div>
 
         {isLoading ? (
           <div className="space-y-6">
@@ -42,7 +49,11 @@ export default function AnalyticsPage() {
             <Skeleton className="h-64 rounded-2xl" />
           </div>
         ) : (
-          <div className="space-y-8">
+          <div
+            className={`space-y-8 transition-opacity duration-200 ${
+              isFetching && analytics != null ? "opacity-[0.88]" : "opacity-100"
+            }`}
+          >
             <div className="grid md:grid-cols-2 gap-6">
               <ScoreGauge score={analytics?.score ?? 0} />
               <div className="rounded-2xl border border-border bg-card p-6">

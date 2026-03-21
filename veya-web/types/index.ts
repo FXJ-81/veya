@@ -1,4 +1,4 @@
-export type BillingCycle = "monthly" | "yearly" | "weekly";
+export type BillingCycle = "monthly" | "yearly" | "weekly" | "custom";
 export type SubscriptionStatus = "active" | "paused" | "cancelled";
 
 export interface DiscoverSuggestion {
@@ -36,13 +36,25 @@ export interface SpendingBreakdown {
   category: string;
   total: number;
   count: number;
+  /** 0–100, share of total monthly normalized spend */
+  percentage?: number;
+}
+
+export interface MonthlySpendContributor {
+  name: string;
+  amount: number;
 }
 
 export interface MonthlySpend {
   month: number;
   year: number;
   total: number;
+  /** Short month label, e.g. "Jan" */
   label: string;
+  /** Position relative to today within `year` */
+  period: "past" | "current" | "future";
+  /** Subscriptions that contributed to this month’s total (amount > 0) */
+  contributors: MonthlySpendContributor[];
 }
 
 export interface NotificationItem {

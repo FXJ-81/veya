@@ -26,6 +26,15 @@ export function getGreeting(): string {
   return "Good evening";
 }
 
+/** Local YYYY-MM-DD for `<input type="date" />` from an ISO string */
+export function toDateInputValue(iso: string): string {
+  const d = new Date(iso);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  return `${y}-${m}-${day}`;
+}
+
 export function getDaysUntil(date: Date): number {
   const now = new Date();
   now.setHours(0, 0, 0, 0);

@@ -1,6 +1,7 @@
 "use client";
 
 import { motion } from "framer-motion";
+import { scoreLabel } from "@/lib/subscriptionBilling";
 
 interface ScoreGaugeProps {
   score: number;
@@ -8,6 +9,7 @@ interface ScoreGaugeProps {
 
 export function ScoreGauge({ score }: ScoreGaugeProps) {
   const clamped = Math.min(100, Math.max(0, score));
+  const label = scoreLabel(clamped);
   const color =
     clamped >= 71 ? "#34d399" : clamped >= 41 ? "#fbbf24" : "#f87171";
 
@@ -55,8 +57,11 @@ export function ScoreGauge({ score }: ScoreGaugeProps) {
           </motion.span>
         </div>
       </div>
-      <p className="text-sm text-text-secondary mt-2">
-        {clamped >= 71 ? "Great" : clamped >= 41 ? "Fair" : "Review"} — lower spend = higher score
+      <p className="text-sm font-medium mt-2" style={{ color }}>
+        {label}
+      </p>
+      <p className="text-xs text-text-secondary mt-1 text-center max-w-xs">
+        Higher score = better financial health (spend pressure, diversity, portfolio size).
       </p>
     </motion.div>
   );
