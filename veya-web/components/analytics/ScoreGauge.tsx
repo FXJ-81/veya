@@ -58,7 +58,7 @@ export function ScoreGauge({ score, hasActiveSubscriptions }: ScoreGaugeProps) {
             transition={{ delay: 0.5 }}
             className="font-mono text-3xl font-bold text-text-primary font-mono-nums"
           >
-            {hasActiveSubscriptions ? clamped : "—"}
+            {clamped}
           </motion.span>
         </div>
       </div>
