@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { motion, AnimatePresence } from "framer-motion";
 import { cn } from "@/lib/utils";
 
@@ -13,6 +14,9 @@ interface ModalProps {
 }
 
 export function Modal({ open, onClose, title, children, className }: ModalProps) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
   useEffect(() => {
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === "Escape") onClose();
@@ -27,24 +31,33 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
     };
   }, [open, onClose]);
 
-  return (
+  if (!mounted) return null;
+
+  const modal = (
     <AnimatePresence>
       {open && (
-        <>
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
+        <motion.div
+          key="modal-layer"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          exit={{ opacity: 0 }}
+        >
+          {/* Backdrop — separate from scaled panel so transform: scale doesn’t break centering */}
+          <div
+            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
             onClick={onClose}
-            className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm"
+            aria-hidden
           />
           <motion.div
+            role="dialog"
+            aria-modal="true"
             initial={{ opacity: 0, scale: 0.95 }}
             animate={{ opacity: 1, scale: 1 }}
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: "spring", duration: 0.3 }}
             className={cn(
-              "fixed left-1/2 top-1/2 z-50 w-full max-w-lg -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-border bg-card p-6 shadow-2xl",
+              "relative z-10 w-full max-w-lg max-h-[min(90vh,800px)] overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl",
               className
             )}
             onClick={(e) => e.stopPropagation()}
@@ -54,8 +67,10 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
             )}
             {children}
           </motion.div>
-        </>
+        </motion.div>
       )}
     </AnimatePresence>
   );
+
+  return createPortal(modal, document.body);
 }
