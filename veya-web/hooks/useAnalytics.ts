@@ -6,6 +6,7 @@ import { QUERY_KEYS } from "@/lib/queryKeys";
 
 interface AnalyticsData {
   score: number;
+  hasActiveSubscriptions: boolean;
   monthlySpend: MonthlySpend[];
   categoryBreakdown: SpendingBreakdown[];
   yearlyProjection: number;

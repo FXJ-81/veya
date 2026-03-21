@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import {
   computeSubscriptionHealthScore,
+  hasSubscriptionStarted,
   monthlySpendInCalendarMonth,
   pricePerMonth,
 } from "@/lib/subscriptionBilling";
@@ -91,9 +92,16 @@ export async function GET(req: Request) {
       percentage: categorySum > 0 ? Math.round((c.total / categorySum) * 1000) / 10 : 0,
     }));
 
-  const totalThisMonth =
-    monthlySpend.find((m) => m.period === "current")?.total ?? 0;
-  const yearlyProjection = Math.round(totalThisMonth * 12 * 100) / 100;
+  /** Normalized monthly burn for subs that have started by today (matches dashboard). */
+  const currentMonthlyNormalized = round2(
+    subs
+      .filter((s) => hasSubscriptionStarted(s.startDate, now))
+      .reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0)
+  );
+
+  const yearlyProjection = round2(currentMonthlyNormalized * 12);
+
+  const hasActiveSubscriptions = subs.length > 0;
 
   const score = computeSubscriptionHealthScore(
     subs.map((s) => ({
@@ -101,12 +109,12 @@ export async function GET(req: Request) {
       billingCycle: s.billingCycle,
       category: s.category,
     })),
-    totalThisMonth
+    currentMonthlyNormalized
   );
 
   const insights = [
-    totalThisMonth > 100
-      ? `You're spending $${totalThisMonth.toFixed(0)}/mo on subscriptions. Review unused services.`
+    currentMonthlyNormalized > 100
+      ? `You're spending $${currentMonthlyNormalized.toFixed(0)}/mo on subscriptions. Review unused services.`
       : "Your subscription spend is under control.",
     categoryBreakdown.length > 0
       ? `Top category: ${categoryBreakdown[0].category} ($${categoryBreakdown[0].total.toFixed(2)}/mo).`
@@ -115,6 +123,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     score,
+    hasActiveSubscriptions,
     monthlySpend,
     categoryBreakdown,
     yearlyProjection,

@@ -55,7 +55,13 @@ export default function AnalyticsPage() {
             }`}
           >
             <div className="grid md:grid-cols-2 gap-6">
-              <ScoreGauge score={analytics?.score ?? 0} />
+              <ScoreGauge
+                score={analytics?.score ?? 0}
+                hasActiveSubscriptions={
+                  analytics?.hasActiveSubscriptions ??
+                  (analytics?.categoryBreakdown?.length ?? 0) > 0
+                }
+              />
               <div className="rounded-2xl border border-border bg-card p-6">
                 <h3 className="text-lg font-semibold text-text-primary mb-2">
                   Yearly projection

@@ -3,6 +3,8 @@ export const WEEKS_PER_MONTH = 4.33;
 
 export type BillingCycleKey = "monthly" | "yearly" | "weekly" | "custom";
 
+export type ScoreLabelText = "No Data" | "Needs Review" | "Good" | "Excellent";
+
 /**
  * Normalized monthly cost for a subscription (what it costs per calendar month).
  */
@@ -61,41 +63,75 @@ export function monthlySpendInCalendarMonth(
 }
 
 /**
- * Health score 0–100: higher = better financial shape (lower pressure, reasonable portfolio).
- * Uses real subscription list + normalized monthly burn.
+ * Subscription health score (1–100) when there is at least one active subscription.
+ * With no active subscriptions, the API returns 0 instead (see caller).
+ *
+ * Start at 100, apply deductions and bonuses, clamp to [1, 100].
  */
 export function computeSubscriptionHealthScore(
   activeSubs: { price: number; billingCycle: string; category: string }[],
   monthlyNormalizedTotal: number
 ): number {
-  if (activeSubs.length === 0) return 88; // no recurring spend → strong score (real data: $0/mo)
+  if (activeSubs.length === 0) return 0;
 
-  // Spend pressure (max 55): lower monthly outlay = more points
-  const spendPoints = Math.max(
-    0,
-    Math.min(55, 55 - monthlyNormalizedTotal * 0.22)
-  );
+  let score = 100;
+  const n = activeSubs.length;
 
-  // Category diversity (max 25)
-  const uniqueCats = new Set(activeSubs.map((s) => s.category)).size;
-  const diversityPoints = Math.min(25, uniqueCats * 5);
-
-  // Subscription count — very large stacks are harder to manage (max 20)
-  let countPoints = 20;
-  if (activeSubs.length > 12) {
-    countPoints = Math.max(0, 20 - (activeSubs.length - 12) * 1.5);
-  } else if (activeSubs.length < 2) {
-    countPoints = 16;
+  if (n > 5) {
+    score -= 5 * (n - 5);
   }
 
-  const raw = spendPoints + diversityPoints + countPoints;
-  return Math.min(100, Math.max(0, Math.round(raw)));
+  const S = monthlyNormalizedTotal;
+  if (S > 50) {
+    score -= Math.floor((S - 50) / 5);
+  }
+  if (S > 100) {
+    score -= Math.floor((S - 100) / 10) * 2;
+  }
+
+  const uniqueCats = new Set(activeSubs.map((s) => s.category)).size;
+  if (uniqueCats === 1) {
+    score -= 10;
+  }
+
+  for (const s of activeSubs) {
+    const pm = pricePerMonth(s.price, s.billingCycle);
+    if (pm > 30) {
+      score -= 5;
+    }
+  }
+
+  if (uniqueCats >= 3) {
+    score += 10;
+  }
+
+  const allUnder20 = activeSubs.every(
+    (s) => pricePerMonth(s.price, s.billingCycle) < 20
+  );
+  if (allUnder20) {
+    score += 10;
+  }
+
+  if (n < 3) {
+    score += 5;
+  }
+
+  score = Math.round(score);
+  return Math.max(1, Math.min(100, score));
 }
 
-export function scoreLabel(score: number): "Needs Review" | "Good" | "Excellent" {
+export function scoreLabel(score: number, hasActiveSubscriptions: boolean): ScoreLabelText {
+  if (!hasActiveSubscriptions) return "No Data";
   if (score <= 40) return "Needs Review";
   if (score <= 70) return "Good";
   return "Excellent";
+}
+
+export function scoreAccentColor(score: number, hasActiveSubscriptions: boolean): string {
+  if (!hasActiveSubscriptions) return "#9090aa";
+  if (score <= 40) return "#f87171";
+  if (score <= 70) return "#fbbf24";
+  return "#34d399";
 }
 
 /** Stable palette index for category → color alignment in charts */

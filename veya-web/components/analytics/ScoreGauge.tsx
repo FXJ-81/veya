@@ -1,17 +1,22 @@
 "use client";
 
 import { motion } from "framer-motion";
-import { scoreLabel } from "@/lib/subscriptionBilling";
+import { scoreAccentColor, scoreLabel } from "@/lib/subscriptionBilling";
 
 interface ScoreGaugeProps {
   score: number;
+  /** False when user has no active subscriptions — score is 0 and we show “No Data”. */
+  hasActiveSubscriptions: boolean;
 }
 
-export function ScoreGauge({ score }: ScoreGaugeProps) {
+export function ScoreGauge({ score, hasActiveSubscriptions }: ScoreGaugeProps) {
   const clamped = Math.min(100, Math.max(0, score));
-  const label = scoreLabel(clamped);
-  const color =
-    clamped >= 71 ? "#34d399" : clamped >= 41 ? "#fbbf24" : "#f87171";
+  const label = scoreLabel(clamped, hasActiveSubscriptions);
+  const color = scoreAccentColor(clamped, hasActiveSubscriptions);
+
+  const helper = !hasActiveSubscriptions
+    ? "Add subscriptions to get your score"
+    : "Higher score = better financial health based on your active subscriptions.";
 
   return (
     <motion.div
@@ -42,7 +47,7 @@ export function ScoreGauge({ score }: ScoreGaugeProps) {
             strokeWidth="10"
             strokeLinecap="round"
             initial={{ pathLength: 0 }}
-            animate={{ pathLength: clamped / 100 }}
+            animate={{ pathLength: hasActiveSubscriptions ? clamped / 100 : 0 }}
             transition={{ duration: 1, ease: "easeOut" }}
           />
         </svg>
@@ -53,16 +58,14 @@ export function ScoreGauge({ score }: ScoreGaugeProps) {
             transition={{ delay: 0.5 }}
             className="font-mono text-3xl font-bold text-text-primary font-mono-nums"
           >
-            {clamped}
+            {hasActiveSubscriptions ? clamped : "—"}
           </motion.span>
         </div>
       </div>
       <p className="text-sm font-medium mt-2" style={{ color }}>
         {label}
       </p>
-      <p className="text-xs text-text-secondary mt-1 text-center max-w-xs">
-        Higher score = better financial health (spend pressure, diversity, portfolio size).
-      </p>
+      <p className="text-xs text-text-secondary mt-1 text-center max-w-xs">{helper}</p>
     </motion.div>
   );
 }
