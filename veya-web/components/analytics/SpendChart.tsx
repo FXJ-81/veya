@@ -24,8 +24,21 @@ const ACCENT_TICK = "#8b9fff";
 
 type ChartRow = MonthlySpend & { fill: string; stroke: string; strokeDasharray: string };
 
+function normalizeMonth(d: MonthlySpend): MonthlySpend {
+  return {
+    ...d,
+    period: d.period ?? "past",
+    contributors: Array.isArray(d.contributors) ? d.contributors : [],
+    total: typeof d.total === "number" ? d.total : 0,
+    label: d.label ?? "",
+    year: d.year ?? new Date().getFullYear(),
+    month: d.month ?? 1,
+  };
+}
+
 function buildRows(data: MonthlySpend[]): ChartRow[] {
-  return data.map((d) => {
+  return data.map((raw) => {
+    const d = normalizeMonth(raw);
     if (d.period === "current") {
       return {
         ...d,
@@ -59,9 +72,13 @@ function SpendTooltip({
   payload?: { payload: ChartRow }[];
 }) {
   if (!active || !payload?.length) return null;
-  const row = payload[0].payload;
+  const raw = payload[0]?.payload;
+  if (!raw) return null;
+  const row = normalizeMonth(raw as MonthlySpend);
+  const contributors = row.contributors;
   const isFuture = row.period === "future";
   const title = isFuture ? "Projected spend" : "Actual spend";
+  const total = Number(row.total) || 0;
 
   return (
     <div className="rounded-xl border border-border bg-[#111118] px-3 py-2 shadow-lg max-w-xs">
@@ -69,11 +86,11 @@ function SpendTooltip({
         {row.label} {row.year}
       </p>
       <p className="font-mono text-accent font-mono-nums text-base mb-2">
-        {title}: ${row.total.toFixed(2)}
+        {title}: ${total.toFixed(2)}
       </p>
-      {row.contributors.length > 0 ? (
+      {contributors.length > 0 ? (
         <ul className="text-xs text-text-secondary space-y-1 border-t border-border pt-2 max-h-40 overflow-y-auto">
-          {row.contributors.map((c) => (
+          {contributors.map((c) => (
             <li key={c.name} className="flex justify-between gap-4">
               <span className="truncate">{c.name}</span>
               <span className="font-mono shrink-0 font-mono-nums">${c.amount.toFixed(2)}</span>
