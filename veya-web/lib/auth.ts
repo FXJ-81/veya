@@ -36,6 +36,15 @@ export const authOptions: NextAuthOptions = {
             clientId: process.env.GOOGLE_CLIENT_ID,
             clientSecret: process.env.GOOGLE_CLIENT_SECRET,
             allowDangerousEmailAccountLinking: true,
+            authorization: {
+              params: {
+                scope:
+                  "openid email profile https://www.googleapis.com/auth/gmail.readonly",
+                access_type: "offline",
+                // Include consent when you need a new refresh_token (e.g. after revoking access)
+                prompt: "consent",
+              },
+            },
           }),
         ]
       : []),
@@ -43,12 +52,15 @@ export const authOptions: NextAuthOptions = {
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: { signIn: "/sign-in" },
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, account }) {
       if (user) {
         token.id = user.id;
         token.email = user.email;
         token.name = user.name;
         token.picture = user.image;
+      }
+      if (account?.provider) {
+        token.provider = account.provider;
       }
       return token;
     },
@@ -56,6 +68,7 @@ export const authOptions: NextAuthOptions = {
       if (session.user) {
         (session.user as { id: string }).id = token.id as string;
       }
+      (session as { provider?: string }).provider = (token.provider as string) ?? undefined;
       return session;
     },
   },

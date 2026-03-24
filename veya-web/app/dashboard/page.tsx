@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { Suspense, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -16,6 +16,7 @@ import { useAnalytics } from "@/hooks/useAnalytics";
 import { getGreeting, formatCurrency } from "@/lib/utils";
 import { hasSubscriptionStarted, pricePerMonth } from "@/lib/subscriptionBilling";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { GmailOnboarding } from "@/components/dashboard/GmailOnboarding";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -80,6 +81,10 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-background">
       <Sidebar />
       <main className="pl-56 pr-6 py-8">
+        <Suspense fallback={null}>
+          <GmailOnboarding />
+        </Suspense>
+
         <motion.header
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}

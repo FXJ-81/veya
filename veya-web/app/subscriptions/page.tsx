@@ -9,6 +9,7 @@ import { SubscriptionCard } from "@/components/subscriptions/SubscriptionCard";
 import { AddSubscriptionModal } from "@/components/subscriptions/AddSubscriptionModal";
 import { EditSubscriptionModal } from "@/components/subscriptions/EditSubscriptionModal";
 import { useSubscriptions, useSubscriptionMutations } from "@/hooks/useSubscriptions";
+import { useQueryClient } from "@tanstack/react-query";
 import type { Subscription } from "@/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 
@@ -22,7 +23,51 @@ function SubscriptionsContent() {
   const [sort, setSort] = useState<"name" | "price" | "nextRenewal">("nextRenewal");
   const { data: subs, isLoading, isFetching } = useSubscriptions();
   const { update, remove, create } = useSubscriptionMutations();
+  const qc = useQueryClient();
   const isMutating = create.isPending || update.isPending || remove.isPending;
+  const [gmailConnected, setGmailConnected] = useState(false);
+  const [lastGmailScanAt, setLastGmailScanAt] = useState<string | null>(null);
+  const [gmailScanning, setGmailScanning] = useState(false);
+
+  useEffect(() => {
+    fetch("/api/settings/gmail")
+      .then((r) => r.json())
+      .then((d) => {
+        setGmailConnected(!!d.gmailConnected);
+        setLastGmailScanAt(d.lastGmailScanAt ?? null);
+      })
+      .catch(() => {});
+  }, []);
+
+  const daysAgo = (iso: string | null) => {
+    if (!iso) return null;
+    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+    if (d <= 0) return "today";
+    if (d === 1) return "1 day ago";
+    return `${d} days ago`;
+  };
+
+  const handleRescanGmail = async () => {
+    if (!gmailConnected || gmailScanning) return;
+    setGmailScanning(true);
+    try {
+      const res = await fetch("/api/subscriptions/gmail-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mode: "manual" }),
+      });
+      const j = await res.json();
+      if (j.error && !j.imported) {
+        alert(j.error);
+      }
+      await qc.invalidateQueries({ queryKey: ["subscriptions"] });
+      await qc.invalidateQueries({ queryKey: ["analytics"] });
+      const st = await fetch("/api/settings/gmail").then((r) => r.json());
+      setLastGmailScanAt(st.lastGmailScanAt ?? null);
+    } finally {
+      setGmailScanning(false);
+    }
+  };
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -112,12 +157,29 @@ function SubscriptionsContent() {
               </span>
             )}
           </div>
-          <button
-            onClick={() => setAddOpen(true)}
-            className="rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
-          >
-            + Add subscription
-          </button>
+          <div className="flex flex-wrap items-center gap-3">
+            {gmailConnected && (
+              <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
+                <button
+                  type="button"
+                  onClick={handleRescanGmail}
+                  disabled={gmailScanning}
+                  className="rounded-lg border border-border bg-background-secondary px-3 py-2 font-medium text-text-primary hover:border-accent disabled:opacity-50"
+                >
+                  {gmailScanning ? "Scanning…" : "🔍 Rescan Gmail"}
+                </button>
+                {lastGmailScanAt && (
+                  <span>Last scanned: {daysAgo(lastGmailScanAt)}</span>
+                )}
+              </div>
+            )}
+            <button
+              onClick={() => setAddOpen(true)}
+              className="rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+            >
+              + Add subscription
+            </button>
+          </div>
         </motion.div>
 
         <div className="flex flex-col sm:flex-row gap-4 mb-6">

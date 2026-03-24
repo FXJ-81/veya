@@ -5,7 +5,6 @@ import { scoreAccentColor, scoreLabel } from "@/lib/subscriptionBilling";
 
 interface ScoreGaugeProps {
   score: number;
-  /** False when user has no active subscriptions — score is 0 and we show “No Data”. */
   hasActiveSubscriptions: boolean;
 }
 

@@ -134,5 +134,9 @@ model UserSettings {
   userId             String   @unique
   notificationPrefs  Json?
   budgetLimit        Float?
+  /// Set after first-login Gmail flow finished (scan, skip, or connect attempt)
+  gmailFirstScanCompletedAt DateTime?
+  lastGmailScanAt           DateTime?
+  lastGmailScanFoundCount   Int       @default(0)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 }

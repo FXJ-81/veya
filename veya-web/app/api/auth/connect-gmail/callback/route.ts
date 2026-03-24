@@ -73,7 +73,7 @@ export async function GET(req: Request) {
     },
   });
 
-  const res = NextResponse.redirect(new URL("/subscriptions?scan=1", baseUrl));
+  const res = NextResponse.redirect(new URL("/dashboard?gmail_connected=1", baseUrl));
   res.cookies.set("connect_gmail_state", "", { maxAge: 0, path: "/" });
   return res;
 }
