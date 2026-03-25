@@ -46,7 +46,8 @@ export default function SettingsPage() {
       .then((d) => setGmail(d));
 
   const connectGmail = () => {
-    window.location.href = "/api/auth/connect-gmail";
+    const callbackUrl = encodeURIComponent("/settings?gmail_connected=1");
+    window.location.href = `/api/auth/signin/google?callbackUrl=${callbackUrl}`;
   };
 
   const disconnectGmail = async () => {

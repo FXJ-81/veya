@@ -250,7 +250,7 @@ async function scanGmailInboxInternal(
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  const redirectUri = `${baseUrl}/api/auth/connect-gmail/callback`;
+  const redirectUri = `${baseUrl}/api/auth/callback/google`;
   if (!clientId || !clientSecret) {
     return { suggestions: [], connected: true, error: "Gmail not configured" };
   }

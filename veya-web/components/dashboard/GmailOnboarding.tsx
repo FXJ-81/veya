@@ -129,7 +129,8 @@ export function GmailOnboarding() {
   };
 
   const connectGmail = () => {
-    window.location.href = "/api/auth/connect-gmail";
+    const callbackUrl = encodeURIComponent("/dashboard?gmail_connected=1");
+    window.location.href = `/api/auth/signin/google?callbackUrl=${callbackUrl}`;
   };
 
   return (

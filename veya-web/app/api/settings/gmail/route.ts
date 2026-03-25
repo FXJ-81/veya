@@ -58,7 +58,10 @@ export async function PATCH(req: Request) {
   }
 
   if (body.disconnectGmail) {
-    // Remove dedicated Gmail OAuth row; Google sign-in Gmail uses the `google` account (re-connect via Connect Gmail)
+    await prisma.account.updateMany({
+      where: { userId: authUser.id, provider: "google" },
+      data: { refresh_token: null, access_token: null, expires_at: null },
+    });
     await prisma.account.deleteMany({
       where: { userId: authUser.id, provider: "google-gmail" },
     });
