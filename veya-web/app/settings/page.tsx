@@ -74,6 +74,10 @@ export default function SettingsPage() {
       });
       const j = await res.json();
       if (!j.ok && j.error) alert(j.error);
+      else if (j.ok) {
+        const lines = [j.summaryNew, j.summarySkipped].filter(Boolean).join("\n");
+        if (lines) alert(lines);
+      }
       await refreshGmail();
     } finally {
       setGmailLoading(false);

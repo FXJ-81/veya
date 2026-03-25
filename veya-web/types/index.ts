@@ -8,6 +8,7 @@ export interface DiscoverSuggestion {
   billingCycle: BillingCycle;
   nextRenewal: string;
   startDate: string;
+  logoUrl?: string;
 }
 
 export interface Subscription {

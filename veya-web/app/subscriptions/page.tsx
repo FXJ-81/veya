@@ -57,8 +57,11 @@ function SubscriptionsContent() {
         body: JSON.stringify({ mode: "manual" }),
       });
       const j = await res.json();
-      if (j.error && !j.imported) {
+      if (j.error && !j.ok) {
         alert(j.error);
+      } else if (j.ok) {
+        const lines = [j.summaryNew, j.summarySkipped].filter(Boolean).join("\n");
+        if (lines) alert(lines);
       }
       await qc.invalidateQueries({ queryKey: ["subscriptions"] });
       await qc.invalidateQueries({ queryKey: ["analytics"] });

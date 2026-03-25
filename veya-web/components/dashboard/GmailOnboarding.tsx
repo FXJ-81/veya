@@ -20,8 +20,16 @@ export function GmailOnboarding() {
   const qc = useQueryClient();
   const [banner, setBanner] = useState<BannerState>("idle");
   const [modal, setModal] = useState(false);
-  const [imported, setImported] = useState(0);
+  const [foundCount, setFoundCount] = useState(0);
+  const [importedCount, setImportedCount] = useState(0);
+  const [skipMessage, setSkipMessage] = useState<string | null>(null);
+  const [summaryNew, setSummaryNew] = useState<string | null>(null);
   const scanStarted = useRef(false);
+  const userId = (session?.user as { id?: string } | undefined)?.id;
+
+  useEffect(() => {
+    scanStarted.current = false;
+  }, [userId]);
 
   useEffect(() => {
     if (status !== "authenticated" || !session?.user) return;
@@ -66,6 +74,7 @@ export function GmailOnboarding() {
       scanStarted.current = true;
       setBanner("scanning");
       setModal(false);
+      setSkipMessage(null);
 
       const j = await fetch("/api/subscriptions/gmail-scan", {
         method: "POST",
@@ -90,10 +99,13 @@ export function GmailOnboarding() {
         return;
       }
 
-      if (j.ok && j.imported > 0) {
-        setImported(j.imported);
+      if (j.ok) {
+        setFoundCount(typeof j.found === "number" ? j.found : 0);
+        setImportedCount(typeof j.imported === "number" ? j.imported : 0);
+        setSkipMessage(typeof j.summarySkipped === "string" ? j.summarySkipped : null);
+        setSummaryNew(typeof j.summaryNew === "string" && j.summaryNew ? j.summaryNew : null);
         setBanner("success");
-        window.setTimeout(() => setBanner("hidden"), 12000);
+        window.setTimeout(() => setBanner("hidden"), 14000);
       } else {
         setBanner("hidden");
       }
@@ -103,7 +115,7 @@ export function GmailOnboarding() {
     return () => {
       cancelled = true;
     };
-  }, [status, session?.provider, session?.user, searchParams, router, qc]);
+  }, [status, session?.provider, session?.user, userId, searchParams, router, qc]);
 
   const skipFirst = async () => {
     await fetch("/api/settings/gmail", {
@@ -124,17 +136,30 @@ export function GmailOnboarding() {
     <>
       {banner === "scanning" && (
         <div className="mb-4 rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-text-secondary backdrop-blur-sm">
-          🔍 Scanning your email for subscriptions…
+          🔍 Scanning your Gmail for subscriptions...
         </div>
       )}
       {banner === "success" && (
-        <div className="mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-text-primary">
-          <span>
-            ✅ Found {imported} subscription{imported === 1 ? "" : "s"}! Check your list.
-          </span>
+        <div className="mb-4 flex flex-col gap-2 rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-text-primary sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
+          <div className="space-y-1">
+            <span>
+              ✅ Found {foundCount} subscription{foundCount === 1 ? "" : "s"}!
+            </span>
+            {summaryNew && (
+              <p className="text-text-secondary text-xs">{summaryNew}</p>
+            )}
+            {importedCount > 0 && !summaryNew && (
+              <p className="text-text-secondary text-xs">
+                Added {importedCount} new to your list.
+              </p>
+            )}
+            {skipMessage && (
+              <p className="text-text-secondary text-xs">{skipMessage}</p>
+            )}
+          </div>
           <Link
             href="/subscriptions"
-            className="font-medium text-accent hover:underline"
+            className="font-medium text-accent hover:underline shrink-0"
           >
             View subscriptions →
           </Link>

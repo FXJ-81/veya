@@ -15,6 +15,20 @@ async function ensureSettings(userId: string) {
   });
 }
 
+function buildScanSummary(
+  imported: number,
+  newNames: string[],
+  skippedDuplicates: number
+): { summaryNew: string; summarySkipped: string | null } {
+  const summaryNew =
+    imported > 0
+      ? `Found ${imported} new subscription${imported === 1 ? "" : "s"}: ${newNames.join(", ")}`
+      : "No new subscriptions added";
+  const summarySkipped =
+    skippedDuplicates > 0 ? `${skippedDuplicates} already in your list` : null;
+  return { summaryNew, summarySkipped };
+}
+
 /**
  * POST /api/subscriptions/gmail-scan
  * Body: { mode?: "first-auto" | "manual" }
@@ -43,6 +57,12 @@ export async function POST(req: Request) {
       message: "First scan already completed",
       imported: 0,
       found: 0,
+      updated: 0,
+      skippedDuplicates: 0,
+      newSubscriptionNames: [] as string[],
+      skippedNames: [] as string[],
+      summaryNew: "",
+      summarySkipped: null,
     });
   }
 
@@ -54,11 +74,22 @@ export async function POST(req: Request) {
         needsGmail: true,
         imported: 0,
         found: 0,
+        updated: 0,
+        skippedDuplicates: 0,
+        newSubscriptionNames: [],
+        skippedNames: [],
         connected: false,
       });
     }
     return NextResponse.json(
-      { error: "Gmail not connected", imported: 0, found: 0, connected: false },
+      {
+        error: "Gmail not connected",
+        imported: 0,
+        found: 0,
+        updated: 0,
+        skippedDuplicates: 0,
+        connected: false,
+      },
       { status: 400 }
     );
   }
@@ -78,28 +109,41 @@ export async function POST(req: Request) {
       error: error ?? "Scan failed",
       imported: 0,
       found: 0,
+      updated: 0,
+      skippedDuplicates: 0,
+      newSubscriptionNames: [],
+      skippedNames: [],
       connected: !!connected,
     });
   }
 
-  const { imported } = await importSuggestionsAsSubscriptions(authUser.id, suggestions);
+  const importResult = await importSuggestionsAsSubscriptions(authUser.id, suggestions);
   const found = suggestions.length;
+  const { summaryNew, summarySkipped } = buildScanSummary(
+    importResult.imported,
+    importResult.newNames,
+    importResult.skippedDuplicates
+  );
 
   await prisma.userSettings.update({
     where: { userId: authUser.id },
     data: {
       lastGmailScanAt: new Date(),
-      lastGmailScanFoundCount: imported,
-      ...(mode === "first-auto" || !firstDone
-        ? { gmailFirstScanCompletedAt: new Date() }
-        : {}),
+      lastGmailScanFoundCount: importResult.imported,
+      ...(mode === "first-auto" || !firstDone ? { gmailFirstScanCompletedAt: new Date() } : {}),
     },
   });
 
   return NextResponse.json({
     ok: true,
-    imported,
+    imported: importResult.imported,
     found,
+    updated: importResult.updated,
+    skippedDuplicates: importResult.skippedDuplicates,
+    newSubscriptionNames: importResult.newNames,
+    skippedNames: importResult.skippedNames,
+    summaryNew,
+    summarySkipped,
     connected: true,
     firstAutoCompleted: mode === "first-auto" || !firstDone,
   });
