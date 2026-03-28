@@ -1,20 +1,9 @@
 import { prisma } from "@/lib/prisma";
-import { type DiscoverSuggestion } from "@/lib/parseSubscriptionEmail";
 import { google } from "googleapis";
 import type { gmail_v1 } from "googleapis";
-import { DOMAIN_CATALOG, normalizeSenderDomain } from "@/lib/knownSubscriptionDomains";
-import {
-  analyzeUnclearSubscriptionEmail,
-  buildLogoUrlForDomain,
-  extractEmailDomain,
-  extractPricesFromText,
-  extractSenderDisplayName,
-  inferBillingCycle,
-  parseDateFromEmail,
-  pickReasonablePrice,
-  resolveServiceNameAndCategory,
-  SUBSCRIPTION_KEYWORD_RE,
-} from "@/lib/subscriptionEmailAnalyze";
+import { clearbitLogoUrl, normalizeSenderDomain } from "@/lib/knownSubscriptionDomains";
+import { parseDateFromEmail } from "@/lib/subscriptionEmailAnalyze";
+import type { DiscoverSuggestion } from "@/lib/parseSubscriptionEmail";
 
 export function normalizeSubName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -31,11 +20,59 @@ export async function getAccountWithGmailAccess(userId: string) {
   });
 }
 
-const MAX_MESSAGES = 1000;
-const OPENAI_CAP = 25;
-const FETCH_CONCURRENCY = 8;
+const MAX_TOTAL_IDS = 280;
+const PER_QUERY_CAP = 36;
+const FETCH_CONCURRENCY = 6;
 
-const gmailScanLocks = new Map<string, Promise<{ suggestions: DiscoverSuggestion[]; connected: boolean; error?: string }>>();
+const STRICT_PRICE_RE = /\$\s*(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{2}))?\b/g;
+
+const RECEIPT_SUBJECT_RE =
+  /\b(receipt|invoice|payment|charged|billing|subscription|renewal|order)\b/i;
+
+const gmailScanLocks = new Map<
+  string,
+  Promise<{ candidates: GmailScanCandidate[]; connected: boolean; error?: string }>
+>();
+
+const importLocks = new Map<string, Promise<GmailImportResult>>();
+
+export type GmailScanCandidate = {
+  messageId: string;
+  name: string;
+  category: string;
+  price: number;
+  billingCycle: "monthly" | "yearly";
+  monthlyEquivalent: number;
+  logoUrl: string;
+  emailDate: string;
+  senderDomain: string;
+};
+
+export type GmailImportResult = {
+  imported: number;
+  updated: number;
+  skippedDuplicates: number;
+  newNames: string[];
+  skippedNames: string[];
+};
+
+function gmailSearchQueries(afterStr: string): string[] {
+  return [
+    `after:${afterStr} from:apple.com subject:(receipt OR invoice OR subscription)`,
+    `after:${afterStr} from:openai.com subject:(receipt OR invoice OR subscription)`,
+    `after:${afterStr} from:netflix.com subject:(receipt OR invoice)`,
+    `after:${afterStr} from:spotify.com subject:(receipt OR invoice)`,
+    `after:${afterStr} from:google.com subject:(Google One OR YouTube Premium OR receipt)`,
+    `after:${afterStr} from:amazon.com subject:(Prime OR membership)`,
+    `after:${afterStr} from:hulu.com subject:(receipt OR invoice)`,
+    `after:${afterStr} from:disneyplus.com subject:(receipt OR invoice)`,
+    `after:${afterStr} from:microsoft.com subject:(subscription OR receipt)`,
+    `after:${afterStr} from:adobe.com subject:(receipt OR invoice)`,
+    `after:${afterStr} from:dropbox.com subject:(receipt OR invoice)`,
+    `after:${afterStr} from:github.com subject:(receipt OR invoice)`,
+    `after:${afterStr} from:anthropic.com subject:(receipt OR invoice)`,
+  ];
+}
 
 function collectBodyText(part: gmail_v1.Schema$MessagePart | undefined): string {
   if (!part) return "";
@@ -59,17 +96,99 @@ function collectBodyText(part: gmail_v1.Schema$MessagePart | undefined): string 
   return chunks.join("\n");
 }
 
-function buildSearchQueries(afterStr: string): string[] {
-  return [
-    `after:${afterStr} subscription receipt`,
-    `after:${afterStr} billing invoice payment`,
-    `after:${afterStr} your subscription`,
-    `after:${afterStr} monthly charge`,
-    `after:${afterStr} (from:openai.com OR from:apple.com OR from:netflix.com OR from:spotify.com OR from:google.com OR from:amazon.com OR from:hulu.com OR from:disneyplus.com OR from:microsoft.com OR from:adobe.com OR from:dropbox.com OR from:notion.so OR from:github.com OR from:linkedin.com OR from:duolingo.com OR from:nytimes.com OR from:claude.ai OR from:anthropic.com)`,
-  ];
+function extractStrictDollarAmount(subject: string, body500: string): number | null {
+  for (const text of [subject, body500]) {
+    STRICT_PRICE_RE.lastIndex = 0;
+    let m: RegExpExecArray | null;
+    while ((m = STRICT_PRICE_RE.exec(text)) !== null) {
+      const intPart = (m[1] ?? "").replace(/,/g, "");
+      const dec = m[2];
+      const val = dec !== undefined ? parseFloat(`${intPart}.${dec}`) : parseFloat(intPart);
+      if (Number.isFinite(val) && val >= 0.49 && val <= 200) {
+        return Math.round(val * 100) / 100;
+      }
+    }
+  }
+  return null;
 }
 
-async function listMessageIds(
+function hasExclusionNoise(combinedLower: string): boolean {
+  if (/\bfree\s+trial\b/.test(combinedLower)) return true;
+  if (/\btrial\s+period\b/.test(combinedLower)) return true;
+  if (/\bpassword\s+reset\b/.test(combinedLower)) return true;
+  if (/\bconfirm\s+your\s+email\b/.test(combinedLower)) return true;
+  if (/\bverify\s+your\s+(email|account)\b/.test(combinedLower)) return true;
+  if (/\bwelcome\s+to\b/.test(combinedLower)) return true;
+  if (/\bunsubscribe\s+from\s+marketing\b/.test(combinedLower)) return true;
+  if (/\bshipped\b/.test(combinedLower)) return true;
+  if (/\bdelivered\b/.test(combinedLower)) return true;
+  if (/\btracking\b/.test(combinedLower)) return true;
+  if (/\byour\s+order\s+has\s+shipped\b/.test(combinedLower)) return true;
+  return false;
+}
+
+function inferBillingCycle(subject: string, amount: number): "monthly" | "yearly" {
+  const s = subject.toLowerCase();
+  if (/\b(annual|yearly|year)\b/.test(s)) return "yearly";
+  const cents = Math.round(amount * 100);
+  if (amount > 50 && cents % 1200 === 0) return "yearly";
+  return "monthly";
+}
+
+function monthlyEquivalent(price: number, cycle: "monthly" | "yearly"): number {
+  return cycle === "yearly" ? price / 12 : price;
+}
+
+function passesSubscriptionPriceRules(price: number, cycle: "monthly" | "yearly"): boolean {
+  if (price < 0.49 || price > 200) return false;
+  const eq = monthlyEquivalent(price, cycle);
+  return eq >= 0.49 && eq <= 99.99;
+}
+
+function resolveServiceNameAndCategory(
+  root: string,
+  subject: string
+): { name: string; category: string } | null {
+  const s = subject.toLowerCase();
+  switch (root) {
+    case "apple.com":
+      if (s.includes("apple one")) return { name: "Apple One", category: "Productivity" };
+      if (s.includes("icloud") || s.includes("icloud+")) return { name: "iCloud+", category: "Storage" };
+      return null;
+    case "openai.com":
+      return { name: "ChatGPT Plus", category: "Productivity" };
+    case "anthropic.com":
+      return { name: "Claude Pro", category: "Productivity" };
+    case "netflix.com":
+      return { name: "Netflix", category: "Streaming" };
+    case "spotify.com":
+      return { name: "Spotify", category: "Music" };
+    case "google.com":
+      if (s.includes("youtube premium") || s.includes("youtube music")) {
+        return { name: "YouTube Premium", category: "Streaming" };
+      }
+      if (s.includes("google one")) return { name: "Google One", category: "Storage" };
+      return null;
+    case "amazon.com":
+      return { name: "Amazon Prime", category: "Shopping" };
+    case "hulu.com":
+      return { name: "Hulu", category: "Streaming" };
+    case "disneyplus.com":
+      return { name: "Disney+", category: "Streaming" };
+    case "microsoft.com":
+      return { name: "Microsoft 365", category: "Productivity" };
+    case "adobe.com":
+      return { name: "Adobe Creative Cloud", category: "Productivity" };
+    case "dropbox.com":
+      return { name: "Dropbox", category: "Storage" };
+    case "github.com":
+      return { name: "GitHub Pro", category: "Productivity" };
+    default:
+      return null;
+  }
+}
+
+async function listMessageIdsForQuery(
   gmail: gmail_v1.Gmail,
   q: string,
   cap: number
@@ -77,7 +196,7 @@ async function listMessageIds(
   const ids: string[] = [];
   let pageToken: string | undefined;
   while (ids.length < cap) {
-    const take = Math.min(500, cap - ids.length);
+    const take = Math.min(50, cap - ids.length);
     const res = await gmail.users.messages.list({
       userId: "me",
       q,
@@ -94,11 +213,10 @@ async function listMessageIds(
   return ids;
 }
 
-async function parseMessageToSuggestion(
+export async function parseGmailMessageToCandidate(
   gmail: gmail_v1.Gmail,
-  messageId: string,
-  openaiBudget: { n: number }
-): Promise<DiscoverSuggestion | null> {
+  messageId: string
+): Promise<GmailScanCandidate | null> {
   let msgRes: gmail_v1.Schema$Message;
   try {
     const res = await gmail.users.messages.get({
@@ -115,106 +233,62 @@ async function parseMessageToSuggestion(
   const headers = payload?.headers ?? [];
   const subject = headers.find((h) => h.name?.toLowerCase() === "subject")?.value ?? "";
   const from = headers.find((h) => h.name?.toLowerCase() === "from")?.value ?? "";
-  const snippet = msgRes.snippet ?? "";
   const internalMs = msgRes.internalDate ? parseInt(msgRes.internalDate, 10) : undefined;
 
-  const bodyText = collectBodyText(payload).slice(0, 12_000);
-  const combined = `${subject}\n${snippet}\n${bodyText}`;
+  if (!RECEIPT_SUBJECT_RE.test(subject)) return null;
+
+  const bodyFull = collectBodyText(payload);
+  const body500 = bodyFull.slice(0, 500);
+  const scanText = `${subject}\n${body500}`.toLowerCase();
+  if (hasExclusionNoise(scanText)) return null;
 
   const rawDomain = extractEmailDomain(from);
-  const catalogRoot = rawDomain ? normalizeSenderDomain(rawDomain) : null;
-  const inCatalog = !!(catalogRoot && DOMAIN_CATALOG[catalogRoot]);
+  if (!rawDomain) return null;
+  const root = normalizeSenderDomain(rawDomain);
+  if (!root) return null;
 
-  const hasKeyword = SUBSCRIPTION_KEYWORD_RE.test(combined);
-  const amounts = extractPricesFromText(combined);
+  const resolved = resolveServiceNameAndCategory(root, subject);
+  if (!resolved) return null;
 
-  if (!inCatalog && !hasKeyword) return null;
-  if (inCatalog && !hasKeyword && amounts.length === 0) {
-    let ai: Awaited<ReturnType<typeof analyzeUnclearSubscriptionEmail>> = null;
-    if (openaiBudget.n < OPENAI_CAP) {
-      openaiBudget.n += 1;
-      ai = await analyzeUnclearSubscriptionEmail(subject, bodyText.slice(0, 200) || snippet);
-    }
-    const dates = parseDateFromEmail(combined, internalMs);
-    if (ai) {
-      const bc =
-        ai.billingCycle === "yearly" || ai.billingCycle === "weekly" ? ai.billingCycle : "monthly";
-      return {
-        name: ai.name,
-        category: ai.category,
-        price: ai.price,
-        billingCycle: bc,
-        nextRenewal: dates.nextRenewal,
-        startDate: dates.startDate,
-        logoUrl: buildLogoUrlForDomain(rawDomain ?? catalogRoot ?? "google.com"),
-      };
-    }
-    const resolved = resolveServiceNameAndCategory(catalogRoot!, subject, combined);
-    const hint = DOMAIN_CATALOG[catalogRoot!]?.priceHint ?? 9.99;
-    const billingCycle = inferBillingCycle(combined, hint);
-    return {
-      name: resolved.name,
-      category: resolved.category,
-      price: hint,
-      billingCycle,
-      nextRenewal: dates.nextRenewal,
-      startDate: dates.startDate,
-      logoUrl: buildLogoUrlForDomain(rawDomain ?? catalogRoot ?? "google.com"),
-    };
-  }
+  const amount = extractStrictDollarAmount(subject, body500);
+  if (amount === null) return null;
 
-  let price = pickReasonablePrice(
-    amounts,
-    inCatalog && catalogRoot ? DOMAIN_CATALOG[catalogRoot]?.priceHint : undefined
-  );
+  const billingCycle = inferBillingCycle(subject, amount);
+  if (!passesSubscriptionPriceRules(amount, billingCycle)) return null;
 
-  let name: string;
-  let category: string;
-
-  if (inCatalog && catalogRoot) {
-    const resolved = resolveServiceNameAndCategory(catalogRoot, subject, combined);
-    name = resolved.name;
-    category = resolved.category;
-  } else {
-    name = extractSenderDisplayName(from);
-    if (name.length < 2 && rawDomain) {
-      const base = rawDomain.split(".")[0] ?? rawDomain;
-      name = base.charAt(0).toUpperCase() + base.slice(1);
-    }
-    category = "Other";
-  }
-
-  if (price === 0) {
-    if (openaiBudget.n < OPENAI_CAP) {
-      openaiBudget.n += 1;
-      const ai = await analyzeUnclearSubscriptionEmail(subject, bodyText.slice(0, 200) || snippet);
-      if (ai) {
-        name = ai.name;
-        category = ai.category;
-        price = ai.price;
-      }
-    }
-    if (price === 0 && inCatalog && catalogRoot) {
-      const hint = DOMAIN_CATALOG[catalogRoot]?.priceHint;
-      price = hint ?? 9.99;
-    }
-  }
-
-  if (price === 0) return null;
-
-  const billingCycle = inferBillingCycle(combined, price);
-  const dates = parseDateFromEmail(combined, internalMs);
-  const logoDomain = catalogRoot ?? rawDomain ?? "google.com";
+  const emailDate = internalMs
+    ? new Date(internalMs).toISOString().slice(0, 10)
+    : new Date().toISOString().slice(0, 10);
 
   return {
-    name,
-    category,
-    price,
+    messageId,
+    name: resolved.name,
+    category: resolved.category,
+    price: amount,
     billingCycle,
-    nextRenewal: dates.nextRenewal,
-    startDate: dates.startDate,
-    logoUrl: buildLogoUrlForDomain(logoDomain),
+    monthlyEquivalent: monthlyEquivalent(amount, billingCycle),
+    logoUrl: clearbitLogoUrl(root),
+    emailDate,
+    senderDomain: root,
   };
+}
+
+function extractEmailDomain(fromHeader: string): string | null {
+  const emailMatch = fromHeader.match(/<([^>]+)>/);
+  const email = emailMatch ? emailMatch[1] : fromHeader;
+  const at = email.lastIndexOf("@");
+  if (at === -1) return null;
+  return email.slice(at + 1).trim().toLowerCase();
+}
+
+function dedupeCandidates(rows: GmailScanCandidate[]): GmailScanCandidate[] {
+  const best = new Map<string, GmailScanCandidate>();
+  for (const c of rows) {
+    const key = `${normalizeSubName(c.name)}|${c.billingCycle}`;
+    const prev = best.get(key);
+    if (!prev || c.emailDate > prev.emailDate) best.set(key, c);
+  }
+  return [...best.values()].sort((a, b) => a.name.localeCompare(b.name));
 }
 
 async function runPool<T>(
@@ -239,12 +313,15 @@ async function runPool<T>(
   return out;
 }
 
-async function scanGmailInboxInternal(
+async function getGmailClientForUser(
   userId: string
-): Promise<{ suggestions: DiscoverSuggestion[]; connected: boolean; error?: string }> {
+): Promise<
+  | { ok: true; gmail: gmail_v1.Gmail }
+  | { ok: false; connected: boolean; error?: string }
+> {
   const account = await getAccountWithGmailAccess(userId);
   if (!account?.refresh_token) {
-    return { suggestions: [], connected: false };
+    return { ok: false, connected: false };
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -252,7 +329,7 @@ async function scanGmailInboxInternal(
   const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
   const redirectUri = `${baseUrl}/api/auth/callback/google`;
   if (!clientId || !clientSecret) {
-    return { suggestions: [], connected: true, error: "Gmail not configured" };
+    return { ok: false, connected: true, error: "Gmail not configured" };
   }
 
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
@@ -275,16 +352,26 @@ async function scanGmailInboxInternal(
       }
     } catch {
       return {
-        suggestions: [],
+        ok: false,
         connected: false,
         error: "Gmail session expired. Please connect Gmail again.",
       };
     }
   }
 
-  try {
-    const gmail = google.gmail({ version: "v1", auth: oauth2Client });
+  return { ok: true, gmail: google.gmail({ version: "v1", auth: oauth2Client }) };
+}
 
+async function scanGmailInboxInternal(
+  userId: string
+): Promise<{ candidates: GmailScanCandidate[]; connected: boolean; error?: string }> {
+  const client = await getGmailClientForUser(userId);
+  if (!client.ok) {
+    return { candidates: [], connected: client.connected, error: client.error };
+  }
+  const { gmail } = client;
+
+  try {
     const after = new Date();
     after.setMonth(after.getMonth() - 24);
     const y = after.getFullYear();
@@ -293,45 +380,38 @@ async function scanGmailInboxInternal(
     const afterStr = `${y}/${mo}/${day}`;
 
     const idSet = new Set<string>();
-    for (const q of buildSearchQueries(afterStr)) {
-      const ids = await listMessageIds(gmail, q, MAX_MESSAGES - idSet.size);
+    for (const q of gmailSearchQueries(afterStr)) {
+      const room = MAX_TOTAL_IDS - idSet.size;
+      if (room <= 0) break;
+      const ids = await listMessageIdsForQuery(gmail, q, Math.min(PER_QUERY_CAP, room));
       for (const id of ids) {
         idSet.add(id);
-        if (idSet.size >= MAX_MESSAGES) break;
+        if (idSet.size >= MAX_TOTAL_IDS) break;
       }
-      if (idSet.size >= MAX_MESSAGES) break;
     }
 
     const messageIds = [...idSet];
-    const openaiBudget = { n: 0 };
-
-    const rawSuggestions = await runPool(messageIds, FETCH_CONCURRENCY, (id) =>
-      parseMessageToSuggestion(gmail, id, openaiBudget)
+    const raw = await runPool(messageIds, FETCH_CONCURRENCY, (id) =>
+      parseGmailMessageToCandidate(gmail, id)
     );
+    const candidates = dedupeCandidates(raw);
 
-    const seen = new Set<string>();
-    const deduped: DiscoverSuggestion[] = [];
-    for (const s of rawSuggestions) {
-      const key = normalizeSubName(s.name);
-      if (seen.has(key)) continue;
-      seen.add(key);
-      deduped.push(s);
-    }
-
-    return { suggestions: deduped, connected: true };
+    return { candidates, connected: true };
   } catch (e) {
     console.error("[gmailScan] Gmail API error:", e);
     return {
-      suggestions: [],
+      candidates: [],
       connected: true,
       error: "Failed to scan inbox. Try again or reconnect Gmail.",
     };
   }
 }
 
-export async function scanGmailInbox(
-  userId: string
-): Promise<{ suggestions: DiscoverSuggestion[]; connected: boolean; error?: string }> {
+export async function scanGmailInbox(userId: string): Promise<{
+  candidates: GmailScanCandidate[];
+  connected: boolean;
+  error?: string;
+}> {
   const existing = gmailScanLocks.get(userId);
   if (existing) return existing;
 
@@ -344,91 +424,99 @@ export async function scanGmailInbox(
   }
 }
 
-export type GmailImportResult = {
-  imported: number;
-  updated: number;
-  skippedDuplicates: number;
-  newNames: string[];
-  skippedNames: string[];
-};
+/** Back-compat shape for GET /api/subscriptions/scan-email */
+export function candidateToDiscoverSuggestion(c: GmailScanCandidate): DiscoverSuggestion {
+  const internalMs = Date.parse(`${c.emailDate}T12:00:00Z`);
+  const dates = parseDateFromEmail("", Number.isNaN(internalMs) ? undefined : internalMs);
+  return {
+    name: c.name,
+    category: c.category,
+    price: c.price,
+    billingCycle: c.billingCycle,
+    nextRenewal: dates.nextRenewal,
+    startDate: dates.startDate,
+    logoUrl: c.logoUrl,
+  };
+}
 
-export async function importSuggestionsAsSubscriptions(
+async function importGmailMessageIdsInternal(
   userId: string,
-  suggestions: DiscoverSuggestion[]
+  messageIds: string[]
 ): Promise<GmailImportResult> {
+  const client = await getGmailClientForUser(userId);
+  if (!client.ok) {
+    return { imported: 0, updated: 0, skippedDuplicates: 0, newNames: [], skippedNames: [] };
+  }
+  const { gmail } = client;
+
   const existing = await prisma.subscription.findMany({
     where: { userId, status: { in: ["active", "paused"] } },
-    select: { id: true, name: true, price: true, logoUrl: true, category: true },
+    select: { name: true },
   });
 
-  const byNorm = new Map<string, (typeof existing)[0]>();
-  for (const row of existing) {
-    byNorm.set(normalizeSubName(row.name), row);
-  }
+  const existingNorm = new Set(existing.map((r) => normalizeSubName(r.name)));
 
   let imported = 0;
-  let updated = 0;
   const newNames: string[] = [];
   const skippedNames: string[] = [];
 
-  for (const s of suggestions) {
-    const key = normalizeSubName(s.name);
-    const row = byNorm.get(key);
+  const uniqueIds = [...new Set(messageIds)];
 
-    if (row) {
-      skippedNames.push(s.name);
-      const price = s.price > 0 ? s.price : row.price;
-      const patch: { price?: number; logoUrl?: string | null; category?: string } = {};
-      if (Math.abs(row.price - price) > 0.009) {
-        patch.price = price;
-      }
-      if (s.logoUrl && !row.logoUrl) {
-        patch.logoUrl = s.logoUrl;
-      }
-      if (s.category && s.category !== row.category) {
-        patch.category = s.category;
-      }
-      if (Object.keys(patch).length > 0) {
-        await prisma.subscription.update({
-          where: { id: row.id },
-          data: patch,
-        });
-        if (patch.price !== undefined) updated++;
-      }
+  for (const mid of uniqueIds) {
+    const c = await parseGmailMessageToCandidate(gmail, mid);
+    if (!c) continue;
+
+    const key = normalizeSubName(c.name);
+    if (existingNorm.has(key)) {
+      skippedNames.push(c.name);
       continue;
     }
 
-    const price = s.price > 0 ? s.price : 9.99;
+    const internalMs = Date.parse(`${c.emailDate}T12:00:00Z`);
+    const dates = parseDateFromEmail("", Number.isNaN(internalMs) ? undefined : internalMs);
+
     await prisma.subscription.create({
       data: {
         userId,
-        name: s.name,
-        category: s.category || "Other",
-        price,
-        billingCycle: s.billingCycle,
-        startDate: new Date(s.startDate),
-        nextRenewal: new Date(s.nextRenewal),
+        name: c.name,
+        category: c.category,
+        price: c.price,
+        billingCycle: c.billingCycle,
+        startDate: new Date(dates.startDate),
+        nextRenewal: new Date(dates.nextRenewal),
         status: "active",
-        notes: "Found via Gmail scan",
-        logoUrl: s.logoUrl ?? null,
+        notes: "Added from Gmail",
+        logoUrl: c.logoUrl ?? null,
+        source: "gmail",
       },
     });
-    byNorm.set(key, {
-      id: "local",
-      name: s.name,
-      price,
-      logoUrl: s.logoUrl ?? null,
-      category: s.category,
-    });
+    existingNorm.add(key);
     imported++;
-    newNames.push(s.name);
+    newNames.push(c.name);
   }
 
   return {
     imported,
-    updated,
+    updated: 0,
     skippedDuplicates: skippedNames.length,
     newNames,
     skippedNames,
   };
+}
+
+export async function importGmailMessageIds(
+  userId: string,
+  messageIds: string[]
+): Promise<GmailImportResult> {
+  const key = `${userId}:import`;
+  const existing = importLocks.get(key);
+  if (existing) return existing;
+
+  const p = importGmailMessageIdsInternal(userId, messageIds);
+  importLocks.set(key, p);
+  try {
+    return await p;
+  } finally {
+    importLocks.delete(key);
+  }
 }

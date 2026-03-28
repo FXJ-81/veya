@@ -1,13 +1,13 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
-import { scanGmailInbox } from "@/lib/gmailScan";
+import { candidateToDiscoverSuggestion, scanGmailInbox } from "@/lib/gmailScan";
 
-/** GET — suggestions only (no DB writes). Prefer POST /api/subscriptions/gmail-scan for import. */
+/** GET — suggestions only (no DB writes). Same shape as before for clients. */
 export async function GET(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const { suggestions, connected, error } = await scanGmailInbox(authUser.id);
+  const { candidates, connected, error } = await scanGmailInbox(authUser.id);
   if (!connected && !error) {
     return NextResponse.json({ connected: false, suggestions: [], error: "Gmail not connected" });
   }
@@ -23,6 +23,6 @@ export async function GET(req: Request) {
   }
   return NextResponse.json({
     connected: true,
-    suggestions,
+    suggestions: candidates.map(candidateToDiscoverSuggestion),
   });
 }

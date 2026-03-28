@@ -23,6 +23,8 @@ export interface Subscription {
   status: SubscriptionStatus;
   logoUrl?: string | null;
   notes?: string | null;
+  /** manual (default) or gmail */
+  source?: string;
   isShared: boolean;
   color?: string | null;
   createdAt: string;

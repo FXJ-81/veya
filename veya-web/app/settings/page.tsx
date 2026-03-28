@@ -9,6 +9,10 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import {
+  GmailScanResultsModal,
+  type GmailScanRow,
+} from "@/components/subscriptions/GmailScanResultsModal";
 
 type GmailInfo = {
   gmailConnected: boolean;
@@ -22,6 +26,9 @@ export default function SettingsPage() {
   const [plan, setPlan] = useState<"free" | "premium">("free");
   const [gmail, setGmail] = useState<GmailInfo | null>(null);
   const [gmailLoading, setGmailLoading] = useState(false);
+  const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
+  const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
+  const [gmailImportBusy, setGmailImportBusy] = useState(false);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -71,17 +78,37 @@ export default function SettingsPage() {
       const res = await fetch("/api/subscriptions/gmail-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "manual" }),
+        body: JSON.stringify({ action: "scan", mode: "manual" }),
       });
       const j = await res.json();
       if (!j.ok && j.error) alert(j.error);
-      else if (j.ok) {
-        const lines = [j.summaryNew, j.summarySkipped].filter(Boolean).join("\n");
-        if (lines) alert(lines);
+      else if (j.ok && Array.isArray(j.candidates)) {
+        setGmailCandidates(j.candidates as GmailScanRow[]);
+        setGmailResultsOpen(true);
       }
       await refreshGmail();
     } finally {
       setGmailLoading(false);
+    }
+  };
+
+  const closeGmailResults = () => {
+    if (gmailImportBusy) return;
+    setGmailResultsOpen(false);
+  };
+
+  const importGmailSelection = async (messageIds: string[]) => {
+    setGmailImportBusy(true);
+    try {
+      await fetch("/api/subscriptions/gmail-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import", messageIds }),
+      });
+      setGmailResultsOpen(false);
+      await refreshGmail();
+    } finally {
+      setGmailImportBusy(false);
     }
   };
 
@@ -171,8 +198,8 @@ export default function SettingsPage() {
                   </Badge>
                 </div>
                 <p className="text-sm text-text-secondary">
-                  Last scan: {scanLabel(gmail.lastGmailScanAt)} — last run added{" "}
-                  {gmail.lastGmailScanFoundCount} subscription(s).
+                  Last scan: {scanLabel(gmail.lastGmailScanAt)} — last scan matched{" "}
+                  {gmail.lastGmailScanFoundCount} subscription candidate(s).
                 </p>
                 <div className="flex flex-wrap gap-2">
                   {!gmail.gmailConnected ? (
@@ -250,6 +277,15 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
+
+      <GmailScanResultsModal
+        open={gmailResultsOpen}
+        candidates={gmailCandidates}
+        onClose={closeGmailResults}
+        onSkip={closeGmailResults}
+        onImport={importGmailSelection}
+        busy={gmailImportBusy}
+      />
     </div>
   );
 }

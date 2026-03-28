@@ -5,9 +5,14 @@ import { useSession } from "next-auth/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import {
+  GmailScanResultsModal,
+  type GmailScanRow,
+} from "@/components/subscriptions/GmailScanResultsModal";
 
 type GmailSettings = {
   gmailConnected: boolean;
+  hasAutoScanned: boolean;
   gmailFirstScanCompletedAt: string | null;
 };
 
@@ -19,11 +24,11 @@ export function GmailOnboarding() {
   const router = useRouter();
   const qc = useQueryClient();
   const [banner, setBanner] = useState<BannerState>("idle");
-  const [modal, setModal] = useState(false);
+  const [connectModal, setConnectModal] = useState(false);
+  const [resultsModal, setResultsModal] = useState(false);
+  const [candidates, setCandidates] = useState<GmailScanRow[]>([]);
   const [foundCount, setFoundCount] = useState(0);
-  const [importedCount, setImportedCount] = useState(0);
-  const [skipMessage, setSkipMessage] = useState<string | null>(null);
-  const [summaryNew, setSummaryNew] = useState<string | null>(null);
+  const [importBusy, setImportBusy] = useState(false);
   const scanStarted = useRef(false);
   const userId = (session?.user as { id?: string } | undefined)?.id;
 
@@ -42,7 +47,7 @@ export function GmailOnboarding() {
       };
       if (cancelled) return;
 
-      if (g.gmailFirstScanCompletedAt) {
+      if (g.hasAutoScanned) {
         setBanner("hidden");
         return;
       }
@@ -60,11 +65,10 @@ export function GmailOnboarding() {
         (provider === "credentials" || provider === "google");
 
       if (shouldOfferModal) {
-        setModal(true);
+        setConnectModal(true);
         return;
       }
 
-      // Any sign-in with Gmail connected (Google OAuth or after Connect Gmail flow)
       const shouldAutoScan = g.gmailConnected && !scanStarted.current;
 
       if (!shouldAutoScan) {
@@ -73,19 +77,15 @@ export function GmailOnboarding() {
 
       scanStarted.current = true;
       setBanner("scanning");
-      setModal(false);
-      setSkipMessage(null);
+      setConnectModal(false);
 
       const j = await fetch("/api/subscriptions/gmail-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "first-auto" }),
+        body: JSON.stringify({ action: "scan", mode: "first-auto" }),
       }).then((r) => r.json());
 
       if (cancelled) return;
-
-      await qc.invalidateQueries({ queryKey: ["subscriptions"] });
-      await qc.invalidateQueries({ queryKey: ["analytics"] });
 
       if (j.skipped) {
         setBanner("hidden");
@@ -93,21 +93,21 @@ export function GmailOnboarding() {
       }
 
       if (j.needsGmail) {
-        setModal(true);
+        setConnectModal(true);
         setBanner("idle");
         scanStarted.current = false;
         return;
       }
 
-      if (j.ok) {
-        setFoundCount(typeof j.found === "number" ? j.found : 0);
-        setImportedCount(typeof j.imported === "number" ? j.imported : 0);
-        setSkipMessage(typeof j.summarySkipped === "string" ? j.summarySkipped : null);
-        setSummaryNew(typeof j.summaryNew === "string" && j.summaryNew ? j.summaryNew : null);
+      if (j.ok && Array.isArray(j.candidates)) {
+        setFoundCount(typeof j.found === "number" ? j.found : j.candidates.length);
+        setCandidates(j.candidates as GmailScanRow[]);
+        setResultsModal(true);
         setBanner("success");
-        window.setTimeout(() => setBanner("hidden"), 14000);
+        window.setTimeout(() => setBanner("hidden"), 16000);
       } else {
         setBanner("hidden");
+        scanStarted.current = false;
       }
     }
 
@@ -123,7 +123,7 @@ export function GmailOnboarding() {
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ skipFirstScan: true }),
     });
-    setModal(false);
+    setConnectModal(false);
     setBanner("hidden");
     router.refresh();
   };
@@ -133,49 +133,82 @@ export function GmailOnboarding() {
     window.location.href = `/api/auth/signin/google?callbackUrl=${callbackUrl}`;
   };
 
+  const dismissResults = async () => {
+    setImportBusy(true);
+    try {
+      await fetch("/api/subscriptions/gmail-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "dismiss-first-auto" }),
+      });
+      setResultsModal(false);
+      setBanner("hidden");
+      await qc.invalidateQueries({ queryKey: ["subscriptions"] });
+      router.refresh();
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
+  const importSelected = async (messageIds: string[]) => {
+    setImportBusy(true);
+    try {
+      await fetch("/api/subscriptions/gmail-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "import",
+          messageIds,
+          firstAutoComplete: true,
+        }),
+      });
+      setResultsModal(false);
+      setBanner("hidden");
+      await qc.invalidateQueries({ queryKey: ["subscriptions"] });
+      await qc.invalidateQueries({ queryKey: ["analytics"] });
+      router.refresh();
+    } finally {
+      setImportBusy(false);
+    }
+  };
+
   return (
     <>
       {banner === "scanning" && (
         <div className="mb-4 rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-text-secondary backdrop-blur-sm">
-          🔍 Scanning your Gmail for subscriptions...
+          🔍 Finding your subscriptions...
         </div>
       )}
       {banner === "success" && (
         <div className="mb-4 flex flex-col gap-2 rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-text-primary sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <div className="space-y-1">
-            <span>
-              ✅ Found {foundCount} subscription{foundCount === 1 ? "" : "s"}!
-            </span>
-            {summaryNew && (
-              <p className="text-text-secondary text-xs">{summaryNew}</p>
-            )}
-            {importedCount > 0 && !summaryNew && (
-              <p className="text-text-secondary text-xs">
-                Added {importedCount} new to your list.
-              </p>
-            )}
-            {skipMessage && (
-              <p className="text-text-secondary text-xs">{skipMessage}</p>
-            )}
-          </div>
-          <Link
-            href="/subscriptions"
-            className="font-medium text-accent hover:underline shrink-0"
-          >
-            View subscriptions →
-          </Link>
+          <span>
+            ✅ Found {foundCount} subscription{foundCount === 1 ? "" : "s"}! View them{" "}
+            <Link href="/subscriptions" className="font-medium text-accent hover:underline">
+              here
+            </Link>
+          </span>
         </div>
       )}
 
-      {modal && (
+      <GmailScanResultsModal
+        open={resultsModal}
+        candidates={candidates}
+        onClose={importBusy ? () => {} : dismissResults}
+        onSkip={dismissResults}
+        onImport={importSelected}
+        firstAutoComplete
+        busy={importBusy}
+      />
+
+      {connectModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
             <h3 className="text-lg font-semibold text-text-primary mb-2">
               Find subscriptions automatically?
             </h3>
             <p className="text-sm text-text-secondary mb-6">
-              Want Veya to find your subscriptions automatically? Connect your Gmail
-              to get started.
+              Want Veya to find your subscriptions automatically? Connect your Gmail to get
+              started.
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <button

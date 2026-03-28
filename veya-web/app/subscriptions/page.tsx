@@ -8,6 +8,10 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { SubscriptionCard } from "@/components/subscriptions/SubscriptionCard";
 import { AddSubscriptionModal } from "@/components/subscriptions/AddSubscriptionModal";
 import { EditSubscriptionModal } from "@/components/subscriptions/EditSubscriptionModal";
+import {
+  GmailScanResultsModal,
+  type GmailScanRow,
+} from "@/components/subscriptions/GmailScanResultsModal";
 import { useSubscriptions, useSubscriptionMutations } from "@/hooks/useSubscriptions";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Subscription } from "@/types";
@@ -28,6 +32,9 @@ function SubscriptionsContent() {
   const [gmailConnected, setGmailConnected] = useState(false);
   const [lastGmailScanAt, setLastGmailScanAt] = useState<string | null>(null);
   const [gmailScanning, setGmailScanning] = useState(false);
+  const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
+  const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
+  const [gmailImportBusy, setGmailImportBusy] = useState(false);
 
   useEffect(() => {
     fetch("/api/settings/gmail")
@@ -54,21 +61,44 @@ function SubscriptionsContent() {
       const res = await fetch("/api/subscriptions/gmail-scan", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ mode: "manual" }),
+        body: JSON.stringify({ action: "scan", mode: "manual" }),
       });
       const j = await res.json();
-      if (j.error && !j.ok) {
+      if (!j.ok && j.error) {
         alert(j.error);
-      } else if (j.ok) {
-        const lines = [j.summaryNew, j.summarySkipped].filter(Boolean).join("\n");
-        if (lines) alert(lines);
+        return;
       }
+      if (j.ok && Array.isArray(j.candidates)) {
+        setGmailCandidates(j.candidates as GmailScanRow[]);
+        setGmailResultsOpen(true);
+      }
+      const st = await fetch("/api/settings/gmail").then((r) => r.json());
+      setLastGmailScanAt(st.lastGmailScanAt ?? null);
+    } finally {
+      setGmailScanning(false);
+    }
+  };
+
+  const closeGmailResults = () => {
+    if (gmailImportBusy) return;
+    setGmailResultsOpen(false);
+  };
+
+  const importGmailSelection = async (messageIds: string[]) => {
+    setGmailImportBusy(true);
+    try {
+      await fetch("/api/subscriptions/gmail-scan", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "import", messageIds }),
+      });
+      setGmailResultsOpen(false);
       await qc.invalidateQueries({ queryKey: ["subscriptions"] });
       await qc.invalidateQueries({ queryKey: ["analytics"] });
       const st = await fetch("/api/settings/gmail").then((r) => r.json());
       setLastGmailScanAt(st.lastGmailScanAt ?? null);
     } finally {
-      setGmailScanning(false);
+      setGmailImportBusy(false);
     }
   };
 
@@ -262,6 +292,15 @@ function SubscriptionsContent() {
         subscription={editing}
         onClose={() => setEditing(null)}
         onSubmit={handleSaveEdit}
+      />
+
+      <GmailScanResultsModal
+        open={gmailResultsOpen}
+        candidates={gmailCandidates}
+        onClose={closeGmailResults}
+        onSkip={closeGmailResults}
+        onImport={importGmailSelection}
+        busy={gmailImportBusy}
       />
     </div>
   );

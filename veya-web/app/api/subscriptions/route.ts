@@ -14,6 +14,7 @@ const createSchema = z.object({
   notes: z.string().optional(),
   isShared: z.boolean().optional(),
   color: z.string().optional(),
+  source: z.enum(["manual", "gmail"]).optional(),
 });
 
 export async function GET(req: Request) {
@@ -61,6 +62,7 @@ export async function POST(req: Request) {
       notes: data.notes,
       isShared: data.isShared ?? false,
       color: data.color,
+      source: data.source ?? "manual",
     },
   });
   return NextResponse.json({

@@ -29,6 +29,7 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     gmailConnected,
+    hasAutoScanned: settings?.hasAutoScanned ?? false,
     gmailFirstScanCompletedAt: settings?.gmailFirstScanCompletedAt?.toISOString() ?? null,
     lastGmailScanAt: settings?.lastGmailScanAt?.toISOString() ?? null,
     lastGmailScanFoundCount: settings?.lastGmailScanFoundCount ?? 0,
@@ -52,7 +53,10 @@ export async function PATCH(req: Request) {
   if (body.skipFirstScan) {
     await prisma.userSettings.update({
       where: { userId: authUser.id },
-      data: { gmailFirstScanCompletedAt: new Date() },
+      data: {
+        hasAutoScanned: true,
+        gmailFirstScanCompletedAt: new Date(),
+      },
     });
     return NextResponse.json({ ok: true });
   }

@@ -1,11 +1,8 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
-import {
-  getAccountWithGmailAccess,
-  importSuggestionsAsSubscriptions,
-  scanGmailInbox,
-} from "@/lib/gmailScan";
+import { getAccountWithGmailAccess, importGmailMessageIds, scanGmailInbox } from "@/lib/gmailScan";
 
 async function ensureSettings(userId: string) {
   await prisma.userSettings.upsert({
@@ -15,54 +12,124 @@ async function ensureSettings(userId: string) {
   });
 }
 
-function buildScanSummary(
-  imported: number,
-  newNames: string[],
-  skippedDuplicates: number
-): { summaryNew: string; summarySkipped: string | null } {
-  const summaryNew =
-    imported > 0
-      ? `Found ${imported} new subscription${imported === 1 ? "" : "s"}: ${newNames.join(", ")}`
-      : "No new subscriptions added";
-  const summarySkipped =
-    skippedDuplicates > 0 ? `${skippedDuplicates} already in your list` : null;
-  return { summaryNew, summarySkipped };
+async function markFirstAutoComplete(userId: string) {
+  await prisma.userSettings.update({
+    where: { userId },
+    data: {
+      hasAutoScanned: true,
+      gmailFirstScanCompletedAt: new Date(),
+    },
+  });
 }
+
+const scanBodySchema = z.object({
+  action: z.literal("scan"),
+  mode: z.enum(["first-auto", "manual"]).optional(),
+});
+
+const importBodySchema = z.object({
+  action: z.literal("import"),
+  messageIds: z.array(z.string().min(1)),
+  firstAutoComplete: z.boolean().optional(),
+});
+
+const dismissBodySchema = z.object({
+  action: z.literal("dismiss-first-auto"),
+});
+
+const bodySchema = z.discriminatedUnion("action", [
+  scanBodySchema,
+  importBodySchema,
+  dismissBodySchema,
+]);
 
 /**
  * POST /api/subscriptions/gmail-scan
- * Body: { mode?: "first-auto" | "manual" }
- * - first-auto: only runs if gmail first-scan not completed; marks complete after run (or skip via settings)
- * - manual: rescan anytime when Gmail connected
+ * - { action: "scan", mode?: "first-auto" | "manual" } — returns candidates (no DB subscriptions)
+ * - { action: "import", messageIds, firstAutoComplete? } — add selected; optional first-time completion
+ * - { action: "dismiss-first-auto" } — skip adding; mark first auto flow done
  */
 export async function POST(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { mode?: string } = {};
+  let json: unknown = {};
   try {
-    body = await req.json();
+    const text = await req.text();
+    if (text.trim()) json = JSON.parse(text);
   } catch {
-    // empty body ok
+    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
-  const mode = body.mode === "first-auto" ? "first-auto" : "manual";
+
+  if (
+    json &&
+    typeof json === "object" &&
+    json !== null &&
+    !("action" in json)
+  ) {
+    const legacy = json as { mode?: string };
+    json = {
+      action: "scan",
+      mode: legacy.mode === "first-auto" ? "first-auto" : "manual",
+    };
+  }
+
+  const parsed = bodySchema.safeParse(json);
+  if (!parsed.success) {
+    return NextResponse.json({ error: parsed.error.message }, { status: 400 });
+  }
 
   await ensureSettings(authUser.id);
   const settings = await prisma.userSettings.findUnique({ where: { userId: authUser.id } });
-  const firstDone = !!settings?.gmailFirstScanCompletedAt;
 
-  if (mode === "first-auto" && firstDone) {
+  if (parsed.data.action === "dismiss-first-auto") {
+    await markFirstAutoComplete(authUser.id);
+    return NextResponse.json({ ok: true, dismissed: true });
+  }
+
+  if (parsed.data.action === "import") {
+    const account = await getAccountWithGmailAccess(authUser.id);
+    if (!account?.refresh_token) {
+      return NextResponse.json(
+        { ok: false, error: "Gmail not connected", imported: 0 },
+        { status: 400 }
+      );
+    }
+
+    const result = await importGmailMessageIds(authUser.id, parsed.data.messageIds);
+
+    await prisma.userSettings.update({
+      where: { userId: authUser.id },
+      data: {
+        lastGmailScanAt: new Date(),
+        lastGmailScanFoundCount: result.imported,
+      },
+    });
+
+    if (parsed.data.firstAutoComplete) {
+      await markFirstAutoComplete(authUser.id);
+    }
+
+    return NextResponse.json({
+      ok: true,
+      imported: result.imported,
+      updated: result.updated,
+      skippedDuplicates: result.skippedDuplicates,
+      newSubscriptionNames: result.newNames,
+      skippedNames: result.skippedNames,
+    });
+  }
+
+  const mode = parsed.data.mode ?? "manual";
+  const hasAutoScanned = !!settings?.hasAutoScanned;
+
+  if (mode === "first-auto" && hasAutoScanned) {
     return NextResponse.json({
       skipped: true,
-      message: "First scan already completed",
-      imported: 0,
+      message: "Auto scan already completed",
+      ok: true,
+      candidates: [],
       found: 0,
-      updated: 0,
-      skippedDuplicates: 0,
-      newSubscriptionNames: [] as string[],
-      skippedNames: [] as string[],
-      summaryNew: "",
-      summarySkipped: null,
     });
   }
 
@@ -72,79 +139,41 @@ export async function POST(req: Request) {
       return NextResponse.json({
         ok: false,
         needsGmail: true,
-        imported: 0,
+        candidates: [],
         found: 0,
-        updated: 0,
-        skippedDuplicates: 0,
-        newSubscriptionNames: [],
-        skippedNames: [],
         connected: false,
       });
     }
     return NextResponse.json(
-      {
-        error: "Gmail not connected",
-        imported: 0,
-        found: 0,
-        updated: 0,
-        skippedDuplicates: 0,
-        connected: false,
-      },
+      { ok: false, error: "Gmail not connected", candidates: [], found: 0, connected: false },
       { status: 400 }
     );
   }
 
-  const { suggestions, connected, error } = await scanGmailInbox(authUser.id);
-  if (!connected || error) {
-    await prisma.userSettings.update({
-      where: { userId: authUser.id },
-      data: {
-        ...(mode === "first-auto" ? { gmailFirstScanCompletedAt: new Date() } : {}),
-        lastGmailScanAt: new Date(),
-        lastGmailScanFoundCount: 0,
-      },
-    });
-    return NextResponse.json({
-      ok: false,
-      error: error ?? "Scan failed",
-      imported: 0,
-      found: 0,
-      updated: 0,
-      skippedDuplicates: 0,
-      newSubscriptionNames: [],
-      skippedNames: [],
-      connected: !!connected,
-    });
-  }
-
-  const importResult = await importSuggestionsAsSubscriptions(authUser.id, suggestions);
-  const found = suggestions.length;
-  const { summaryNew, summarySkipped } = buildScanSummary(
-    importResult.imported,
-    importResult.newNames,
-    importResult.skippedDuplicates
-  );
+  const { candidates, connected, error } = await scanGmailInbox(authUser.id);
 
   await prisma.userSettings.update({
     where: { userId: authUser.id },
     data: {
       lastGmailScanAt: new Date(),
-      lastGmailScanFoundCount: importResult.imported,
-      ...(mode === "first-auto" || !firstDone ? { gmailFirstScanCompletedAt: new Date() } : {}),
+      lastGmailScanFoundCount: candidates.length,
     },
   });
 
+  if (!connected || error) {
+    return NextResponse.json({
+      ok: false,
+      error: error ?? "Scan failed",
+      candidates: [],
+      found: 0,
+      connected: !!connected,
+    });
+  }
+
   return NextResponse.json({
     ok: true,
-    imported: importResult.imported,
-    found,
-    updated: importResult.updated,
-    skippedDuplicates: importResult.skippedDuplicates,
-    newSubscriptionNames: importResult.newNames,
-    skippedNames: importResult.skippedNames,
-    summaryNew,
-    summarySkipped,
+    candidates,
+    found: candidates.length,
     connected: true,
-    firstAutoCompleted: mode === "first-auto" || !firstDone,
   });
 }

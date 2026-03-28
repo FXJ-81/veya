@@ -72,6 +72,8 @@ model Subscription {
   status      String   @default("active")
   logoUrl     String?
   notes       String?
+  /// manual | gmail
+  source      String   @default("manual")
   isShared    Boolean  @default(false)
   color       String?
   createdAt   DateTime @default(now())
@@ -136,6 +138,8 @@ model UserSettings {
   budgetLimit        Float?
   /// Set after first-login Gmail flow finished (scan, skip, or connect attempt)
   gmailFirstScanCompletedAt DateTime?
+  /// After first auto-scan UX completes (confirm modal or skip); when true, never auto-scan again
+  hasAutoScanned            Boolean   @default(false)
   lastGmailScanAt           DateTime?
   lastGmailScanFoundCount   Int       @default(0)
   user               User     @relation(fields: [userId], references: [id], onDelete: Cascade)
