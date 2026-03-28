@@ -2,8 +2,11 @@ import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
 import type { gmail_v1 } from "googleapis";
 import { clearbitLogoUrl, normalizeSenderDomain } from "@/lib/knownSubscriptionDomains";
-import { parseDateFromEmail } from "@/lib/subscriptionEmailAnalyze";
+import { parseDateFromEmail, extractSenderDisplayName } from "@/lib/subscriptionEmailAnalyze";
 import type { DiscoverSuggestion } from "@/lib/parseSubscriptionEmail";
+import { scoreSubscription } from "@/lib/emailSubscription/scoreSubscription";
+import { normalizeEmailBody, stripHtmlToPlain } from "@/lib/emailSubscription/normalize";
+import { resolveServiceNameAndCategory } from "@/lib/emailSubscription/resolveMerchant";
 
 export function normalizeSubName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -20,14 +23,14 @@ export async function getAccountWithGmailAccess(userId: string) {
   });
 }
 
-const MAX_TOTAL_IDS = 280;
+const MAX_TOTAL_IDS = 320;
 const PER_QUERY_CAP = 36;
 const FETCH_CONCURRENCY = 6;
 
-const STRICT_PRICE_RE = /\$\s*(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{2}))?\b/g;
+/** Minimum score to allow generic merchant name fallback when catalog resolver returns null */
+const MERCHANT_FALLBACK_MIN_SCORE = 52;
 
-const RECEIPT_SUBJECT_RE =
-  /\b(receipt|invoice|payment|charged|billing|subscription|renewal|order)\b/i;
+const STRICT_PRICE_RE = /\$\s*(\d{1,3}(?:,\d{3})*|\d+)(?:\.(\d{2}))?\b/g;
 
 const gmailScanLocks = new Map<
   string,
@@ -71,9 +74,15 @@ function gmailSearchQueries(afterStr: string): string[] {
     `after:${afterStr} from:dropbox.com subject:(receipt OR invoice)`,
     `after:${afterStr} from:github.com subject:(receipt OR invoice)`,
     `after:${afterStr} from:anthropic.com subject:(receipt OR invoice)`,
+    // Broader billing phrases — scoring pipeline filters false positives
+    `after:${afterStr} subject:(membership renewed OR "auto-renew" OR "recurring payment")`,
+    `after:${afterStr} subject:("next billing" OR "upcoming charge" OR "plan renewed")`,
   ];
 }
 
+/**
+ * Walk MIME parts; use stronger HTML stripping than a single tag regex for scoring input.
+ */
 function collectBodyText(part: gmail_v1.Schema$MessagePart | undefined): string {
   if (!part) return "";
   const chunks: string[] = [];
@@ -82,7 +91,7 @@ function collectBodyText(part: gmail_v1.Schema$MessagePart | undefined): string 
     if (mt === "text/plain" || mt === "text/html") {
       try {
         const raw = Buffer.from(part.body.data, "base64url").toString("utf-8");
-        chunks.push(mt === "text/html" ? raw.replace(/<[^>]+>/g, " ") : raw);
+        chunks.push(mt === "text/html" ? stripHtmlToPlain(raw) : raw);
       } catch {
         // ignore
       }
@@ -96,8 +105,8 @@ function collectBodyText(part: gmail_v1.Schema$MessagePart | undefined): string 
   return chunks.join("\n");
 }
 
-function extractStrictDollarAmount(subject: string, body500: string): number | null {
-  for (const text of [subject, body500]) {
+function extractStrictDollarAmount(subject: string, bodyWindow: string): number | null {
+  for (const text of [subject, bodyWindow]) {
     STRICT_PRICE_RE.lastIndex = 0;
     let m: RegExpExecArray | null;
     while ((m = STRICT_PRICE_RE.exec(text)) !== null) {
@@ -112,23 +121,8 @@ function extractStrictDollarAmount(subject: string, body500: string): number | n
   return null;
 }
 
-function hasExclusionNoise(combinedLower: string): boolean {
-  if (/\bfree\s+trial\b/.test(combinedLower)) return true;
-  if (/\btrial\s+period\b/.test(combinedLower)) return true;
-  if (/\bpassword\s+reset\b/.test(combinedLower)) return true;
-  if (/\bconfirm\s+your\s+email\b/.test(combinedLower)) return true;
-  if (/\bverify\s+your\s+(email|account)\b/.test(combinedLower)) return true;
-  if (/\bwelcome\s+to\b/.test(combinedLower)) return true;
-  if (/\bunsubscribe\s+from\s+marketing\b/.test(combinedLower)) return true;
-  if (/\bshipped\b/.test(combinedLower)) return true;
-  if (/\bdelivered\b/.test(combinedLower)) return true;
-  if (/\btracking\b/.test(combinedLower)) return true;
-  if (/\byour\s+order\s+has\s+shipped\b/.test(combinedLower)) return true;
-  return false;
-}
-
-function inferBillingCycle(subject: string, amount: number): "monthly" | "yearly" {
-  const s = subject.toLowerCase();
+function inferBillingCycle(subject: string, bodyHead: string, amount: number): "monthly" | "yearly" {
+  const s = `${subject}\n${bodyHead}`.toLowerCase();
   if (/\b(annual|yearly|year)\b/.test(s)) return "yearly";
   const cents = Math.round(amount * 100);
   if (amount > 50 && cents % 1200 === 0) return "yearly";
@@ -145,47 +139,12 @@ function passesSubscriptionPriceRules(price: number, cycle: "monthly" | "yearly"
   return eq >= 0.49 && eq <= 99.99;
 }
 
-function resolveServiceNameAndCategory(
-  root: string,
-  subject: string
-): { name: string; category: string } | null {
-  const s = subject.toLowerCase();
-  switch (root) {
-    case "apple.com":
-      if (s.includes("apple one")) return { name: "Apple One", category: "Productivity" };
-      if (s.includes("icloud") || s.includes("icloud+")) return { name: "iCloud+", category: "Storage" };
-      return null;
-    case "openai.com":
-      return { name: "ChatGPT Plus", category: "Productivity" };
-    case "anthropic.com":
-      return { name: "Claude Pro", category: "Productivity" };
-    case "netflix.com":
-      return { name: "Netflix", category: "Streaming" };
-    case "spotify.com":
-      return { name: "Spotify", category: "Music" };
-    case "google.com":
-      if (s.includes("youtube premium") || s.includes("youtube music")) {
-        return { name: "YouTube Premium", category: "Streaming" };
-      }
-      if (s.includes("google one")) return { name: "Google One", category: "Storage" };
-      return null;
-    case "amazon.com":
-      return { name: "Amazon Prime", category: "Shopping" };
-    case "hulu.com":
-      return { name: "Hulu", category: "Streaming" };
-    case "disneyplus.com":
-      return { name: "Disney+", category: "Streaming" };
-    case "microsoft.com":
-      return { name: "Microsoft 365", category: "Productivity" };
-    case "adobe.com":
-      return { name: "Adobe Creative Cloud", category: "Productivity" };
-    case "dropbox.com":
-      return { name: "Dropbox", category: "Storage" };
-    case "github.com":
-      return { name: "GitHub Pro", category: "Productivity" };
-    default:
-      return null;
-  }
+function extractEmailDomain(fromHeader: string): string | null {
+  const emailMatch = fromHeader.match(/<([^>]+)>/);
+  const email = emailMatch ? emailMatch[1] : fromHeader;
+  const at = email.lastIndexOf("@");
+  if (at === -1) return null;
+  return email.slice(at + 1).trim().toLowerCase();
 }
 
 async function listMessageIdsForQuery(
@@ -234,26 +193,42 @@ export async function parseGmailMessageToCandidate(
   const subject = headers.find((h) => h.name?.toLowerCase() === "subject")?.value ?? "";
   const from = headers.find((h) => h.name?.toLowerCase() === "from")?.value ?? "";
   const internalMs = msgRes.internalDate ? parseInt(msgRes.internalDate, 10) : undefined;
+  const snippet = msgRes.snippet ?? "";
 
-  if (!RECEIPT_SUBJECT_RE.test(subject)) return null;
+  const rawBody = collectBodyText(payload);
+  const bodyNorm = normalizeEmailBody(rawBody);
 
-  const bodyFull = collectBodyText(payload);
-  const body500 = bodyFull.slice(0, 500);
-  const scanText = `${subject}\n${body500}`.toLowerCase();
-  if (hasExclusionNoise(scanText)) return null;
+  const scored = scoreSubscription({
+    fromHeader: from,
+    subject,
+    bodyText: rawBody,
+    snippet,
+  });
+
+  if (scored.hardReject || !scored.isSubscription) {
+    return null;
+  }
 
   const rawDomain = extractEmailDomain(from);
   if (!rawDomain) return null;
   const root = normalizeSenderDomain(rawDomain);
   if (!root) return null;
 
-  const resolved = resolveServiceNameAndCategory(root, subject);
-  if (!resolved) return null;
+  const bodyLower = bodyNorm.toLowerCase();
+  let resolved = resolveServiceNameAndCategory(root, subject, bodyLower);
+  if (!resolved) {
+    if (scored.score < MERCHANT_FALLBACK_MIN_SCORE) return null;
+    const display = extractSenderDisplayName(from);
+    const name =
+      display.length >= 2 ? display : root.split(".")[0]!.replace(/^\w/, (c) => c.toUpperCase());
+    resolved = { name, category: "Other" };
+  }
 
-  const amount = extractStrictDollarAmount(subject, body500);
+  const billingWindow = bodyNorm.slice(0, 8000);
+  const amount = extractStrictDollarAmount(subject, billingWindow);
   if (amount === null) return null;
 
-  const billingCycle = inferBillingCycle(subject, amount);
+  const billingCycle = inferBillingCycle(subject, billingWindow.slice(0, 2500), amount);
   if (!passesSubscriptionPriceRules(amount, billingCycle)) return null;
 
   const emailDate = internalMs
@@ -271,14 +246,6 @@ export async function parseGmailMessageToCandidate(
     emailDate,
     senderDomain: root,
   };
-}
-
-function extractEmailDomain(fromHeader: string): string | null {
-  const emailMatch = fromHeader.match(/<([^>]+)>/);
-  const email = emailMatch ? emailMatch[1] : fromHeader;
-  const at = email.lastIndexOf("@");
-  if (at === -1) return null;
-  return email.slice(at + 1).trim().toLowerCase();
 }
 
 function dedupeCandidates(rows: GmailScanCandidate[]): GmailScanCandidate[] {
