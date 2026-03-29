@@ -3,7 +3,10 @@ import { PrismaAdapter } from "@next-auth/prisma-adapter";
 import CredentialsProvider from "next-auth/providers/credentials";
 import GoogleProvider from "next-auth/providers/google";
 import { compare } from "bcryptjs";
+import { applyCanonicalNextAuthUrlForOAuth } from "./googleOAuthCallback";
 import { prisma } from "./prisma";
+
+applyCanonicalNextAuthUrlForOAuth();
 
 /**
  * Google sign-in uses NextAuth at `/api/auth/callback/google` only.

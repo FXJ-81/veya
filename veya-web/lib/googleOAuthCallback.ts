@@ -17,10 +17,44 @@ export const AUTHORIZED_GOOGLE_OAUTH_REDIRECT_URIS: readonly string[] = [
   GOOGLE_OAUTH_REDIRECT_URI_PROD,
 ];
 
+const PROD_HOST = new URL(PROD_ORIGIN).hostname;
+
+/**
+ * Vercel preview URLs (`*.vercel.app` except `veya-beta`) are not registered in Google Cloud.
+ * NextAuth otherwise uses that host as `redirect_uri` → `redirect_uri_mismatch`.
+ * Force the canonical beta origin so Google sign-in and Gmail OAuth match the two allowed URIs.
+ */
+export function applyCanonicalNextAuthUrlForOAuth(): void {
+  const raw = process.env.NEXTAUTH_URL?.trim().replace(/\/+$/, "") ?? "";
+  if (raw === LOCAL_ORIGIN) return;
+
+  let hostname = "";
+  if (raw) {
+    try {
+      hostname = new URL(raw).hostname;
+    } catch {
+      return;
+    }
+  }
+
+  const isNonProdVercelApp =
+    hostname.endsWith(".vercel.app") && hostname !== PROD_HOST;
+
+  if (process.env.VERCEL_ENV === "preview" || isNonProdVercelApp) {
+    process.env.NEXTAUTH_URL = PROD_ORIGIN;
+    return;
+  }
+
+  if (process.env.VERCEL === "1" && !raw) {
+    process.env.NEXTAUTH_URL = PROD_ORIGIN;
+  }
+}
+
 /**
  * Origin only (no path) — must be LOCAL_ORIGIN or PROD_ORIGIN so the callback URL stays standard.
  */
 export function getGoogleOAuthOrigin(): typeof LOCAL_ORIGIN | typeof PROD_ORIGIN {
+  applyCanonicalNextAuthUrlForOAuth();
   const raw = process.env.NEXTAUTH_URL?.trim().replace(/\/+$/, "") ?? "";
   if (raw === PROD_ORIGIN) return PROD_ORIGIN;
   if (raw === LOCAL_ORIGIN) return LOCAL_ORIGIN;
