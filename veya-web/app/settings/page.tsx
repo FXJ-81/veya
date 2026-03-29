@@ -180,7 +180,7 @@ export default function SettingsPage() {
             </div>
             <p className="text-sm text-text-secondary mt-2">
               {plan === "premium"
-                ? "You have full access to AI coach, family sharing, and more."
+                ? "You have full access to AI coach, full analytics, and more."
                 : "Upgrade for unlimited subscriptions, full analytics, and AI coach."}
             </p>
           </Card>

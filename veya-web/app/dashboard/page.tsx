@@ -15,6 +15,7 @@ import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { getGreeting, formatCurrency } from "@/lib/utils";
 import { hasSubscriptionStarted, pricePerMonth } from "@/lib/subscriptionBilling";
+import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { GmailOnboarding } from "@/components/dashboard/GmailOnboarding";
 
@@ -47,10 +48,7 @@ export default function DashboardPage() {
     .filter((s) => hasSubscriptionStarted(new Date(s.startDate)))
     .reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0);
   const renewals = activeSubs
-    .sort(
-      (a, b) =>
-        new Date(a.nextRenewal).getTime() - new Date(b.nextRenewal).getTime()
-    )
+    .sort((a, b) => nextRenewalSortKey(a) - nextRenewalSortKey(b))
     .slice(0, 6);
 
   const stats = [

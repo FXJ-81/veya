@@ -16,6 +16,7 @@ import { useSubscriptions, useSubscriptionMutations } from "@/hooks/useSubscript
 import { useQueryClient } from "@tanstack/react-query";
 import type { Subscription } from "@/types";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 
 function SubscriptionsContent() {
   const { status } = useSession();
@@ -123,9 +124,7 @@ function SubscriptionsContent() {
       .sort((a, b) => {
         if (sort === "name") return a.name.localeCompare(b.name);
         if (sort === "price") return b.price - a.price;
-        return (
-          new Date(a.nextRenewal).getTime() - new Date(b.nextRenewal).getTime()
-        );
+        return nextRenewalSortKey(a) - nextRenewalSortKey(b);
       }) ?? [];
 
   const categories = Array.from(

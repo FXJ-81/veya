@@ -1,8 +1,14 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { formatCurrency, formatDate, getDaysUntil } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { pricePerMonth } from "@/lib/subscriptionBilling";
+import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
+import {
+  accentHueForName,
+  resolveSubscriptionLogoUrl,
+} from "@/lib/subscriptionLogo";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
 import type { Subscription } from "@/types";
@@ -45,17 +51,45 @@ export function SubscriptionCard({
   onSeeAlternative,
   alternative,
 }: SubscriptionCardProps) {
-  const days = getDaysUntil(new Date(subscription.nextRenewal));
+  const renewal = getEffectiveRenewal(subscription);
+  const days =
+    renewal.isPaused || !Number.isFinite(renewal.daysUntil)
+      ? null
+      : renewal.daysUntil;
+
   const statusVariant =
     subscription.status === "paused"
       ? "warning"
       : subscription.status === "cancelled"
         ? "danger"
         : "default";
-  const renewalVariant = days <= 3 ? "danger" : days <= 7 ? "warning" : "success";
+
+  const renewalVariant =
+    renewal.isPaused
+      ? "default"
+      : days !== null && days <= 3
+        ? "danger"
+        : days !== null && days <= 7
+          ? "warning"
+          : "success";
+
   const perMo = pricePerMonth(subscription.price, subscription.billingCycle);
   const showMonthlyHint =
     subscription.billingCycle === "weekly" || subscription.billingCycle === "yearly";
+
+  const logoSrc = resolveSubscriptionLogoUrl(
+    subscription.name,
+    subscription.logoUrl
+  );
+  const [logoFailed, setLogoFailed] = useState(false);
+
+  useEffect(() => {
+    setLogoFailed(false);
+  }, [subscription.id, subscription.name, subscription.logoUrl, logoSrc]);
+
+  const showImg = logoSrc && !logoFailed;
+  const initial = subscription.name.trim().charAt(0).toUpperCase() || "?";
+  const hue = accentHueForName(subscription.name);
 
   return (
     <motion.div
@@ -67,19 +101,25 @@ export function SubscriptionCard({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-start gap-4 min-w-0 flex-1">
           <div
-            className="h-12 w-12 rounded-xl bg-surface flex items-center justify-center text-xl shrink-0"
-            style={subscription.color ? { backgroundColor: subscription.color + "40" } : undefined}
+            className="h-12 w-12 rounded-xl shrink-0 flex items-center justify-center overflow-hidden"
+            style={
+              subscription.color && !showImg
+                ? { backgroundColor: subscription.color + "55" }
+                : showImg
+                  ? { backgroundColor: "rgba(255,255,255,0.06)" }
+                  : { backgroundColor: `hsl(${hue} 55% 32%)` }
+            }
           >
-            {subscription.logoUrl ? (
+            {showImg ? (
+              // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={subscription.logoUrl}
+                src={logoSrc}
                 alt=""
                 className="h-8 w-8 object-contain"
+                onError={() => setLogoFailed(true)}
               />
             ) : (
-              <span className="font-bold text-text-primary">
-                {subscription.name.charAt(0)}
-              </span>
+              <span className="text-lg font-bold text-white">{initial}</span>
             )}
           </div>
           <div className="min-w-0">
@@ -105,7 +145,13 @@ export function SubscriptionCard({
               <Badge variant="default">{subscription.category}</Badge>
               <Badge variant={statusVariant}>{subscription.status}</Badge>
               <Badge variant={renewalVariant}>
-                {days <= 0 ? "Due" : `Renews in ${days}d`}
+                {renewal.isPaused
+                  ? "Paused"
+                  : days !== null
+                    ? days <= 0
+                      ? "Due"
+                      : `Renews in ${days}d`
+                    : "—"}
               </Badge>
             </div>
             <p className="font-mono text-accent font-mono-nums mt-2">
@@ -117,11 +163,20 @@ export function SubscriptionCard({
               </p>
             ) : null}
             <p className="text-xs text-text-tertiary mt-1">
-              Next: {formatDate(subscription.nextRenewal)}
+              Next: {renewal.displayLine}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap gap-2 shrink-0">
+          {subscription.status === "paused" && onPause && (
+            <Button
+              variant="success"
+              size="sm"
+              onClick={() => onPause(subscription.id)}
+            >
+              Resume
+            </Button>
+          )}
           {subscription.status === "active" && onPause && (
             <Button
               variant="secondary"

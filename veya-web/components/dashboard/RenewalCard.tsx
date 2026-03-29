@@ -1,9 +1,9 @@
 "use client";
 
-import Link from "next/link";
 import { motion } from "framer-motion";
-import { formatCurrency, formatDate, getDaysUntil } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { Badge } from "@/components/ui/Badge";
+import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
 import type { Subscription } from "@/types";
 
 interface RenewalCardProps {
@@ -12,9 +12,20 @@ interface RenewalCardProps {
 }
 
 export function RenewalCard({ subscription, index }: RenewalCardProps) {
-  const days = getDaysUntil(new Date(subscription.nextRenewal));
+  const renewal = getEffectiveRenewal(subscription);
+  const days =
+    renewal.isPaused || !Number.isFinite(renewal.daysUntil)
+      ? null
+      : renewal.daysUntil;
+
   const variant =
-    days <= 3 ? "danger" : days <= 7 ? "warning" : "success";
+    renewal.isPaused
+      ? "default"
+      : days !== null && days <= 3
+        ? "danger"
+        : days !== null && days <= 7
+          ? "warning"
+          : "success";
 
   return (
     <motion.div
@@ -31,11 +42,15 @@ export function RenewalCard({ subscription, index }: RenewalCardProps) {
         {subscription.billingCycle}
       </p>
       <Badge variant={variant} className="mt-2">
-        {days <= 0 ? "Due" : `${days} days`}
+        {renewal.isPaused
+          ? "Paused"
+          : days !== null
+            ? days <= 0
+              ? "Due"
+              : `${days} days`
+            : "—"}
       </Badge>
-      <p className="text-xs text-text-tertiary mt-1">
-        {formatDate(subscription.nextRenewal)}
-      </p>
+      <p className="text-xs text-text-tertiary mt-1">{renewal.displayLine}</p>
     </motion.div>
   );
 }

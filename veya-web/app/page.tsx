@@ -21,9 +21,9 @@ const FEATURES = [
     icon: "🔍",
   },
   {
-    title: "Family Sharing",
-    desc: "Share subscriptions with family and split costs fairly.",
-    icon: "👨‍👩‍👧‍👦",
+    title: "Smart insights",
+    desc: "See where your money goes and get alerts before renewals sneak up on you.",
+    icon: "📊",
   },
   {
     title: "AI Coach",
@@ -167,7 +167,7 @@ export default function LandingPage() {
                 <li>Unlimited subscriptions</li>
                 <li>Full analytics & insights</li>
                 <li>Unlimited AI coach</li>
-                <li>Family sharing</li>
+                <li>Export-ready summaries</li>
                 <li>Bank linking</li>
                 <li>7-day free trial</li>
               </ul>

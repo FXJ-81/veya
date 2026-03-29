@@ -53,7 +53,23 @@ export function useSubscriptionMutations() {
       }
       return (await res.json()) as Subscription;
     },
-    onSuccess: async () => {
+    onMutate: async ({ id, ...patch }) => {
+      await qc.cancelQueries({ queryKey: QUERY_KEYS.subscriptions });
+      const previous = qc.getQueryData<Subscription[]>(QUERY_KEYS.subscriptions);
+      qc.setQueryData<Subscription[]>(QUERY_KEYS.subscriptions, (old) =>
+        (old ?? []).map((s) => (s.id === id ? { ...s, ...patch } : s))
+      );
+      return { previous };
+    },
+    onError: (_err, _vars, ctx) => {
+      if (ctx?.previous) {
+        qc.setQueryData(QUERY_KEYS.subscriptions, ctx.previous);
+      }
+    },
+    onSuccess: async (data) => {
+      qc.setQueryData<Subscription[]>(QUERY_KEYS.subscriptions, (old) =>
+        (old ?? []).map((s) => (s.id === data.id ? { ...s, ...data } : s))
+      );
       await invalidateAfterSubscriptionChange(qc);
     },
   });

@@ -11,7 +11,6 @@ const links = [
   { href: "/subscriptions", label: "Subscriptions", icon: "📋" },
   { href: "/analytics", label: "Analytics", icon: "📈" },
   { href: "/coach", label: "AI Coach", icon: "💬" },
-  { href: "/family", label: "Family", icon: "👨‍👩‍👧‍👦" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
