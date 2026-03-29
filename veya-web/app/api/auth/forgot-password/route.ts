@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
 import sgMail from "@sendgrid/mail";
 import { prisma } from "@/lib/prisma";
+import { getGoogleOAuthOrigin } from "@/lib/googleOAuthCallback";
 
 const RESET_EXPIRY_HOURS = 1;
 
@@ -42,7 +43,7 @@ export async function POST(req: Request) {
     data: { identifier: email, token, expires },
   });
 
-  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
+  const baseUrl = getGoogleOAuthOrigin();
   const resetLink = `${baseUrl}/reset-password?token=${token}`;
   const fromEmail = (process.env.SENDGRID_FROM_EMAIL || "").trim() || "noreply@veya.app";
 

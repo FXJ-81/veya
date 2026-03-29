@@ -5,6 +5,13 @@ import GoogleProvider from "next-auth/providers/google";
 import { compare } from "bcryptjs";
 import { prisma } from "./prisma";
 
+/**
+ * Google sign-in uses NextAuth at `/api/auth/callback/google` only.
+ * In Google Cloud, Authorized redirect URIs must be exactly (see `lib/googleOAuthCallback.ts`):
+ * - http://localhost:3000/api/auth/callback/google
+ * - https://veya-beta.vercel.app/api/auth/callback/google
+ * Set NEXTAUTH_URL to the matching origin (no trailing slash).
+ */
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [

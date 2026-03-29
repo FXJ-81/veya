@@ -7,6 +7,7 @@ import type { DiscoverSuggestion } from "@/lib/parseSubscriptionEmail";
 import { scoreSubscription } from "@/lib/emailSubscription/scoreSubscription";
 import { normalizeEmailBody, stripHtmlToPlain } from "@/lib/emailSubscription/normalize";
 import { resolveServiceNameAndCategory } from "@/lib/emailSubscription/resolveMerchant";
+import { getGoogleOAuthRedirectUri } from "@/lib/googleOAuthCallback";
 
 export function normalizeSubName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -293,8 +294,7 @@ async function getGmailClientForUser(
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
-  const baseUrl = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  const redirectUri = `${baseUrl}/api/auth/callback/google`;
+  const redirectUri = getGoogleOAuthRedirectUri();
   if (!clientId || !clientSecret) {
     return { ok: false, connected: true, error: "Gmail not configured" };
   }

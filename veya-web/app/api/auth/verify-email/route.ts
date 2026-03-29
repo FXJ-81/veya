@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
+import { getGoogleOAuthOrigin } from "@/lib/googleOAuthCallback";
 
 const VERIFY_PREFIX = "verify:";
 
@@ -35,6 +36,5 @@ export async function GET(req: Request) {
     return NextResponse.redirect(new URL("/sign-in?error=Something+went+wrong", req.url));
   }
 
-  const base = process.env.NEXTAUTH_URL ?? "http://localhost:3000";
-  return NextResponse.redirect(new URL("/sign-in?verified=1", base));
+  return NextResponse.redirect(new URL("/sign-in?verified=1", getGoogleOAuthOrigin()));
 }
