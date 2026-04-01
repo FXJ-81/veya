@@ -13,9 +13,14 @@ import {
   GmailScanResultsModal,
   type GmailScanRow,
 } from "@/components/subscriptions/GmailScanResultsModal";
+import { executeScanImport } from "@/lib/executeScanImport";
+import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
+import type { ScanImportPayload } from "@/types/scan";
 
 type GmailInfo = {
   gmailConnected: boolean;
+  plaidLinked: boolean;
+  lastPlaidSync: string | null;
   lastGmailScanAt: string | null;
   lastGmailScanFoundCount: number;
 };
@@ -29,6 +34,7 @@ export default function SettingsPage() {
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
+  const [plaidBusy, setPlaidBusy] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -87,7 +93,12 @@ export default function SettingsPage() {
       const j = await res.json();
       if (!j.ok && j.error) alert(j.error);
       else if (j.ok && Array.isArray(j.candidates)) {
-        setGmailCandidates(j.candidates as GmailScanRow[]);
+        const mapped = (j.candidates as GmailScanRow[]).map((c) => ({
+          ...c,
+          rowId: c.messageId ?? c.rowId,
+          source: "gmail" as const,
+        }));
+        setGmailCandidates(mapped);
         setGmailResultsOpen(true);
       }
       await refreshGmail();
@@ -101,18 +112,50 @@ export default function SettingsPage() {
     setGmailResultsOpen(false);
   };
 
-  const importGmailSelection = async (messageIds: string[]) => {
+  const importScanSelection = async (payload: ScanImportPayload) => {
     setGmailImportBusy(true);
     try {
-      await fetch("/api/subscriptions/gmail-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import", messageIds }),
-      });
+      await executeScanImport(payload);
       setGmailResultsOpen(false);
       await refreshGmail();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Import failed");
     } finally {
       setGmailImportBusy(false);
+    }
+  };
+
+  const disconnectPlaid = async () => {
+    setPlaidBusy(true);
+    try {
+      await fetch("/api/settings/gmail", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ disconnectPlaid: true }),
+      });
+      await refreshGmail();
+    } finally {
+      setPlaidBusy(false);
+    }
+  };
+
+  const resyncPlaid = async () => {
+    if (!gmail?.plaidLinked) return;
+    setPlaidBusy(true);
+    try {
+      const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
+      const dj = await det.json().catch(() => ({}));
+      if (!det.ok || !dj.ok) {
+        alert(dj.error ?? "Resync failed");
+        return;
+      }
+      setGmailCandidates(
+        mapPlaidDetectToScanRows(Array.isArray(dj.subscriptions) ? dj.subscriptions : [])
+      );
+      setGmailResultsOpen(true);
+      await refreshGmail();
+    } finally {
+      setPlaidBusy(false);
     }
   };
 
@@ -209,44 +252,75 @@ export default function SettingsPage() {
               Connected accounts
             </h2>
             {gmail ? (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-text-secondary">Gmail:</span>
-                  <Badge variant={gmail.gmailConnected ? "success" : "default"}>
-                    {gmail.gmailConnected ? "Connected ✓" : "Not connected"}
-                  </Badge>
-                </div>
-                <p className="text-sm text-text-secondary">
-                  Last scan: {scanLabel(gmail.lastGmailScanAt)} — last scan matched{" "}
-                  {gmail.lastGmailScanFoundCount} subscription candidate(s).
-                </p>
-                <div className="flex flex-wrap gap-2">
-                  {!gmail.gmailConnected ? (
-                    <Button onClick={connectGmail} disabled={gmailLoading}>
-                      Connect Gmail
-                    </Button>
-                  ) : (
-                    <>
-                      <Button
-                        variant="secondary"
-                        onClick={rescanGmail}
-                        disabled={gmailLoading}
-                      >
-                        Rescan now
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-text-secondary">Gmail:</span>
+                    <Badge variant={gmail.gmailConnected ? "success" : "default"}>
+                      {gmail.gmailConnected ? "Connected ✓" : "Not connected"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-text-secondary">
+                    Last scan: {scanLabel(gmail.lastGmailScanAt)} — last scan matched{" "}
+                    {gmail.lastGmailScanFoundCount} subscription candidate(s).
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {!gmail.gmailConnected ? (
+                      <Button onClick={connectGmail} disabled={gmailLoading}>
+                        Connect Gmail
                       </Button>
-                      <Button
-                        variant="danger"
-                        onClick={disconnectGmail}
-                        disabled={gmailLoading}
-                      >
-                        Disconnect Gmail
-                      </Button>
-                    </>
-                  )}
+                    ) : (
+                      <>
+                        <Button
+                          variant="secondary"
+                          onClick={rescanGmail}
+                          disabled={gmailLoading}
+                        >
+                          Rescan now
+                        </Button>
+                        <Button
+                          variant="danger"
+                          onClick={disconnectGmail}
+                          disabled={gmailLoading}
+                        >
+                          Disconnect Gmail
+                        </Button>
+                      </>
+                    )}
+                  </div>
                 </div>
+
+                <div className="border-t border-border pt-4 space-y-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-sm text-text-secondary">Bank account:</span>
+                    <Badge variant={gmail.plaidLinked ? "success" : "default"}>
+                      {(gmail.plaidLinked ?? false) ? "Connected ✓" : "Not connected"}
+                    </Badge>
+                  </div>
+                  <p className="text-sm text-text-secondary">
+                    Last synced: {scanLabel(gmail.lastPlaidSync)}
+                  </p>
+                  <div className="flex flex-wrap gap-2">
+                    {gmail.plaidLinked ?? false ? (
+                      <>
+                        <Button variant="secondary" onClick={resyncPlaid} disabled={plaidBusy}>
+                          {plaidBusy ? "Syncing…" : "Resync bank"}
+                        </Button>
+                        <Button variant="danger" onClick={disconnectPlaid} disabled={plaidBusy}>
+                          Disconnect bank
+                        </Button>
+                      </>
+                    ) : (
+                      <p className="text-xs text-text-tertiary">
+                        Link your bank from the Subscriptions page to detect recurring charges.
+                      </p>
+                    )}
+                  </div>
+                </div>
+
                 <p className="text-xs text-text-tertiary">
-                  Gmail is used only to find subscription receipts. You can add
-                  subscriptions manually anytime.
+                  Gmail is used only to find subscription receipts. Bank linking uses Plaid to read
+                  transactions for subscription detection.
                 </p>
               </div>
             ) : (
@@ -363,7 +437,7 @@ export default function SettingsPage() {
         candidates={gmailCandidates}
         onClose={closeGmailResults}
         onSkip={closeGmailResults}
-        onImport={importGmailSelection}
+        onImport={importScanSelection}
         busy={gmailImportBusy}
       />
     </div>

@@ -3,28 +3,29 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { formatCurrency } from "@/lib/utils";
+import type { GmailScanRow, ScanImportPayload, SubscriptionScanSource } from "@/types/scan";
 
-export type GmailScanRow = {
-  messageId: string;
-  name: string;
-  category: string;
-  price: number;
-  billingCycle: "monthly" | "yearly";
-  monthlyEquivalent: number;
-  logoUrl: string;
-  emailDate: string;
-  senderDomain: string;
-};
+export type { GmailScanRow, ScanImportPayload } from "@/types/scan";
 
 type GmailScanResultsModalProps = {
   open: boolean;
   candidates: GmailScanRow[];
   onClose: () => void;
   onSkip: () => void | Promise<void>;
-  onImport: (messageIds: string[]) => void | Promise<void>;
+  onImport: (payload: ScanImportPayload) => void | Promise<void>;
   firstAutoComplete?: boolean;
   busy?: boolean;
 };
+
+function rowKey(c: GmailScanRow, index: number): string {
+  return c.rowId ?? c.messageId ?? `scan-${index}`;
+}
+
+function sourceLabel(source?: SubscriptionScanSource): string {
+  if (source === "plaid") return "🏦 Found in bank";
+  if (source === "confirmed") return "✅ Confirmed";
+  return "📧 Found in Gmail";
+}
 
 export function GmailScanResultsModal({
   open,
@@ -40,23 +41,79 @@ export function GmailScanResultsModal({
   useEffect(() => {
     if (!open) return;
     const next: Record<string, boolean> = {};
-    for (const c of candidates) next[c.messageId] = true;
+    candidates.forEach((c, i) => {
+      next[rowKey(c, i)] = true;
+    });
     setSelected(next);
   }, [open, candidates]);
 
-  const selectedIds = useMemo(
-    () => candidates.filter((c) => selected[c.messageId]).map((c) => c.messageId),
+  const selectedRows = useMemo(
+    () =>
+      candidates.filter((c, i) => {
+        const k = rowKey(c, i);
+        return !!selected[k];
+      }),
     [candidates, selected]
   );
 
   const n = candidates.length;
 
-  const toggle = (id: string) => {
-    setSelected((s) => ({ ...s, [id]: !s[id] }));
+  const title = useMemo(() => {
+    if (n === 0) return "We found no subscription candidates";
+    const sources = new Set(candidates.map((c) => c.source ?? "gmail"));
+    const mixed =
+      (sources.has("gmail") && sources.has("plaid")) || sources.has("confirmed");
+    if (mixed) return `We found ${n} subscription candidates`;
+    if (sources.has("plaid") && !sources.has("gmail"))
+      return `We found ${n} subscriptions from your bank`;
+    return `We found ${n} subscriptions in your Gmail`;
+  }, [n, candidates]);
+
+  const toggle = (key: string) => {
+    setSelected((s) => ({ ...s, [key]: !s[key] }));
+  };
+
+  const buildPayload = (): ScanImportPayload => {
+    const gmailMessageIds: string[] = [];
+    const plaidItems: ScanImportPayload["plaidItems"] = [];
+    for (const c of selectedRows) {
+      if (c.source === "confirmed" && c.messageId) {
+        gmailMessageIds.push(c.messageId);
+        continue;
+      }
+      if (c.source === "gmail" && c.messageId) {
+        gmailMessageIds.push(c.messageId);
+        continue;
+      }
+      if (c.source === "plaid" || (c.source === "confirmed" && !c.messageId)) {
+        if (!c.lastCharged) continue;
+        plaidItems.push({
+          name: c.name,
+          category: c.category,
+          price: c.price,
+          billingCycle:
+            c.billingCycle === "custom" ? "monthly" : c.billingCycle,
+          lastCharged: c.lastCharged,
+        });
+        continue;
+      }
+      if (c.messageId) gmailMessageIds.push(c.messageId);
+      else if (c.lastCharged) {
+        plaidItems.push({
+          name: c.name,
+          category: c.category,
+          price: c.price,
+          billingCycle:
+            c.billingCycle === "custom" ? "monthly" : c.billingCycle,
+          lastCharged: c.lastCharged,
+        });
+      }
+    }
+    return { gmailMessageIds, plaidItems };
   };
 
   const handleImport = async () => {
-    await onImport(selectedIds);
+    await onImport(buildPayload());
   };
 
   const handleSkip = async () => {
@@ -67,53 +124,79 @@ export function GmailScanResultsModal({
     <Modal
       open={open}
       onClose={busy ? () => {} : onClose}
-      title={n === 0 ? "We found no subscriptions in your Gmail" : `We found ${n} subscriptions in your Gmail`}
+      title={title}
       className="max-w-lg"
     >
       {n > 0 && (
         <ul className="space-y-3 mb-6 max-h-[min(50vh,420px)] overflow-y-auto pr-1">
-          {candidates.map((c) => (
-            <li
-              key={c.messageId}
-              className="flex gap-3 rounded-xl border border-border bg-background-secondary/80 p-3 text-sm"
-            >
-              <label className="flex flex-1 cursor-pointer gap-3 items-start">
-                <input
-                  type="checkbox"
-                  className="mt-1 rounded border-border"
-                  checked={!!selected[c.messageId]}
-                  onChange={() => toggle(c.messageId)}
-                  disabled={busy}
-                />
-                <span className="flex flex-1 min-w-0 flex-col gap-1">
-                  <span className="flex items-center gap-2 font-medium text-text-primary">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img
-                      src={c.logoUrl}
-                      alt=""
-                      className="h-8 w-8 rounded-lg object-contain bg-white/5 shrink-0"
-                      onError={(e) => {
-                        (e.target as HTMLImageElement).style.display = "none";
-                      }}
-                    />
-                    <span className="truncate">{c.name}</span>
+          {candidates.map((c, index) => {
+            const key = rowKey(c, index);
+            return (
+              <li
+                key={key}
+                className="flex gap-3 rounded-xl border border-border bg-background-secondary/80 p-3 text-sm"
+              >
+                <label className="flex flex-1 cursor-pointer gap-3 items-start">
+                  <input
+                    type="checkbox"
+                    className="mt-1 rounded border-border"
+                    checked={!!selected[key]}
+                    onChange={() => toggle(key)}
+                    disabled={busy}
+                  />
+                  <span className="flex flex-1 min-w-0 flex-col gap-1">
+                    <span className="text-[11px] text-text-tertiary">
+                      {sourceLabel(c.source)}
+                    </span>
+                    <span className="flex items-center gap-2 font-medium text-text-primary">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={c.logoUrl}
+                        alt=""
+                        className="h-8 w-8 rounded-lg object-contain bg-white/5 shrink-0"
+                        onError={(e) => {
+                          (e.target as HTMLImageElement).style.display = "none";
+                        }}
+                      />
+                      <span className="truncate">{c.name}</span>
+                      {c.confidence && (
+                        <span className="text-[10px] uppercase text-text-tertiary shrink-0">
+                          {c.confidence}
+                        </span>
+                      )}
+                    </span>
+                    <span className="text-text-secondary">
+                      {c.source === "plaid" ? (
+                        <>
+                          {formatCurrency(c.price)}/mo
+                          <span className="text-text-tertiary"> (from bank)</span>
+                        </>
+                      ) : c.billingCycle === "yearly" ? (
+                        <>
+                          {formatCurrency(c.price)} / year
+                          <span className="text-text-tertiary">
+                            {" "}
+                            (≈ {formatCurrency(c.monthlyEquivalent)}/mo)
+                          </span>
+                        </>
+                      ) : (
+                        <>
+                          {formatCurrency(c.price)} / {c.billingCycle}
+                        </>
+                      )}
+                    </span>
+                    <span className="text-xs text-text-tertiary">
+                      {c.emailDate
+                        ? `Found in email: ${c.emailDate}`
+                        : c.lastCharged
+                          ? `Last charged: ${c.lastCharged}`
+                          : null}
+                    </span>
                   </span>
-                  <span className="text-text-secondary">
-                    {formatCurrency(c.price)} / {c.billingCycle}
-                    {c.billingCycle === "yearly" && (
-                      <span className="text-text-tertiary">
-                        {" "}
-                        (≈ {formatCurrency(c.monthlyEquivalent)}/mo)
-                      </span>
-                    )}
-                  </span>
-                  <span className="text-xs text-text-tertiary">
-                    Found in email from: {c.emailDate}
-                  </span>
-                </span>
-              </label>
-            </li>
-          ))}
+                </label>
+              </li>
+            );
+          })}
         </ul>
       )}
 
@@ -129,11 +212,12 @@ export function GmailScanResultsModal({
         {n > 0 && (
           <button
             type="button"
-            disabled={busy || selectedIds.length === 0}
+            disabled={busy || selectedRows.length === 0}
             onClick={handleImport}
             className="rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
           >
-            Add {selectedIds.length} selected subscription{selectedIds.length === 1 ? "" : "s"}
+            Add {selectedRows.length} subscription
+            {selectedRows.length === 1 ? "" : "s"}
           </button>
         )}
       </div>

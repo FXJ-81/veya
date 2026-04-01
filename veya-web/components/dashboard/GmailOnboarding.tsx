@@ -9,9 +9,14 @@ import {
   GmailScanResultsModal,
   type GmailScanRow,
 } from "@/components/subscriptions/GmailScanResultsModal";
+import { mergeScanCandidates } from "@/lib/mergeScanCandidates";
+import { executeScanImport } from "@/lib/executeScanImport";
+import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
+import type { ScanImportPayload } from "@/types/scan";
 
 type GmailSettings = {
   gmailConnected: boolean;
+  plaidLinked: boolean;
   hasAutoScanned: boolean;
   gmailFirstScanCompletedAt: string | null;
 };
@@ -61,6 +66,7 @@ export function GmailOnboarding() {
 
       const shouldOfferModal =
         !g.gmailConnected &&
+        !g.plaidLinked &&
         !fromConnect &&
         (provider === "credentials" || provider === "google");
 
@@ -69,7 +75,8 @@ export function GmailOnboarding() {
         return;
       }
 
-      const shouldAutoScan = g.gmailConnected && !scanStarted.current;
+      const shouldAutoScan =
+        (g.gmailConnected || g.plaidLinked) && !scanStarted.current;
 
       if (!shouldAutoScan) {
         return;
@@ -79,35 +86,91 @@ export function GmailOnboarding() {
       setBanner("scanning");
       setConnectModal(false);
 
-      const j = await fetch("/api/subscriptions/gmail-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "scan", mode: "first-auto" }),
-      }).then((r) => r.json());
+      const gmailPromise = g.gmailConnected
+        ? fetch("/api/subscriptions/gmail-scan", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "scan", mode: "first-auto" }),
+          }).then((r) => r.json())
+        : Promise.resolve({
+            ok: false,
+            skipped: false,
+            needsGmail: false,
+            candidates: [],
+          });
+
+      const plaidPromise = g.plaidLinked
+        ? fetch("/api/plaid/detect-subscriptions", { method: "POST" }).then((r) =>
+            r.json()
+          )
+        : Promise.resolve({ ok: false, subscriptions: [] });
+
+      const [gj, pj] = await Promise.all([gmailPromise, plaidPromise]);
 
       if (cancelled) return;
 
-      if (j.skipped) {
-        setBanner("hidden");
-        return;
-      }
-
-      if (j.needsGmail) {
+      if (!g.plaidLinked && gj.needsGmail) {
         setConnectModal(true);
         setBanner("idle");
         scanStarted.current = false;
         return;
       }
 
-      if (j.ok && Array.isArray(j.candidates)) {
-        setFoundCount(typeof j.found === "number" ? j.found : j.candidates.length);
-        setCandidates(j.candidates as GmailScanRow[]);
+      if (gj.skipped && !g.plaidLinked) {
+        setBanner("hidden");
+        return;
+      }
+
+      if (!g.plaidLinked && !gj.ok && !gj.needsGmail) {
+        setBanner("hidden");
+        scanStarted.current = false;
+        return;
+      }
+
+      type GmailCandidate = {
+        messageId: string;
+        name: string;
+        category: string;
+        price: number;
+        billingCycle: "monthly" | "yearly";
+        monthlyEquivalent: number;
+        logoUrl: string;
+        emailDate: string;
+        senderDomain: string;
+      };
+      const gmailRows: GmailScanRow[] = (
+        gj.ok && Array.isArray(gj.candidates) ? gj.candidates : []
+      ).map((c: GmailCandidate) => ({
+        ...c,
+        rowId: c.messageId,
+        source: "gmail" as const,
+      }));
+
+      const plaidRows: GmailScanRow[] =
+        pj.ok && Array.isArray(pj.subscriptions)
+          ? mapPlaidDetectToScanRows(pj.subscriptions)
+          : [];
+
+      let merged: GmailScanRow[] = [];
+      if (gmailRows.length && plaidRows.length) {
+        merged = mergeScanCandidates(gmailRows, plaidRows);
+      } else {
+        merged = [...gmailRows, ...plaidRows];
+      }
+
+      if (merged.length > 0) {
+        setFoundCount(merged.length);
+        setCandidates(merged);
         setResultsModal(true);
         setBanner("success");
         window.setTimeout(() => setBanner("hidden"), 16000);
       } else {
+        await fetch("/api/subscriptions/gmail-scan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "dismiss-first-auto" }),
+        });
         setBanner("hidden");
-        scanStarted.current = false;
       }
     }
 
@@ -150,18 +213,10 @@ export function GmailOnboarding() {
     }
   };
 
-  const importSelected = async (messageIds: string[]) => {
+  const importSelected = async (payload: ScanImportPayload) => {
     setImportBusy(true);
     try {
-      await fetch("/api/subscriptions/gmail-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "import",
-          messageIds,
-          firstAutoComplete: true,
-        }),
-      });
+      await executeScanImport(payload, { firstAutoComplete: true });
       setResultsModal(false);
       setBanner("hidden");
       await qc.invalidateQueries({ queryKey: ["subscriptions"] });

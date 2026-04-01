@@ -18,6 +18,11 @@ export async function GET(req: Request) {
   await ensureSettings(authUser.id);
   const settings = await prisma.userSettings.findUnique({ where: { userId: authUser.id } });
 
+  const userPlaid = await prisma.user.findUnique({
+    where: { id: authUser.id },
+    select: { plaidLinked: true, lastPlaidSync: true },
+  });
+
   const gmailAccount = await prisma.account.findFirst({
     where: {
       userId: authUser.id,
@@ -29,6 +34,8 @@ export async function GET(req: Request) {
 
   return NextResponse.json({
     gmailConnected,
+    plaidLinked: userPlaid?.plaidLinked ?? false,
+    lastPlaidSync: userPlaid?.lastPlaidSync?.toISOString() ?? null,
     hasAutoScanned: settings?.hasAutoScanned ?? false,
     gmailFirstScanCompletedAt: settings?.gmailFirstScanCompletedAt?.toISOString() ?? null,
     lastGmailScanAt: settings?.lastGmailScanAt?.toISOString() ?? null,
@@ -41,7 +48,7 @@ export async function PATCH(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  let body: { skipFirstScan?: boolean; disconnectGmail?: boolean };
+  let body: { skipFirstScan?: boolean; disconnectGmail?: boolean; disconnectPlaid?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -59,6 +66,19 @@ export async function PATCH(req: Request) {
       },
     });
     return NextResponse.json({ ok: true });
+  }
+
+  if (body.disconnectPlaid) {
+    await prisma.user.update({
+      where: { id: authUser.id },
+      data: {
+        plaidAccessToken: null,
+        plaidItemId: null,
+        plaidLinked: false,
+        lastPlaidSync: null,
+      },
+    });
+    return NextResponse.json({ ok: true, disconnectedPlaid: true });
   }
 
   if (body.disconnectGmail) {

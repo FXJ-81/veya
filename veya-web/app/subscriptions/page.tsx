@@ -12,11 +12,15 @@ import {
   GmailScanResultsModal,
   type GmailScanRow,
 } from "@/components/subscriptions/GmailScanResultsModal";
+import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
 import { useSubscriptions, useSubscriptionMutations } from "@/hooks/useSubscriptions";
 import { useQueryClient } from "@tanstack/react-query";
 import type { Subscription } from "@/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
+import { executeScanImport } from "@/lib/executeScanImport";
+import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
+import type { ScanImportPayload } from "@/types/scan";
 
 function SubscriptionsContent() {
   const { status } = useSession();
@@ -31,20 +35,29 @@ function SubscriptionsContent() {
   const qc = useQueryClient();
   const isMutating = create.isPending || update.isPending || remove.isPending;
   const [gmailConnected, setGmailConnected] = useState(false);
+  const [plaidLinked, setPlaidLinked] = useState(false);
+  const [lastPlaidSync, setLastPlaidSync] = useState<string | null>(null);
   const [lastGmailScanAt, setLastGmailScanAt] = useState<string | null>(null);
   const [gmailScanning, setGmailScanning] = useState(false);
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
+  const [plaidLinkToken, setPlaidLinkToken] = useState<string | null>(null);
+  const [plaidBusy, setPlaidBusy] = useState(false);
 
-  useEffect(() => {
+  const refreshConnectionSettings = () =>
     fetch("/api/settings/gmail")
       .then((r) => r.json())
       .then((d) => {
         setGmailConnected(!!d.gmailConnected);
+        setPlaidLinked(!!d.plaidLinked);
+        setLastPlaidSync(d.lastPlaidSync ?? null);
         setLastGmailScanAt(d.lastGmailScanAt ?? null);
       })
       .catch(() => {});
+
+  useEffect(() => {
+    refreshConnectionSettings();
   }, []);
 
   const daysAgo = (iso: string | null) => {
@@ -70,11 +83,15 @@ function SubscriptionsContent() {
         return;
       }
       if (j.ok && Array.isArray(j.candidates)) {
-        setGmailCandidates(j.candidates as GmailScanRow[]);
+        const mapped = (j.candidates as GmailScanRow[]).map((c) => ({
+          ...c,
+          rowId: c.messageId ?? c.rowId,
+          source: "gmail" as const,
+        }));
+        setGmailCandidates(mapped);
         setGmailResultsOpen(true);
       }
-      const st = await fetch("/api/settings/gmail").then((r) => r.json());
-      setLastGmailScanAt(st.lastGmailScanAt ?? null);
+      await refreshConnectionSettings();
     } finally {
       setGmailScanning(false);
     }
@@ -85,21 +102,84 @@ function SubscriptionsContent() {
     setGmailResultsOpen(false);
   };
 
-  const importGmailSelection = async (messageIds: string[]) => {
+  const importScanSelection = async (payload: ScanImportPayload) => {
     setGmailImportBusy(true);
     try {
-      await fetch("/api/subscriptions/gmail-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "import", messageIds }),
-      });
+      await executeScanImport(payload);
       setGmailResultsOpen(false);
       await qc.invalidateQueries({ queryKey: ["subscriptions"] });
       await qc.invalidateQueries({ queryKey: ["analytics"] });
-      const st = await fetch("/api/settings/gmail").then((r) => r.json());
-      setLastGmailScanAt(st.lastGmailScanAt ?? null);
+      await refreshConnectionSettings();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Import failed");
     } finally {
       setGmailImportBusy(false);
+    }
+  };
+
+  const startPlaidLink = async () => {
+    setPlaidBusy(true);
+    try {
+      const res = await fetch("/api/plaid/create-link-token", { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.link_token) {
+        throw new Error(j.error ?? "Could not start bank linking");
+      }
+      setPlaidLinkToken(j.link_token as string);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Plaid error");
+    } finally {
+      setPlaidBusy(false);
+    }
+  };
+
+  const onPlaidLinkSuccess = async (publicToken: string) => {
+    setPlaidLinkToken(null);
+    setPlaidBusy(true);
+    try {
+      const ex = await fetch("/api/plaid/exchange-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_token: publicToken }),
+      });
+      const exj = await ex.json().catch(() => ({}));
+      if (!ex.ok) throw new Error(exj.error ?? "Could not link bank");
+
+      const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
+      const dj = await det.json().catch(() => ({}));
+      if (!det.ok || !dj.ok) throw new Error(dj.error ?? "Could not analyze transactions");
+
+      const rows = mapPlaidDetectToScanRows(
+        Array.isArray(dj.subscriptions) ? dj.subscriptions : []
+      );
+      setGmailCandidates(rows);
+      setGmailResultsOpen(true);
+      await refreshConnectionSettings();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Bank linking failed");
+    } finally {
+      setPlaidBusy(false);
+    }
+  };
+
+  const resyncPlaid = async () => {
+    if (!plaidLinked || plaidBusy) return;
+    setPlaidBusy(true);
+    try {
+      const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
+      const dj = await det.json().catch(() => ({}));
+      if (!det.ok || !dj.ok) {
+        alert(dj.error ?? "Resync failed");
+        return;
+      }
+      const rows = mapPlaidDetectToScanRows(
+        Array.isArray(dj.subscriptions) ? dj.subscriptions : []
+      );
+      setGmailCandidates(rows);
+      setGmailResultsOpen(true);
+      await refreshConnectionSettings();
+    } finally {
+      setPlaidBusy(false);
     }
   };
 
@@ -205,6 +285,25 @@ function SubscriptionsContent() {
                 )}
               </div>
             )}
+            {plaidLinked ? (
+              <button
+                type="button"
+                onClick={resyncPlaid}
+                disabled={plaidBusy}
+                className="rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm font-medium text-text-primary hover:border-accent disabled:opacity-50"
+              >
+                {plaidBusy ? "Syncing…" : "✅ Bank Connected · Resync"}
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={startPlaidLink}
+                disabled={plaidBusy}
+                className="rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm font-medium text-text-primary hover:border-accent disabled:opacity-50"
+              >
+                {plaidBusy ? "…" : "🏦 Connect Bank Account"}
+              </button>
+            )}
             <button
               onClick={() => setAddOpen(true)}
               className="rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
@@ -298,9 +397,17 @@ function SubscriptionsContent() {
         candidates={gmailCandidates}
         onClose={closeGmailResults}
         onSkip={closeGmailResults}
-        onImport={importGmailSelection}
+        onImport={importScanSelection}
         busy={gmailImportBusy}
       />
+
+      {plaidLinkToken && (
+        <PlaidLinkHost
+          token={plaidLinkToken}
+          onSuccess={onPlaidLinkSuccess}
+          onExit={() => setPlaidLinkToken(null)}
+        />
+      )}
     </div>
   );
 }
