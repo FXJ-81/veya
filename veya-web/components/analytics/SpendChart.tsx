@@ -89,7 +89,7 @@ function SpendTooltip({
         {title}: ${total.toFixed(2)}
       </p>
       {contributors.length > 0 ? (
-        <ul className="text-xs text-text-secondary space-y-1 border-t border-border pt-2 max-h-40 overflow-y-auto">
+        <ul className="text-xs text-text-secondary space-y-1 border-t border-border pt-2" style={{ maxHeight: "180px", overflowY: "scroll" }}>
           {contributors.map((c) => (
             <li key={c.name} className="flex justify-between gap-4">
               <span className="truncate">{c.name}</span>

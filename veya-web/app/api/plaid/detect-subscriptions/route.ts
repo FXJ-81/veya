@@ -41,7 +41,7 @@ export async function POST(req: Request) {
     cutoff.setMonth(cutoff.getMonth() - 24);
     const filtered = transactions.filter((t) => new Date(t.date) >= cutoff);
 
-    const subscriptions = detectSubscriptionsFromPlaidTransactions(filtered);
+    const subscriptions = await detectSubscriptionsFromPlaidTransactions(filtered);
 
     await prisma.user.update({
       where: { id: authUser.id },

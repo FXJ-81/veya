@@ -1,4 +1,5 @@
 import type { Transaction } from "plaid";
+import OpenAI from "openai";
 import { WEEKS_PER_MONTH } from "@/lib/subscriptionBilling";
 
 export type PlaidDetectedSubscription = {
@@ -10,38 +11,55 @@ export type PlaidDetectedSubscription = {
   confidence: "high" | "medium";
 };
 
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+
+const VALID_CATEGORIES = new Set([
+  "Streaming", "Music", "Productivity", "Storage", "Gaming",
+  "Education", "News", "Health", "Food", "Shopping", "Transport",
+  "Travel", "Finance", "Utilities", "Entertainment", "AI", "Other",
+]);
+
+// In-memory cache — avoids duplicate OpenAI calls within the same process
+const categoryCache = new Map<string, string>();
+
+async function categoryForMerchantAI(name: string): Promise<string> {
+  const key = name.toLowerCase().trim();
+  if (categoryCache.has(key)) return categoryCache.get(key)!;
+
+  try {
+    const res = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      max_tokens: 10,
+      messages: [
+        {
+          role: "user",
+          content:
+            `What category does this subscription/merchant belong to? ` +
+            `Merchant name: ${name}. ` +
+            `Reply with ONLY one of these exact words: ` +
+            `Streaming, Music, Productivity, Storage, Gaming, Education, ` +
+            `News, Health, Food, Shopping, Transport, Travel, Finance, ` +
+            `Utilities, Entertainment, AI, Other`,
+        },
+      ],
+    });
+    const raw = res.choices[0]?.message?.content?.trim() ?? "";
+    const category = VALID_CATEGORIES.has(raw) ? raw : "Other";
+    categoryCache.set(key, category);
+    return category;
+  } catch {
+    categoryCache.set(key, "Other");
+    return "Other";
+  }
+}
+
 const KNOWN = [
-  "netflix",
-  "spotify",
-  "apple",
-  "google",
-  "amazon prime",
-  "hulu",
-  "disney",
-  "youtube",
-  "microsoft",
-  "adobe",
-  "dropbox",
-  "github",
-  "openai",
-  "anthropic",
-  "notion",
-  "linkedin",
-  "duolingo",
-  "nyt",
-  "new york times",
-  "chatgpt",
-  "icloud",
-  "peacock",
-  "paramount",
-  "espn",
-  "hbo",
-  "xbox",
-  "playstation",
-  "nintendo",
-  "calm",
-  "headspace",
-  "peloton",
+  "netflix", "spotify", "apple", "google", "amazon prime", "hulu",
+  "disney", "youtube", "microsoft", "adobe", "dropbox", "github",
+  "openai", "anthropic", "notion", "linkedin", "duolingo", "nyt",
+  "new york times", "chatgpt", "icloud", "peacock", "paramount",
+  "espn", "hbo", "xbox", "playstation", "nintendo", "calm",
+  "headspace", "peloton",
 ];
 
 function normalizeMerchant(tx: Transaction): string {
@@ -56,21 +74,6 @@ function normalizeKey(s: string): string {
 function isKnownMerchant(name: string): boolean {
   const k = normalizeKey(name);
   return KNOWN.some((svc) => k.includes(svc) || svc.includes(k));
-}
-
-function categoryForMerchant(name: string): string {
-  const k = normalizeKey(name);
-  if (/netflix|hulu|disney|hbo|paramount|peacock|espn|apple tv|youtube|crunchyroll|fubo/.test(k)) return "Streaming";
-  if (/spotify|apple music|tidal|amazon music|youtube music|pandora|soundcloud/.test(k)) return "Music";
-  if (/openai|chatgpt|anthropic|claude|midjourney|perplexity|github copilot/.test(k)) return "AI";
-  if (/icloud|google one|onedrive|box/.test(k)) return "Storage";
-  if (/xbox|playstation|nintendo|ea games|steam|roblox/.test(k)) return "Gaming";
-  if (/duolingo|coursera|skillshare|masterclass|chegg|khan/.test(k)) return "Education";
-  if (/nyt|new york times|washington post|wall street journal|the athletic/.test(k)) return "News";
-  if (/peloton|calm|headspace|myfitnesspal|strava|noom|equinox/.test(k)) return "Health";
-  if (/starbucks|mcdonald|kfc|subway|doordash|uber eats|grubhub/.test(k)) return "Food & Dining";
-  if (/microsoft|adobe|notion|dropbox|google|slack|zoom|grammarly|canva|evernote|github|figma|linear/.test(k)) return "Productivity";
-  return "Other";
 }
 
 function median(nums: number[]): number {
@@ -89,20 +92,17 @@ function classifyCycle(daysBetween: number): "monthly" | "yearly" | "weekly" | "
 
 function toMonthlyAmount(amount: number, cycle: "monthly" | "yearly" | "weekly" | "custom"): number {
   switch (cycle) {
-    case "yearly":
-      return amount / 12;
-    case "weekly":
-      return amount * WEEKS_PER_MONTH;
+    case "yearly": return amount / 12;
+    case "weekly": return amount * WEEKS_PER_MONTH;
     case "custom":
     case "monthly":
-    default:
-      return amount;
+    default: return amount;
   }
 }
 
-export function detectSubscriptionsFromPlaidTransactions(
+export async function detectSubscriptionsFromPlaidTransactions(
   transactions: Transaction[]
-): PlaidDetectedSubscription[] {
+): Promise<PlaidDetectedSubscription[]> {
   const settled = transactions.filter((t) => !t.pending);
   const byMerchant = new Map<string, Transaction[]>();
 
@@ -120,6 +120,7 @@ export function detectSubscriptionsFromPlaidTransactions(
     byMerchant.set(name, list);
   }
 
+  // Build candidate list (category placeholder — filled in after AI calls)
   const out: PlaidDetectedSubscription[] = [];
 
   for (const [merchant, txs] of byMerchant) {
@@ -130,7 +131,6 @@ export function detectSubscriptionsFromPlaidTransactions(
     );
     const last = sorted[sorted.length - 1]!;
     const lastCharged = last.date;
-
     const known = isKnownMerchant(merchant);
 
     if (sorted.length >= 2) {
@@ -146,14 +146,13 @@ export function detectSubscriptionsFromPlaidTransactions(
       const amounts = sorted.map((t) => Math.abs(Number(t.amount)));
       const avg = amounts.reduce((a, b) => a + b, 0) / amounts.length;
       const monthlyPrice = Number(toMonthlyAmount(avg, cycle).toFixed(2));
-      const confidence: "high" | "medium" =
-        known || sorted.length >= 3 ? "high" : "medium";
+      const confidence: "high" | "medium" = known || sorted.length >= 3 ? "high" : "medium";
 
       out.push({
         name: merchant,
         price: monthlyPrice,
         billingCycle: cycle === "custom" ? "monthly" : cycle,
-        category: categoryForMerchant(merchant),
+        category: "Other", // filled in below
         lastCharged,
         confidence,
       });
@@ -161,16 +160,24 @@ export function detectSubscriptionsFromPlaidTransactions(
     }
 
     if (known && sorted.length === 1) {
-      const avg = Math.abs(Number(last.amount));
       out.push({
         name: merchant,
-        price: Number(avg.toFixed(2)),
+        price: Number(Math.abs(Number(last.amount)).toFixed(2)),
         billingCycle: "monthly",
-        category: categoryForMerchant(merchant),
+        category: "Other", // filled in below
         lastCharged,
         confidence: "medium",
       });
     }
+  }
+
+  // Categorize all unique merchants in parallel (cached so no duplicate calls)
+  const uniqueMerchants = [...new Set(out.map((s) => s.name))];
+  await Promise.all(uniqueMerchants.map((m) => categoryForMerchantAI(m)));
+
+  // Assign AI-determined categories
+  for (const sub of out) {
+    sub.category = categoryCache.get(sub.name.toLowerCase().trim()) ?? "Other";
   }
 
   out.sort((a, b) => a.name.localeCompare(b.name));
