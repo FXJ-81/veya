@@ -29,6 +29,10 @@ export default function SettingsPage() {
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
+  const [deleteOpen, setDeleteOpen] = useState(false);
+  const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteBusy, setDeleteBusy] = useState(false);
+  const [deleteToast, setDeleteToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -133,6 +137,21 @@ export default function SettingsPage() {
   if (status === "loading" || status === "unauthenticated") {
     return <div className="min-h-screen flex items-center justify-center" />;
   }
+
+  const runDeleteAccount = async () => {
+    setDeleteToast(null);
+    setDeleteBusy(true);
+    try {
+      const res = await fetch("/api/user/account", { method: "DELETE" });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(json.error ?? "Delete failed");
+      // Ensure client session clears too.
+      await signOut({ callbackUrl: "/" });
+    } catch (e) {
+      setDeleteToast(e instanceof Error ? e.message : "Failed to delete account");
+      setDeleteBusy(false);
+    }
+  };
 
   return (
     <div className="min-h-screen bg-background">
@@ -262,8 +281,8 @@ export default function SettingsPage() {
             <p className="text-sm text-text-secondary mb-4">
               Delete your account and all data. This cannot be undone.
             </p>
-            <Button variant="danger" disabled>
-              Delete account (not implemented)
+            <Button variant="danger" onClick={() => { setDeleteOpen(true); setDeleteConfirm(""); setDeleteToast(null); }}>
+              Delete account
             </Button>
           </Card>
 
@@ -277,6 +296,67 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
+
+      {deleteToast && (
+        <div className="fixed top-4 right-4 z-[60] max-w-sm rounded-xl border border-danger/30 bg-card px-4 py-3 text-sm text-text-primary shadow-lg">
+          <div className="font-medium text-danger mb-1">Error</div>
+          <div className="text-text-secondary">{deleteToast}</div>
+        </div>
+      )}
+
+      {deleteOpen && (
+        <div
+          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          onMouseDown={(e) => {
+            if (e.target === e.currentTarget && !deleteBusy) setDeleteOpen(false);
+          }}
+        >
+          <div
+            className="w-full max-w-md rounded-2xl border p-5"
+            style={{ background: "#111118", borderColor: "#2a2a3a" }}
+            onMouseDown={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-lg font-semibold text-text-primary mb-2">
+              Delete your account?
+            </h3>
+            <p className="text-sm text-text-secondary mb-4">
+              This will permanently delete your account and all your data including subscriptions,
+              chat history, and settings. This cannot be undone.
+            </p>
+
+            <div className="mb-4">
+              <label className="block text-xs text-text-tertiary mb-2">
+                Type <span className="text-text-primary font-semibold">DELETE</span> to confirm
+              </label>
+              <input
+                value={deleteConfirm}
+                onChange={(e) => setDeleteConfirm(e.target.value)}
+                placeholder="DELETE"
+                disabled={deleteBusy}
+                className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
+              />
+            </div>
+
+            <div className="flex justify-end gap-2">
+              <Button
+                variant="secondary"
+                onClick={() => setDeleteOpen(false)}
+                disabled={deleteBusy}
+              >
+                Cancel
+              </Button>
+              <button
+                onClick={runDeleteAccount}
+                disabled={deleteBusy || deleteConfirm !== "DELETE"}
+                className="rounded-xl px-4 py-2 text-sm font-medium text-background transition-colors disabled:opacity-50"
+                style={{ background: "#f87171" }}
+              >
+                {deleteBusy ? "Deleting..." : "Delete Account"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <GmailScanResultsModal
         open={gmailResultsOpen}

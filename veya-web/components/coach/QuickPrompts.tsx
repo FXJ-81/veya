@@ -4,9 +4,12 @@ import { motion } from "framer-motion";
 
 const PROMPTS = [
   "What can I cancel?",
-  "Show my biggest waste",
-  "How do I save $50/month?",
   "What renews this week?",
+  "Add a subscription",
+  "How much am I spending?",
+  "Pause a subscription",
+  "Show my most expensive",
+  "Show me my subscriptions",
 ];
 
 interface QuickPromptsProps {
