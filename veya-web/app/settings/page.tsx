@@ -13,6 +13,7 @@ import {
   GmailScanResultsModal,
   type GmailScanRow,
 } from "@/components/subscriptions/GmailScanResultsModal";
+import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
 import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
@@ -35,6 +36,7 @@ export default function SettingsPage() {
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
   const [plaidBusy, setPlaidBusy] = useState(false);
+  const [plaidLinkToken, setPlaidLinkToken] = useState<string | null>(null);
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
@@ -122,6 +124,49 @@ export default function SettingsPage() {
       alert(e instanceof Error ? e.message : "Import failed");
     } finally {
       setGmailImportBusy(false);
+    }
+  };
+
+  const startPlaidLink = async () => {
+    setPlaidBusy(true);
+    try {
+      const res = await fetch("/api/plaid/create-link-token", { method: "POST" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok || !j.link_token) throw new Error(j.error ?? "Could not start bank linking");
+      setPlaidLinkToken(j.link_token as string);
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Plaid error");
+    } finally {
+      setPlaidBusy(false);
+    }
+  };
+
+  const onPlaidLinkSuccess = async (publicToken: string) => {
+    setPlaidLinkToken(null);
+    setPlaidBusy(true);
+    try {
+      const ex = await fetch("/api/plaid/exchange-token", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ public_token: publicToken }),
+      });
+      const exj = await ex.json().catch(() => ({}));
+      if (!ex.ok) throw new Error(exj.error ?? "Could not link bank");
+
+      const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
+      const dj = await det.json().catch(() => ({}));
+      if (!det.ok || !dj.ok) throw new Error(dj.error ?? "Could not analyze transactions");
+
+      const rows = mapPlaidDetectToScanRows(
+        Array.isArray(dj.subscriptions) ? dj.subscriptions : []
+      );
+      setGmailCandidates(rows);
+      setGmailResultsOpen(true);
+      await refreshGmail();
+    } catch (e) {
+      alert(e instanceof Error ? e.message : "Bank linking failed");
+    } finally {
+      setPlaidBusy(false);
     }
   };
 
@@ -311,9 +356,9 @@ export default function SettingsPage() {
                         </Button>
                       </>
                     ) : (
-                      <p className="text-xs text-text-tertiary">
-                        Link your bank from the Subscriptions page to detect recurring charges.
-                      </p>
+                      <Button onClick={startPlaidLink} disabled={plaidBusy}>
+                        {plaidBusy ? "…" : "🏦 Connect Bank Account"}
+                      </Button>
                     )}
                   </div>
                 </div>
@@ -440,6 +485,14 @@ export default function SettingsPage() {
         onImport={importScanSelection}
         busy={gmailImportBusy}
       />
+
+      {plaidLinkToken && (
+        <PlaidLinkHost
+          token={plaidLinkToken}
+          onSuccess={onPlaidLinkSuccess}
+          onExit={() => setPlaidLinkToken(null)}
+        />
+      )}
     </div>
   );
 }
