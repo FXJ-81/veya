@@ -60,15 +60,17 @@ function isKnownMerchant(name: string): boolean {
 
 function categoryForMerchant(name: string): string {
   const k = normalizeKey(name);
-  if (/netflix|hulu|disney|peacock|paramount|hbo|espn|youtube/.test(k)) return "Streaming";
-  if (/spotify|apple music/.test(k)) return "Music";
-  if (/microsoft|adobe|github|openai|anthropic|notion|dropbox/.test(k)) return "Software";
-  if (/xbox|playstation|nintendo/.test(k)) return "Gaming";
-  if (/nyt|new york times/.test(k)) return "News";
-  if (/linkedin/.test(k)) return "Professional";
-  if (/duolingo|calm|headspace|peloton/.test(k)) return "Lifestyle";
-  if (/amazon prime|google|apple|icloud/.test(k)) return "Subscriptions";
-  return "Subscriptions";
+  if (/netflix|hulu|disney|hbo|paramount|peacock|espn|apple tv|youtube|crunchyroll|fubo/.test(k)) return "Streaming";
+  if (/spotify|apple music|tidal|amazon music|youtube music|pandora|soundcloud/.test(k)) return "Music";
+  if (/openai|chatgpt|anthropic|claude|midjourney|perplexity|github copilot/.test(k)) return "AI";
+  if (/icloud|google one|onedrive|box/.test(k)) return "Storage";
+  if (/xbox|playstation|nintendo|ea games|steam|roblox/.test(k)) return "Gaming";
+  if (/duolingo|coursera|skillshare|masterclass|chegg|khan/.test(k)) return "Education";
+  if (/nyt|new york times|washington post|wall street journal|the athletic/.test(k)) return "News";
+  if (/peloton|calm|headspace|myfitnesspal|strava|noom|equinox/.test(k)) return "Health";
+  if (/starbucks|mcdonald|kfc|subway|doordash|uber eats|grubhub/.test(k)) return "Food & Dining";
+  if (/microsoft|adobe|notion|dropbox|google|slack|zoom|grammarly|canva|evernote|github|figma|linear/.test(k)) return "Productivity";
+  return "Other";
 }
 
 function median(nums: number[]): number {
