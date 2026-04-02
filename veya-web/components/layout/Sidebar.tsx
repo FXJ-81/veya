@@ -10,7 +10,6 @@ const links = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/subscriptions", label: "Subscriptions", icon: "📋" },
   { href: "/analytics", label: "Analytics", icon: "📈" },
-  { href: "/budget", label: "Budget", icon: "💰" },
   { href: "/coach", label: "AI Coach", icon: "💬" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
