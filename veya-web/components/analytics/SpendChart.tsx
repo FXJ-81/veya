@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import {
   BarChart,
   Bar,
@@ -10,7 +11,7 @@ import {
   CartesianGrid,
   Cell,
 } from "recharts";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import type { MonthlySpend } from "@/types";
 
 interface SpendChartProps {
@@ -18,8 +19,12 @@ interface SpendChartProps {
 }
 
 const INDIGO = "#5b6ef5";
+const INDIGO_DIM = "#3a4aaa";
 const INDIGO_CURRENT = "#8b9fff";
+const INDIGO_CURRENT_DIM = "#5560bb";
 const INDIGO_FUTURE = "rgba(91, 110, 245, 0.4)";
+const INDIGO_FUTURE_DIM = "rgba(91, 110, 245, 0.18)";
+const INDIGO_SELECTED = "#c4d0ff";
 const ACCENT_TICK = "#8b9fff";
 
 type ChartRow = MonthlySpend & { fill: string; stroke: string; strokeDasharray: string };
@@ -40,31 +45,27 @@ function buildRows(data: MonthlySpend[]): ChartRow[] {
   return data.map((raw) => {
     const d = normalizeMonth(raw);
     if (d.period === "current") {
-      return {
-        ...d,
-        fill: INDIGO_CURRENT,
-        stroke: INDIGO_CURRENT,
-        strokeDasharray: "0",
-      };
+      return { ...d, fill: INDIGO_CURRENT, stroke: INDIGO_CURRENT, strokeDasharray: "0" };
     }
     if (d.period === "future") {
-      return {
-        ...d,
-        fill: INDIGO_FUTURE,
-        stroke: INDIGO,
-        strokeDasharray: "4 4",
-      };
+      return { ...d, fill: INDIGO_FUTURE, stroke: INDIGO, strokeDasharray: "4 4" };
     }
-    return {
-      ...d,
-      fill: INDIGO,
-      stroke: "transparent",
-      strokeDasharray: "0",
-    };
+    return { ...d, fill: INDIGO, stroke: "transparent", strokeDasharray: "0" };
   });
 }
 
-function SpendTooltip({
+function cellFill(entry: ChartRow, selected: ChartRow | null): string {
+  if (!selected) return entry.fill;
+  const isSelected = entry.label === selected.label && entry.year === selected.year;
+  if (isSelected) return INDIGO_SELECTED;
+  if (entry.period === "future") return INDIGO_FUTURE_DIM;
+  if (entry.period === "current") return INDIGO_CURRENT_DIM;
+  return INDIGO_DIM;
+}
+
+// ─── simple hover tooltip (total only) ───────────────────────────────────────
+
+function HoverTooltip({
   active,
   payload,
 }: {
@@ -72,41 +73,104 @@ function SpendTooltip({
   payload?: { payload: ChartRow }[];
 }) {
   if (!active || !payload?.length) return null;
-  const raw = payload[0]?.payload;
-  if (!raw) return null;
-  const row = normalizeMonth(raw as MonthlySpend);
-  const contributors = row.contributors;
-  const isFuture = row.period === "future";
-  const title = isFuture ? "Projected spend" : "Actual spend";
+  const row = normalizeMonth(payload[0]!.payload as MonthlySpend);
   const total = Number(row.total) || 0;
-
+  const kind = row.period === "future" ? "Projected" : "Actual";
   return (
-    <div className="rounded-xl border border-border bg-[#111118] px-3 py-2 shadow-lg max-w-xs">
-      <p className="text-sm font-medium text-text-primary mb-1">
-        {row.label} {row.year}
+    <div
+      className="rounded-lg border px-3 py-1.5 shadow-lg pointer-events-none"
+      style={{ background: "#111118", borderColor: "#2a2a3a" }}
+    >
+      <p className="text-xs font-medium text-text-primary">
+        {row.label} {row.year}:{" "}
+        <span className="text-accent font-mono">${total.toFixed(2)}</span>
       </p>
-      <p className="font-mono text-accent font-mono-nums text-base mb-2">
-        {title}: ${total.toFixed(2)}
-      </p>
-      {contributors.length > 0 ? (
-        <ul className="text-xs text-text-secondary space-y-1 border-t border-border pt-2" style={{ maxHeight: "180px", overflowY: "scroll" }}>
-          {contributors.map((c) => (
-            <li key={c.name} className="flex justify-between gap-4">
-              <span className="truncate">{c.name}</span>
-              <span className="font-mono shrink-0 font-mono-nums">${c.amount.toFixed(2)}</span>
-            </li>
-          ))}
-        </ul>
-      ) : (
-        <p className="text-xs text-text-tertiary">No subscriptions in this month.</p>
-      )}
+      <p className="text-[10px] text-text-tertiary mt-0.5">{kind} · click bar to see breakdown</p>
     </div>
   );
 }
 
+// ─── breakdown panel ──────────────────────────────────────────────────────────
+
+function BreakdownPanel({
+  row,
+  onClose,
+}: {
+  row: ChartRow;
+  onClose: () => void;
+}) {
+  const normalized = normalizeMonth(row);
+  const total = Number(normalized.total) || 0;
+  const kind = normalized.period === "future" ? "Projected spend" : "Actual spend";
+  const contributors = [...normalized.contributors].sort((a, b) => b.amount - a.amount);
+
+  return (
+    <motion.div
+      key={`${normalized.label}-${normalized.year}`}
+      initial={{ opacity: 0, y: -10 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: -6 }}
+      transition={{ duration: 0.2, ease: "easeOut" }}
+      className="mt-4 rounded-xl border overflow-hidden"
+      style={{ background: "#111118", borderColor: "#2a2a3a" }}
+    >
+      {/* header */}
+      <div className="flex items-center justify-between px-4 py-3 border-b" style={{ borderColor: "#2a2a3a" }}>
+        <p className="text-sm font-semibold text-text-primary">
+          {normalized.label} {normalized.year}
+          <span className="text-text-tertiary font-normal mx-1">—</span>
+          {kind}:{" "}
+          <span className="text-accent font-mono">${total.toFixed(2)}</span>
+        </p>
+        <button
+          onClick={onClose}
+          aria-label="Close breakdown"
+          className="text-text-tertiary hover:text-text-primary transition-colors rounded-lg p-1 hover:bg-surface text-lg leading-none"
+        >
+          ✕
+        </button>
+      </div>
+
+      {/* scrollable list */}
+      <div style={{ maxHeight: "260px", overflowY: "auto" }}>
+        {contributors.length > 0 ? (
+          <ul className="divide-y" style={{ borderColor: "#1e1e2a" }}>
+            {contributors.map((c) => (
+              <li
+                key={c.name}
+                className="flex items-center justify-between gap-4 px-4 py-2.5"
+              >
+                <span className="text-sm text-text-primary truncate">{c.name}</span>
+                <span className="text-sm font-mono text-text-secondary shrink-0">
+                  ${c.amount.toFixed(2)}
+                </span>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p className="px-4 py-6 text-sm text-text-tertiary text-center">
+            No subscriptions in this month.
+          </p>
+        )}
+      </div>
+    </motion.div>
+  );
+}
+
+// ─── main component ───────────────────────────────────────────────────────────
+
 export function SpendChart({ data }: SpendChartProps) {
   const rows = buildRows(data);
   const year = data[0]?.year ?? new Date().getFullYear();
+  const [selected, setSelected] = useState<ChartRow | null>(null);
+
+  const handleBarClick = (chartData: { activePayload?: { payload: ChartRow }[] } | null) => {
+    const clicked = chartData?.activePayload?.[0]?.payload;
+    if (!clicked) return;
+    setSelected((prev) =>
+      prev?.label === clicked.label && prev?.year === clicked.year ? null : clicked
+    );
+  };
 
   return (
     <motion.div
@@ -124,22 +188,23 @@ export function SpendChart({ data }: SpendChartProps) {
         </div>
         <div className="flex flex-wrap items-center gap-5 text-xs text-text-secondary font-medium">
           <span className="flex items-center gap-1.5">
-            <span className="text-[#5b6ef5]" aria-hidden>
-              ■
-            </span>
+            <span className="text-[#5b6ef5]" aria-hidden>■</span>
             Actual
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="text-[#5b6ef5] opacity-90" aria-hidden>
-              □
-            </span>
+            <span className="text-[#5b6ef5] opacity-90" aria-hidden>□</span>
             Projected
           </span>
         </div>
       </div>
-      <div className="h-72">
+
+      <div className="h-72 cursor-pointer">
         <ResponsiveContainer width="100%" height="100%">
-          <BarChart data={rows} margin={{ top: 8, right: 8, left: 4, bottom: 4 }}>
+          <BarChart
+            data={rows}
+            margin={{ top: 8, right: 8, left: 4, bottom: 4 }}
+            onClick={handleBarClick}
+          >
             <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
             <XAxis
               dataKey="label"
@@ -152,14 +217,15 @@ export function SpendChart({ data }: SpendChartProps) {
                 const label = String(payload?.value ?? "");
                 const item = rows.find((r) => r.label === label);
                 const isCurrent = item?.period === "current";
+                const isSelected = selected?.label === label;
                 return (
                   <text
                     x={x}
                     y={y + 12}
                     textAnchor="middle"
-                    fill={isCurrent ? ACCENT_TICK : "#9090aa"}
+                    fill={isSelected ? INDIGO_SELECTED : isCurrent ? ACCENT_TICK : "#9090aa"}
                     fontSize={11}
-                    fontWeight={isCurrent ? 600 : 400}
+                    fontWeight={isSelected || isCurrent ? 600 : 400}
                   >
                     {label}
                   </text>
@@ -175,7 +241,7 @@ export function SpendChart({ data }: SpendChartProps) {
             <Tooltip
               cursor={{ fill: "rgba(255,255,255,0.04)" }}
               content={(props) => (
-                <SpendTooltip
+                <HoverTooltip
                   active={props.active}
                   payload={props.payload as { payload: ChartRow }[] | undefined}
                 />
@@ -185,9 +251,17 @@ export function SpendChart({ data }: SpendChartProps) {
               {rows.map((entry, index) => (
                 <Cell
                   key={`cell-${entry.label}-${index}`}
-                  fill={entry.fill}
-                  stroke={entry.stroke}
-                  strokeWidth={entry.period === "future" ? 2 : 0}
+                  fill={cellFill(entry, selected)}
+                  stroke={selected?.label === entry.label && selected?.year === entry.year
+                    ? INDIGO_SELECTED
+                    : entry.stroke}
+                  strokeWidth={
+                    (selected?.label === entry.label && selected?.year === entry.year)
+                      ? 2
+                      : entry.period === "future"
+                      ? 2
+                      : 0
+                  }
                   strokeDasharray={entry.strokeDasharray}
                 />
               ))}
@@ -195,6 +269,17 @@ export function SpendChart({ data }: SpendChartProps) {
           </BarChart>
         </ResponsiveContainer>
       </div>
+
+      {/* breakdown panel */}
+      <AnimatePresence mode="wait">
+        {selected && (
+          <BreakdownPanel
+            key={`${selected.label}-${selected.year}`}
+            row={selected}
+            onClose={() => setSelected(null)}
+          />
+        )}
+      </AnimatePresence>
     </motion.div>
   );
 }
