@@ -18,6 +18,7 @@ import { hasSubscriptionStarted, pricePerMonth } from "@/lib/subscriptionBilling
 import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { GmailOnboarding } from "@/components/dashboard/GmailOnboarding";
+import { BudgetAlerts } from "@/components/dashboard/BudgetAlerts";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -120,6 +121,7 @@ export default function DashboardPage() {
               Updating figures…
             </p>
           ) : null}
+          <BudgetAlerts />
           <HeroCard
             monthlyTotal={monthlyTotal}
             trend={analytics ? (monthlyTotal > 0 ? -5 : 0) : undefined}
