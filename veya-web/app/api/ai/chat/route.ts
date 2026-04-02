@@ -2,84 +2,132 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
-import { pricePerMonth } from "@/lib/subscriptionBilling";
+import { pricePerMonth, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
 
-type ActionPayload =
-  | { action: "create"; name: string; price: number; billingCycle: string; category: string }
-  | { action: "cancel" | "pause" | "resume"; subscriptionId: string };
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+type ActionPayload = {
+  action: string;
+  // new-style: all extra data lives in `data`
+  data?: Record<string, unknown>;
+  // legacy fields kept for backward compat
+  [key: string]: unknown;
+};
+
+// ─── JSON extraction ──────────────────────────────────────────────────────────
 
 function extractTrailingJsonAction(reply: string): { text: string; action?: ActionPayload } {
   const trimmed = reply.trim();
   const lastOpen = trimmed.lastIndexOf("{");
   const lastClose = trimmed.lastIndexOf("}");
-  if (lastOpen === -1 || lastClose === -1 || lastClose < lastOpen) {
-    return { text: reply };
-  }
-
-  const jsonCandidate = trimmed.slice(lastOpen, lastClose + 1);
+  if (lastOpen === -1 || lastClose === -1 || lastClose < lastOpen) return { text: reply };
+  const candidate = trimmed.slice(lastOpen, lastClose + 1);
   try {
-    const parsed = JSON.parse(jsonCandidate) as unknown;
+    const parsed = JSON.parse(candidate) as unknown;
     if (!parsed || typeof parsed !== "object") return { text: reply };
-    const action = parsed as any;
-    if (typeof action.action !== "string") return { text: reply };
-    return {
-      text: trimmed.slice(0, lastOpen).trimEnd(),
-      action,
-    };
+    const obj = parsed as Record<string, unknown>;
+    if (typeof obj.action !== "string") return { text: reply };
+    return { text: trimmed.slice(0, lastOpen).trimEnd(), action: obj as ActionPayload };
   } catch {
     return { text: reply };
   }
 }
 
+// ─── Date helpers ─────────────────────────────────────────────────────────────
+
 function addCycle(from: Date, billingCycle: string): Date {
   const d = new Date(from);
   switch (billingCycle) {
-    case "weekly":
-      d.setDate(d.getDate() + 7);
-      return d;
-    case "yearly":
-      d.setFullYear(d.getFullYear() + 1);
-      return d;
-    case "monthly":
-    case "custom":
-    default:
-      d.setMonth(d.getMonth() + 1);
-      return d;
+    case "weekly":  d.setDate(d.getDate() + 7); return d;
+    case "yearly":  d.setFullYear(d.getFullYear() + 1); return d;
+    default:        d.setMonth(d.getMonth() + 1); return d;
   }
 }
 
-const systemPrompt = (subscriptionData: string, monthlyTotal: number) =>
-  `You are Veya's AI Financial Coach. You help users manage their subscriptions. You have full access to the user's subscription data and can perform actions.
+// ─── Message builders ─────────────────────────────────────────────────────────
 
-User's current subscriptions: ${subscriptionData}
-User's monthly total: ${monthlyTotal}
+function actionMsg(content: string, link: string) {
+  return {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content,
+    createdAt: new Date().toISOString(),
+    kind: "action",
+    meta: { status: "success", link },
+  };
+}
 
-You can perform these actions by including them in your response as JSON at the end:
-- Create subscription: {"action":"create","name":"","price":0,"billingCycle":"","category":""}
-- Cancel subscription: {"action":"cancel","subscriptionId":""}
-- Pause subscription: {"action":"pause","subscriptionId":""}
-- Resume subscription: {"action":"resume","subscriptionId":""}
+function chatMsg(content: string, meta?: Record<string, unknown>) {
+  return {
+    id: crypto.randomUUID(),
+    role: "assistant",
+    content,
+    createdAt: new Date().toISOString(),
+    kind: "chat",
+    ...(meta ? { meta } : {}),
+  };
+}
 
-Rules:
-- Always use real data from the user's subscriptions
-- Be concise and helpful
-- Use $ amounts and real subscription names
-- Always confirm destructive actions before doing them
-- Never make up subscription data
-- Format responses cleanly without raw markdown symbols`;
+// ─── System prompt ────────────────────────────────────────────────────────────
+
+function buildSystemPrompt(
+  userName: string,
+  subscriptionData: string,
+  budgetData: string,
+  monthlyTotal: number,
+  categoryBreakdown: string
+): string {
+  return `You are Veya's AI Financial Coach. You have FULL control over ${userName}'s Veya account. You can perform any action they can do manually.
+
+CURRENT DATA:
+Subscriptions: ${subscriptionData}
+Budgets: ${budgetData}
+Monthly total: $${monthlyTotal.toFixed(2)}
+Spending by category: ${categoryBreakdown}
+
+AVAILABLE ACTIONS — append ONE JSON block at the very end of your response (no text after it):
+
+Subscription actions (execute immediately):
+{"action":"createSubscription","data":{"name":"","price":0,"category":"","billingCycle":"monthly","startDate":"YYYY-MM-DD","nextRenewal":"YYYY-MM-DD","notes":""}}
+{"action":"editSubscription","data":{"id":"","updates":{"name":"","price":0,"category":"","billingCycle":"monthly","notes":""}}}
+{"action":"pauseSubscription","data":{"id":""}}
+{"action":"resumeSubscription","data":{"id":""}}
+
+Budget actions (execute immediately):
+{"action":"createBudget","data":{"category":"","limit":0}}
+{"action":"updateBudget","data":{"id":"","limit":0}}
+
+Destructive actions (MUST ask for confirmation first — include JSON so it's stored, user will type "yes"):
+{"action":"cancelSubscription","data":{"id":""}}
+{"action":"deleteBudget","data":{"id":""}}
+{"action":"bulkPause","data":{"category":""}}
+{"action":"bulkCancel","data":{"ids":[]}}
+
+RULES:
+- Always use the EXACT ids from the data above, never make up ids
+- Be proactive: when answering a question, also suggest an action
+- Be specific: use real names and real dollar amounts
+- For destructive actions: describe what you'll do, ask for confirmation, include the action JSON
+- For immediate actions: just do it and explain what you did
+- For "help me save $X/month": find specific subscriptions totaling that amount, list them, ask if you should cancel
+- For "pause all [category]": use bulkPause with the category name, ask for confirmation first
+- For "cancel everything over $X": use bulkCancel with the ids of matching subs, ask for confirmation
+- For "set budgets for all my categories": create ONE createBudget per category using current spend as the limit
+- For "what should I cancel": rank by price, look for category duplicates, suggest specific ones with reasoning
+- Format currency as $X.XX, be concise`;
+}
+
+// ─── Main handler ─────────────────────────────────────────────────────────────
 
 export async function POST(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  const user = await prisma.user.findUnique({
-    where: { id: authUser.id },
-  });
+
+  const user = await prisma.user.findUnique({ where: { id: authUser.id } });
   if (!user) return NextResponse.json({ error: "User not found" }, { status: 404 });
 
   const apiKey = process.env.OPENAI_API_KEY;
-  if (!apiKey) {
-    return NextResponse.json({ error: "AI not configured" }, { status: 503 });
-  }
+  if (!apiKey) return NextResponse.json({ error: "AI not configured" }, { status: 503 });
 
   let body: { message: string; conversationId?: string };
   try {
@@ -91,13 +139,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid message" }, { status: 400 });
   }
 
-  const subs = await prisma.subscription.findMany({
-    where: { userId: user.id },
-    orderBy: { nextRenewal: "asc" },
-  });
-  const monthlyTotal = subs
-    .filter((s) => s.status === "active")
+  // ─── Load context ────────────────────────────────────────────────────────────
+
+  const [subs, budgets] = await Promise.all([
+    prisma.subscription.findMany({
+      where: { userId: user.id },
+      orderBy: { nextRenewal: "asc" },
+    }),
+    prisma.budget.findMany({ where: { userId: user.id }, orderBy: { createdAt: "asc" } }),
+  ]);
+
+  const activeSubs = subs.filter((s) => s.status === "active");
+  const monthlyTotal = activeSubs
+    .filter((s) => hasSubscriptionStarted(new Date(s.startDate)))
     .reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0);
+
+  const byCat = new Map<string, number>();
+  for (const s of activeSubs.filter((s) => hasSubscriptionStarted(new Date(s.startDate)))) {
+    byCat.set(s.category, (byCat.get(s.category) ?? 0) + pricePerMonth(s.price, s.billingCycle));
+  }
+
   const subscriptionData = JSON.stringify(
     subs.map((s) => ({
       id: s.id,
@@ -105,217 +166,87 @@ export async function POST(req: Request) {
       category: s.category,
       price: s.price,
       billingCycle: s.billingCycle,
-      nextRenewal: s.nextRenewal.toISOString(),
+      monthlyEquivalent: Number(pricePerMonth(s.price, s.billingCycle).toFixed(2)),
+      nextRenewal: s.nextRenewal.toISOString().slice(0, 10),
       status: s.status,
+      notes: s.notes ?? undefined,
     }))
   );
 
-  // Use the conversationId sent by the client; fall back to creating a new one.
+  const budgetData = JSON.stringify(
+    budgets.map((b) => ({
+      id: b.id,
+      category: b.category,
+      limit: b.limit,
+      period: b.period,
+      currentSpend: Number((byCat.get(b.category) ?? 0).toFixed(2)),
+    }))
+  );
+
+  const categoryBreakdown = JSON.stringify(
+    [...byCat.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, amt]) => ({ category: cat, monthly: Number(amt.toFixed(2)) }))
+  );
+
+  const userName = user.name?.split(" ")[0] ?? "there";
+
+  // ─── Load / create conversation ──────────────────────────────────────────────
+
   let convo = body.conversationId
-    ? await prisma.aIConversation.findFirst({
-        where: { id: body.conversationId, userId: user.id },
-      })
+    ? await prisma.aIConversation.findFirst({ where: { id: body.conversationId, userId: user.id } })
     : null;
   if (!convo) {
-    convo = await prisma.aIConversation.create({
-      data: { userId: user.id, messages: [] },
-    });
-    console.log("[/api/ai/chat] created new conversation:", convo.id);
+    convo = await prisma.aIConversation.create({ data: { userId: user.id, messages: [] } });
   }
 
-  const existingMessages = (convo.messages as any[]) ?? [];
-  const userMsg = {
+  const existingMessages = (convo.messages as Record<string, unknown>[]) ?? [];
+  const userMsgObj = {
     id: crypto.randomUUID(),
     role: "user",
     content: body.message,
     createdAt: new Date().toISOString(),
     kind: "chat",
   };
-  const withUser = [...existingMessages, userMsg];
-  await prisma.aIConversation.update({
-    where: { id: convo.id },
-    data: { messages: withUser },
-  });
+  const withUser = [...existingMessages, userMsgObj];
+  await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: withUser } });
+
+  // ─── Pending action confirmation ─────────────────────────────────────────────
 
   const normalizedUser = body.message.trim().toLowerCase();
-  const lastAssistant = [...existingMessages].reverse().find((m) => m?.role === "assistant");
-  const pendingAction = lastAssistant?.meta?.pendingAction as ActionPayload | undefined;
-  const isAffirmative = normalizedUser === "yes" || normalizedUser === "y";
+  const lastAssistant = [...existingMessages].reverse().find((m) => m?.role === "assistant") as
+    | Record<string, unknown>
+    | undefined;
+  const pendingAction = (lastAssistant?.meta as Record<string, unknown> | undefined)
+    ?.pendingAction as ActionPayload | undefined;
+  const isAffirmative = /^(yes|y|confirm|do it|ok|sure|go ahead|proceed|yep|yeah)$/i.test(
+    normalizedUser.trim()
+  );
 
-  if (pendingAction?.action === "cancel" && isAffirmative) {
-    if (!pendingAction.subscriptionId) {
-      const assistantMsg = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "I couldn't find which subscription to confirm. Try: “Cancel Netflix”.",
-        createdAt: new Date().toISOString(),
-        kind: "chat",
-      };
-      const finalMessages = [...withUser, assistantMsg];
-      await prisma.aIConversation.update({
-        where: { id: convo.id },
-        data: { messages: finalMessages },
-      });
-      return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages });
-    }
-
-    const target = await prisma.subscription.findFirst({
-      where: { id: pendingAction.subscriptionId, userId: user.id },
-    });
-    if (!target) {
-      const assistantMsg = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: "That subscription no longer exists. Nothing to cancel.",
-        createdAt: new Date().toISOString(),
-        kind: "chat",
-      };
-      const finalMessages = [...withUser, assistantMsg];
-      await prisma.aIConversation.update({
-        where: { id: convo.id },
-        data: { messages: finalMessages },
-      });
-      return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages });
-    }
-
-    await prisma.subscription.update({
-      where: { id: target.id },
-      data: { status: "cancelled" },
-    });
-
-    const assistantMsg = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `${target.name} has been cancelled ✅`,
-      createdAt: new Date().toISOString(),
-      kind: "chat",
-      meta: { performedAction: pendingAction },
-    };
-    const actionMsg = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `✅ Cancelled **${target.name}** ($${target.price}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
-      createdAt: new Date().toISOString(),
-      kind: "action",
-      meta: { status: "success", link: "/subscriptions" },
-    };
-    const finalMessages = [...withUser, assistantMsg, actionMsg];
-    await prisma.aIConversation.update({
-      where: { id: convo.id },
-      data: { messages: finalMessages },
-    });
-    return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages, actionPerformed: true });
+  if (pendingAction && isAffirmative) {
+    const result = await executePendingAction(pendingAction, user.id, withUser, convo.id);
+    if (result) return result;
   }
 
-  // Fast deterministic answers (no model) for common “read-only” questions
-  if (
-    normalizedUser.includes("show") && normalizedUser.includes("subscription") ||
-    normalizedUser.includes("what subscriptions") ||
-    normalizedUser.includes("my subscriptions")
-  ) {
-    const active = subs.filter((s) => s.status !== "cancelled");
-    const list =
-      active.length === 0
-        ? "You don't have any subscriptions yet."
-        : `Here are your subscriptions:\n\n${active
-            .map((s) => `- **${s.name}** — $${s.price}/${s.billingCycle} (${s.status})`)
-            .join("\n")}`;
-    const assistantMsg = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: list,
-      createdAt: new Date().toISOString(),
-      kind: "chat",
-    };
-    const finalMessages = [...withUser, assistantMsg];
-    await prisma.aIConversation.update({
-      where: { id: convo.id },
-      data: { messages: finalMessages },
-    });
-    return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages });
-  }
-
-  if (
-    normalizedUser.includes("how much am i spending") ||
-    normalizedUser.includes("monthly total") ||
-    normalizedUser.includes("spending summary")
-  ) {
-    const byCategory = new Map<string, number>();
-    for (const s of subs.filter((x) => x.status === "active")) {
-      const pm = pricePerMonth(s.price, s.billingCycle);
-      byCategory.set(s.category, (byCategory.get(s.category) ?? 0) + pm);
-    }
-    const breakdown =
-      byCategory.size === 0
-        ? "No active subscriptions yet."
-        : [...byCategory.entries()]
-            .sort((a, b) => b[1] - a[1])
-            .map(([cat, amt]) => `- **${cat}** — $${amt.toFixed(2)}/month`)
-            .join("\n");
-    const assistantMsg = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: `Your monthly total is **$${monthlyTotal.toFixed(2)}**.\n\nBy category:\n${breakdown}`,
-      createdAt: new Date().toISOString(),
-      kind: "chat",
-    };
-    const finalMessages = [...withUser, assistantMsg];
-    await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: finalMessages } });
-    return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages });
-  }
-
-  if (normalizedUser.includes("most expensive") || normalizedUser.includes("cheapest")) {
-    const active = subs.filter((s) => s.status === "active");
-    const sorted =
-      active.length === 0
-        ? []
-        : active
-            .map((s) => ({ s, pm: pricePerMonth(s.price, s.billingCycle) }))
-            .sort((a, b) => a.pm - b.pm);
-    const wantCheapest = normalizedUser.includes("cheapest");
-    const best = sorted.length ? (wantCheapest ? sorted[0] : sorted[sorted.length - 1]) : null;
-    const assistantMsg = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: best
-        ? `Your ${wantCheapest ? "cheapest" : "most expensive"} subscription (monthly-equivalent) is **${best.s.name}** at **$${best.pm.toFixed(2)}/month**.`
-        : "You don't have any active subscriptions yet.",
-      createdAt: new Date().toISOString(),
-      kind: "chat",
-    };
-    const finalMessages = [...withUser, assistantMsg];
-    await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: finalMessages } });
-    return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages });
-  }
-
-  if (normalizedUser.includes("renews this week") || normalizedUser.includes("renew") && normalizedUser.includes("week")) {
-    const now = new Date();
-    const end = new Date(now);
-    end.setDate(end.getDate() + 7);
-    const upcoming = subs.filter((s) => s.status === "active" && s.nextRenewal >= now && s.nextRenewal <= end);
-    const assistantMsg = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content:
-        upcoming.length === 0
-          ? "Nothing renews in the next 7 days."
-          : `Renews in the next 7 days:\n\n${upcoming
-              .map((s) => `- **${s.name}** — ${s.nextRenewal.toLocaleDateString()} ($${s.price}/${s.billingCycle})`)
-              .join("\n")}`,
-      createdAt: new Date().toISOString(),
-      kind: "chat",
-    };
-    const finalMessages = [...withUser, assistantMsg];
-    await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: finalMessages } });
-    return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages });
-  }
+  // ─── OpenAI call ─────────────────────────────────────────────────────────────
 
   const openai = new OpenAI({ apiKey });
+
   const historyForModel: OpenAI.Chat.ChatCompletionMessageParam[] = withUser
     .filter((m) => m && (m.role === "user" || m.role === "assistant"))
-    .map((m) => ({ role: m.role, content: String(m.content ?? "") }));
+    .map((m) => ({ role: m.role as "user" | "assistant", content: String(m.content ?? "") }));
+
   const messages: OpenAI.Chat.ChatCompletionMessageParam[] = [
-    { role: "system", content: systemPrompt(subscriptionData, Number(monthlyTotal.toFixed(2))) },
+    {
+      role: "system",
+      content: buildSystemPrompt(
+        userName,
+        subscriptionData,
+        budgetData,
+        Number(monthlyTotal.toFixed(2)),
+        categoryBreakdown
+      ),
+    },
     ...historyForModel,
   ];
 
@@ -323,137 +254,347 @@ export async function POST(req: Request) {
     const completion = await openai.chat.completions.create({
       model: "gpt-4o",
       messages,
-      max_tokens: 500,
+      max_tokens: 800,
     });
     const rawReply = completion.choices[0]?.message?.content ?? "I couldn't generate a response.";
     const extracted = extractTrailingJsonAction(rawReply);
-    const replyText = extracted.text || "Done.";
+    const replyText = extracted.text || rawReply;
     const action = extracted.action;
 
-    if (action?.action === "cancel") {
-      const target = await prisma.subscription.findFirst({
-        where: { id: action.subscriptionId, userId: user.id },
-      });
-      const prompt = target
-        ? `Are you sure you want to cancel **${target.name}** ($${target.price}/${target.billingCycle})? Type **yes** to confirm.`
-        : "Which subscription do you want to cancel? (Example: “Cancel Netflix”)";
-      const assistantMsg = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: replyText && replyText !== "Done." ? `${replyText}\n\n${prompt}` : prompt,
-        createdAt: new Date().toISOString(),
-        kind: "chat",
-        meta: { pendingAction: action },
-      };
-      const finalMessages = [...withUser, assistantMsg];
-      await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: finalMessages } });
-      return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages });
+    if (!action) {
+      const msg = chatMsg(rawReply);
+      const final = [...withUser, msg];
+      await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: final } });
+      return NextResponse.json({ reply: rawReply, messages: final });
     }
 
-    if (action?.action === "pause" || action?.action === "resume") {
-      const target = await prisma.subscription.findFirst({
-        where: { id: action.subscriptionId, userId: user.id },
-      });
-      if (!target) {
-        const assistantMsg = {
-          id: crypto.randomUUID(),
-          role: "assistant",
-          content: "I couldn't find that subscription.",
-          createdAt: new Date().toISOString(),
-          kind: "chat",
-        };
-        const finalMessages = [...withUser, assistantMsg];
-        await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: finalMessages } });
-        return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages });
-      }
-      const newStatus = action.action === "pause" ? "paused" : "active";
-      await prisma.subscription.update({
-        where: { id: target.id },
-        data: { status: newStatus },
-      });
-      const assistantMsg = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content:
-          replyText && replyText !== "Done."
-            ? replyText
-            : `${target.name} has been ${newStatus === "paused" ? "paused" : "resumed"} ✅`,
-        createdAt: new Date().toISOString(),
-        kind: "chat",
-        meta: { performedAction: action },
-      };
-      const actionMsg = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `✅ ${newStatus === "paused" ? "Paused" : "Resumed"} **${target.name}**\n\n[View in subscriptions →](/subscriptions)`,
-        createdAt: new Date().toISOString(),
-        kind: "action",
-        meta: { status: "success", link: "/subscriptions" },
-      };
-      const finalMessages = [...withUser, assistantMsg, actionMsg];
-      await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: finalMessages } });
-      return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages, actionPerformed: true });
-    }
-
-    if (action?.action === "create") {
-      const now = new Date();
-      const billingCycle = action.billingCycle || "monthly";
-      const created = await prisma.subscription.create({
-        data: {
-          userId: user.id,
-          name: action.name,
-          price: Number(action.price),
-          billingCycle,
-          category: action.category || "Other",
-          startDate: now,
-          nextRenewal: addCycle(now, billingCycle),
-          status: "active",
-          source: "manual",
-          isShared: false,
-        },
-      });
-      const assistantMsg = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content:
-          replyText && replyText !== "Done."
-            ? replyText
-            : `Done! I've added ${created.name} ($${created.price}/${created.billingCycle}) to your subscriptions ✅`,
-        createdAt: new Date().toISOString(),
-        kind: "chat",
-        meta: { performedAction: action, subscriptionId: created.id },
-      };
-      const actionMsg = {
-        id: crypto.randomUUID(),
-        role: "assistant",
-        content: `✅ Added **${created.name}** ($${created.price}/${created.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
-        createdAt: new Date().toISOString(),
-        kind: "action",
-        meta: { status: "success", link: "/subscriptions" },
-      };
-      const finalMessages = [...withUser, assistantMsg, actionMsg];
-      await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: finalMessages } });
-      return NextResponse.json({ reply: assistantMsg.content, messages: finalMessages, actionPerformed: true });
-    }
-
-    const assistantMsg = {
-      id: crypto.randomUUID(),
-      role: "assistant",
-      content: rawReply,
-      createdAt: new Date().toISOString(),
-      kind: "chat",
-    };
-    const finalMessages = [...withUser, assistantMsg];
-    await prisma.aIConversation.update({
-      where: { id: convo.id },
-      data: { messages: finalMessages },
-    });
-    return NextResponse.json({ reply: rawReply, messages: finalMessages });
+    return await executeAction(action, replyText, user.id, withUser, convo.id, subs, budgets);
   } catch (e) {
-    console.error(e);
-    return NextResponse.json(
-      { error: "AI request failed" },
-      { status: 500 }
-    );
+    console.error("[/api/ai/chat]", e);
+    return NextResponse.json({ error: "AI request failed" }, { status: 500 });
   }
+}
+
+// ─── Execute a pending (confirmed) action ─────────────────────────────────────
+
+async function executePendingAction(
+  action: ActionPayload,
+  userId: string,
+  withUser: Record<string, unknown>[],
+  convoId: string
+): Promise<NextResponse | null> {
+  const data = (action.data ?? {}) as Record<string, unknown>;
+
+  // ── cancelSubscription ──
+  if (action.action === "cancelSubscription" || action.action === "cancel") {
+    const id = (data.id as string | undefined) ?? (action.subscriptionId as string | undefined);
+    if (!id) return null;
+    const target = await prisma.subscription.findFirst({ where: { id, userId } });
+    if (!target) {
+      const msg = chatMsg("That subscription no longer exists.");
+      const final = [...withUser, msg];
+      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      return NextResponse.json({ reply: msg.content, messages: final });
+    }
+    await prisma.subscription.delete({ where: { id: target.id } });
+    const confirm = chatMsg(`${target.name} has been cancelled ✅`);
+    const success = actionMsg(
+      `✅ Cancelled **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
+      "/subscriptions"
+    );
+    const final = [...withUser, confirm, success];
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
+  }
+
+  // ── deleteBudget ──
+  if (action.action === "deleteBudget") {
+    const id = data.id as string | undefined;
+    if (!id) return null;
+    const target = await prisma.budget.findFirst({ where: { id, userId } });
+    if (!target) {
+      const msg = chatMsg("That budget no longer exists.");
+      const final = [...withUser, msg];
+      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      return NextResponse.json({ reply: msg.content, messages: final });
+    }
+    await prisma.budget.delete({ where: { id: target.id } });
+    const confirm = chatMsg(`Budget for **${target.category}** deleted ✅`);
+    const success = actionMsg(
+      `✅ Deleted **${target.category}** budget (was $${target.limit.toFixed(2)}/month)\n\n[View in analytics →](/analytics)`,
+      "/analytics"
+    );
+    const final = [...withUser, confirm, success];
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
+  }
+
+  // ── bulkPause ──
+  if (action.action === "bulkPause") {
+    const category = data.category as string | undefined;
+    if (!category) return null;
+    const targets = await prisma.subscription.findMany({
+      where: { userId, category, status: "active" },
+    });
+    if (targets.length === 0) {
+      const msg = chatMsg(`No active subscriptions found in the **${category}** category.`);
+      const final = [...withUser, msg];
+      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      return NextResponse.json({ reply: msg.content, messages: final });
+    }
+    await Promise.all(
+      targets.map((t) => prisma.subscription.update({ where: { id: t.id }, data: { status: "paused" } }))
+    );
+    const names = targets.map((t) => t.name).join(", ");
+    const confirm = chatMsg(`Paused ${targets.length} subscription(s) in **${category}**: ${names} ✅`);
+    const success = actionMsg(
+      `✅ Paused ${targets.length} **${category}** subscription(s)\n\n[View in subscriptions →](/subscriptions)`,
+      "/subscriptions"
+    );
+    const final = [...withUser, confirm, success];
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
+  }
+
+  // ── bulkCancel ──
+  if (action.action === "bulkCancel") {
+    const ids = (data.ids as string[] | undefined) ?? [];
+    if (!ids.length) return null;
+    const targets = await prisma.subscription.findMany({ where: { id: { in: ids }, userId } });
+    if (targets.length === 0) {
+      const msg = chatMsg("None of those subscriptions were found.");
+      const final = [...withUser, msg];
+      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      return NextResponse.json({ reply: msg.content, messages: final });
+    }
+    await prisma.subscription.deleteMany({ where: { id: { in: targets.map((t) => t.id) } } });
+    const names = targets.map((t) => t.name).join(", ");
+    const saved = targets.reduce((sum, t) => sum + pricePerMonth(t.price, t.billingCycle), 0);
+    const confirm = chatMsg(
+      `Cancelled ${targets.length} subscription(s): ${names}. You'll save $${saved.toFixed(2)}/month ✅`
+    );
+    const success = actionMsg(
+      `✅ Cancelled ${targets.length} subscription(s) — saving **$${saved.toFixed(2)}/month**\n\n[View in subscriptions →](/subscriptions)`,
+      "/subscriptions"
+    );
+    const final = [...withUser, confirm, success];
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
+  }
+
+  return null;
+}
+
+// ─── Execute an immediate or confirmed action from OpenAI response ─────────────
+
+async function executeAction(
+  action: ActionPayload,
+  replyText: string,
+  userId: string,
+  withUser: Record<string, unknown>[],
+  convoId: string,
+  subs: Awaited<ReturnType<typeof prisma.subscription.findMany>>,
+  budgets: Awaited<ReturnType<typeof prisma.budget.findMany>>
+): Promise<NextResponse> {
+  const data = (action.data ?? {}) as Record<string, unknown>;
+
+  const save = async (msgs: Record<string, unknown>[], actionPerformed = false) => {
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: msgs } });
+    const lastMsg = msgs[msgs.length - 1] as Record<string, unknown>;
+    return NextResponse.json({ reply: lastMsg.content, messages: msgs, actionPerformed });
+  };
+
+  // ── Destructive: needs confirmation ──────────────────────────────────────────
+
+  if (
+    action.action === "cancelSubscription" ||
+    action.action === "cancel" ||
+    action.action === "deleteBudget" ||
+    action.action === "bulkPause" ||
+    action.action === "bulkCancel"
+  ) {
+    const msg = chatMsg(
+      replyText || "Please confirm by typing **yes**.",
+      { pendingAction: action }
+    );
+    const final = [...withUser, msg];
+    return save(final, false);
+  }
+
+  // ── createSubscription ───────────────────────────────────────────────────────
+
+  if (action.action === "createSubscription" || action.action === "create") {
+    const name = (data.name as string | undefined) ?? (action.name as string | undefined) ?? "Subscription";
+    const price = Number(data.price ?? action.price ?? 0);
+    const billingCycle = (data.billingCycle as string | undefined) ?? (action.billingCycle as string | undefined) ?? "monthly";
+    const category = (data.category as string | undefined) ?? (action.category as string | undefined) ?? "Other";
+    const notes = data.notes as string | undefined;
+    const startDate = data.startDate ? new Date(data.startDate as string) : new Date();
+    const nextRenewal = data.nextRenewal
+      ? new Date(data.nextRenewal as string)
+      : addCycle(startDate, billingCycle);
+
+    const created = await prisma.subscription.create({
+      data: {
+        userId,
+        name,
+        price,
+        billingCycle,
+        category,
+        startDate,
+        nextRenewal,
+        status: "active",
+        source: "manual",
+        isShared: false,
+        notes,
+      },
+    });
+    const chat = chatMsg(replyText || `Added **${created.name}** ✅`);
+    const success = actionMsg(
+      `✅ Added **${created.name}** ($${created.price.toFixed(2)}/${created.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
+      "/subscriptions"
+    );
+    const final = [...withUser, chat, success];
+    return save(final, true);
+  }
+
+  // ── editSubscription ─────────────────────────────────────────────────────────
+
+  if (action.action === "editSubscription") {
+    const id = data.id as string | undefined;
+    const updates = (data.updates as Record<string, unknown>) ?? {};
+    if (!id) {
+      const msg = chatMsg("I need a subscription ID to edit. Please specify which subscription.");
+      return save([...withUser, msg]);
+    }
+    const target = await prisma.subscription.findFirst({ where: { id, userId } });
+    if (!target) {
+      const msg = chatMsg("That subscription wasn't found.");
+      return save([...withUser, msg]);
+    }
+    const updateData: Record<string, unknown> = {};
+    if (updates.name)         updateData.name = String(updates.name);
+    if (updates.price)        updateData.price = Number(updates.price);
+    if (updates.category)     updateData.category = String(updates.category);
+    if (updates.billingCycle) updateData.billingCycle = String(updates.billingCycle);
+    if (updates.notes !== undefined) updateData.notes = String(updates.notes);
+    if (updates.nextRenewal)  updateData.nextRenewal = new Date(updates.nextRenewal as string);
+    const updated = await prisma.subscription.update({ where: { id: target.id }, data: updateData });
+    const chat = chatMsg(replyText || `Updated **${updated.name}** ✅`);
+    const success = actionMsg(
+      `✅ Updated **${updated.name}**\n\n[View in subscriptions →](/subscriptions)`,
+      "/subscriptions"
+    );
+    const final = [...withUser, chat, success];
+    return save(final, true);
+  }
+
+  // ── pauseSubscription ────────────────────────────────────────────────────────
+
+  if (action.action === "pauseSubscription" || action.action === "pause") {
+    const id = (data.id as string | undefined) ?? (action.subscriptionId as string | undefined);
+    if (!id) {
+      const msg = chatMsg("Which subscription would you like to pause? Please be more specific.");
+      return save([...withUser, msg]);
+    }
+    const target = await prisma.subscription.findFirst({ where: { id, userId } });
+    if (!target) {
+      const msg = chatMsg("That subscription wasn't found.");
+      return save([...withUser, msg]);
+    }
+    await prisma.subscription.update({ where: { id: target.id }, data: { status: "paused" } });
+    const chat = chatMsg(replyText || `Paused **${target.name}** ✅`);
+    const success = actionMsg(
+      `✅ Paused **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
+      "/subscriptions"
+    );
+    const final = [...withUser, chat, success];
+    return save(final, true);
+  }
+
+  // ── resumeSubscription ───────────────────────────────────────────────────────
+
+  if (action.action === "resumeSubscription" || action.action === "resume") {
+    const id = (data.id as string | undefined) ?? (action.subscriptionId as string | undefined);
+    if (!id) {
+      const msg = chatMsg("Which subscription would you like to resume?");
+      return save([...withUser, msg]);
+    }
+    const target = await prisma.subscription.findFirst({ where: { id, userId } });
+    if (!target) {
+      const msg = chatMsg("That subscription wasn't found.");
+      return save([...withUser, msg]);
+    }
+    await prisma.subscription.update({ where: { id: target.id }, data: { status: "active" } });
+    const chat = chatMsg(replyText || `Resumed **${target.name}** ✅`);
+    const success = actionMsg(
+      `✅ Resumed **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
+      "/subscriptions"
+    );
+    const final = [...withUser, chat, success];
+    return save(final, true);
+  }
+
+  // ── createBudget ─────────────────────────────────────────────────────────────
+
+  if (action.action === "createBudget") {
+    const category = data.category as string | undefined;
+    const limit = Number(data.limit ?? 0);
+    if (!category || limit <= 0) {
+      const msg = chatMsg("I need a category and a positive limit to create a budget.");
+      return save([...withUser, msg]);
+    }
+    const existing = budgets.find((b) => b.category === category);
+    if (existing) {
+      // Update instead of duplicate
+      await prisma.budget.update({ where: { id: existing.id }, data: { limit } });
+      const chat = chatMsg(replyText || `Updated **${category}** budget to $${limit.toFixed(2)}/month ✅`);
+      const success = actionMsg(
+        `✅ Updated **${category}** budget → $${limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
+        "/analytics"
+      );
+      return save([...withUser, chat, success], true);
+    }
+    const created = await prisma.budget.create({
+      data: { userId, category, limit, period: "monthly" },
+    });
+    const chat = chatMsg(replyText || `Created **${created.category}** budget at $${created.limit.toFixed(2)}/month ✅`);
+    const success = actionMsg(
+      `✅ Created **${created.category}** budget — $${created.limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
+      "/analytics"
+    );
+    const final = [...withUser, chat, success];
+    return save(final, true);
+  }
+
+  // ── updateBudget ─────────────────────────────────────────────────────────────
+
+  if (action.action === "updateBudget") {
+    const id = data.id as string | undefined;
+    const limit = Number(data.limit ?? 0);
+    if (!id || limit <= 0) {
+      const msg = chatMsg("I need a budget ID and a positive limit to update.");
+      return save([...withUser, msg]);
+    }
+    const target = await prisma.budget.findFirst({ where: { id, userId } });
+    if (!target) {
+      const msg = chatMsg("That budget wasn't found.");
+      return save([...withUser, msg]);
+    }
+    const updated = await prisma.budget.update({ where: { id: target.id }, data: { limit } });
+    const chat = chatMsg(replyText || `Updated **${updated.category}** budget to $${updated.limit.toFixed(2)}/month ✅`);
+    const success = actionMsg(
+      `✅ Updated **${updated.category}** budget → $${updated.limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
+      "/analytics"
+    );
+    const final = [...withUser, chat, success];
+    return save(final, true);
+  }
+
+  // ── Fallback: no recognized action — treat as plain chat ─────────────────────
+
+  const msg = chatMsg(replyText);
+  const final = [...withUser, msg];
+  await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+  return NextResponse.json({ reply: replyText, messages: final });
 }
