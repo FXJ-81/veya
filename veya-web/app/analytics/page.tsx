@@ -10,6 +10,7 @@ import { SpendChart } from "@/components/analytics/SpendChart";
 import { CategoryDonut } from "@/components/analytics/CategoryDonut";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { BudgetLimitsSection } from "@/components/analytics/BudgetLimitsSection";
 
 export default function AnalyticsPage() {
   const { status } = useSession();
@@ -104,6 +105,8 @@ export default function AnalyticsPage() {
                 </div>
               </div>
             </div>
+
+            <BudgetLimitsSection />
           </div>
         )}
       </main>
