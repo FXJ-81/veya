@@ -17,17 +17,30 @@ type ActionPayload = {
 // ─── JSON extraction ──────────────────────────────────────────────────────────
 
 function extractTrailingJsonAction(reply: string): { text: string; action?: ActionPayload } {
-  const trimmed = reply.trim();
-  const lastOpen = trimmed.lastIndexOf("{");
-  const lastClose = trimmed.lastIndexOf("}");
-  if (lastOpen === -1 || lastClose === -1 || lastClose < lastOpen) return { text: reply };
-  const candidate = trimmed.slice(lastOpen, lastClose + 1);
+  // Find the outer {"action": block using brace-depth tracking so nested
+  // objects like {"action":"createBudget","data":{"category":"X","limit":50}}
+  // are parsed correctly (lastIndexOf("{") would land inside "data":{}).
+  const start = reply.indexOf('{"action"');
+  if (start === -1) return { text: reply };
+
+  let depth = 0;
+  let end = -1;
+  for (let i = start; i < reply.length; i++) {
+    if (reply[i] === "{") depth++;
+    else if (reply[i] === "}") {
+      depth--;
+      if (depth === 0) { end = i; break; }
+    }
+  }
+  if (end === -1) return { text: reply };
+
+  const candidate = reply.slice(start, end + 1);
   try {
     const parsed = JSON.parse(candidate) as unknown;
     if (!parsed || typeof parsed !== "object") return { text: reply };
     const obj = parsed as Record<string, unknown>;
     if (typeof obj.action !== "string") return { text: reply };
-    return { text: trimmed.slice(0, lastOpen).trimEnd(), action: obj as ActionPayload };
+    return { text: reply.slice(0, start).trimEnd(), action: obj as ActionPayload };
   } catch {
     return { text: reply };
   }

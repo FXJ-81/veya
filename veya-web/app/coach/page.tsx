@@ -19,6 +19,33 @@ type ConversationListItem = {
   updatedAt: string;
 };
 
+// Strip any raw {"action":...} JSON blocks from assistant message text so they
+// never appear as visible text in the chat — actions are executed server-side.
+function stripJsonActions(text: string): string {
+  let result = text;
+  while (true) {
+    const start = result.indexOf('{"action"');
+    if (start === -1) break;
+    let depth = 0;
+    let end = -1;
+    for (let i = start; i < result.length; i++) {
+      if (result[i] === "{") depth++;
+      else if (result[i] === "}") { depth--; if (depth === 0) { end = i; break; } }
+    }
+    if (end === -1) break;
+    result = (result.slice(0, start) + result.slice(end + 1)).trim();
+  }
+  return result;
+}
+
+function cleanMessages(msgs: AIMessage[]): AIMessage[] {
+  return msgs.map((m) =>
+    m.role === "assistant" && m.kind !== "action"
+      ? { ...m, content: stripJsonActions(m.content ?? "") }
+      : m
+  );
+}
+
 function truncateTitle(value: string, max = 35): string {
   const clean = value.trim();
   if (clean.length <= max) return clean;
@@ -82,7 +109,7 @@ export default function CoachPage() {
     const convo = json?.conversation;
     if (!convo) return false;
     setActiveConversationId(conversationId);
-    setMessages(Array.isArray(convo.messages) ? convo.messages : []);
+    setMessages(cleanMessages(Array.isArray(convo.messages) ? convo.messages : []));
     return true;
   };
 
@@ -176,7 +203,7 @@ export default function CoachPage() {
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed");
       if (Array.isArray(json.messages)) {
-        setMessages(json.messages);
+        setMessages(cleanMessages(json.messages));
         if (json.actionPerformed) {
           await invalidateAfterSubscriptionChange(qc);
         }
@@ -185,7 +212,11 @@ export default function CoachPage() {
       } else {
         setMessages((prev) => [
           ...prev,
-          { role: "assistant", content: json.reply, createdAt: new Date().toISOString() },
+          {
+            role: "assistant",
+            content: stripJsonActions(json.reply ?? ""),
+            createdAt: new Date().toISOString(),
+          },
         ]);
       }
     } catch (e) {
