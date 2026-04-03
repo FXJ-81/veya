@@ -8,11 +8,6 @@ import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { toDateInputValue } from "@/lib/utils";
-import {
-  SUBSCRIPTION_CATEGORIES,
-  categoryIcon,
-  isKnownSubscriptionCategory,
-} from "@/lib/subscriptionCategories";
 import type { Subscription } from "@/types";
 
 const schema = z.object({
@@ -103,16 +98,12 @@ export function EditSubscriptionModal({
             className="w-full rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary focus:border-accent focus:outline-none"
           >
             <option value="">Select...</option>
-            {subscription && !isKnownSubscriptionCategory(subscription.category) && (
-              <option value={subscription.category}>
-                {categoryIcon(subscription.category)} {subscription.category}
-              </option>
-            )}
-            {SUBSCRIPTION_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {categoryIcon(c)} {c}
-              </option>
-            ))}
+            <option value="Streaming">Streaming</option>
+            <option value="Software">Software</option>
+            <option value="Fitness">Fitness</option>
+            <option value="Cloud">Cloud</option>
+            <option value="Gaming">Gaming</option>
+            <option value="Other">Other</option>
           </select>
           {errors.category && (
             <p className="mt-1 text-sm text-danger">{errors.category.message}</p>

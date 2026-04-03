@@ -6,10 +6,6 @@ import { z } from "zod";
 import { Modal } from "@/components/ui/Modal";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
-import {
-  SUBSCRIPTION_CATEGORIES,
-  categoryIcon,
-} from "@/lib/subscriptionCategories";
 
 const schema = z.object({
   name: z.string().min(1, "Name required"),
@@ -78,11 +74,12 @@ export function AddSubscriptionModal({
             className="w-full rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary focus:border-accent focus:outline-none"
           >
             <option value="">Select...</option>
-            {SUBSCRIPTION_CATEGORIES.map((c) => (
-              <option key={c} value={c}>
-                {categoryIcon(c)} {c}
-              </option>
-            ))}
+            <option value="Streaming">Streaming</option>
+            <option value="Software">Software</option>
+            <option value="Fitness">Fitness</option>
+            <option value="Cloud">Cloud</option>
+            <option value="Gaming">Gaming</option>
+            <option value="Other">Other</option>
           </select>
           {errors.category && (
             <p className="mt-1 text-sm text-danger">{errors.category.message}</p>

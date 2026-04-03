@@ -20,9 +20,6 @@ model User {
   plaidItemId      String?
   plaidLinked      Boolean   @default(false)
   lastPlaidSync    DateTime?
-  twoFactorEnabled Boolean   @default(false)
-  twoFactorCode    String?
-  twoFactorExpiry  DateTime?
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
   accounts      Account[]
@@ -155,11 +152,6 @@ model UserSettings {
   userId             String   @unique
   notificationPrefs  Json?
   budgetLimit        Float?
-  renewalReminders   Boolean  @default(true)
-  budgetAlerts       Boolean  @default(true)
-  weeklyDigest       Boolean  @default(true)
-  newSubDetected     Boolean  @default(true)
-  priceAlerts        Boolean  @default(true)
   /// Set after first-login Gmail flow finished (scan, skip, or connect attempt)
   gmailFirstScanCompletedAt DateTime?
   /// After first auto-scan UX completes (confirm modal or skip); when true, never auto-scan again

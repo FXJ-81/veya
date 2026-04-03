@@ -7,25 +7,12 @@ import { applyCanonicalNextAuthUrlForOAuth } from "./googleOAuthCallback";
 import { prisma } from "./prisma";
 
 applyCanonicalNextAuthUrlForOAuth();
-const effectiveNextAuthUrl = process.env.NEXTAUTH_URL;
-console.log("[auth] Effective NEXTAUTH_URL:", effectiveNextAuthUrl);
-
-// Surface configuration problems early in logs
-if (!process.env.NEXTAUTH_SECRET) {
-  console.error("[auth] NEXTAUTH_SECRET is not set — NextAuth callbacks will fail");
-}
-if (!effectiveNextAuthUrl && process.env.VERCEL !== "1") {
-  console.warn("[auth] NEXTAUTH_URL is not set");
-}
-if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
-  console.warn("[auth] Google OAuth env vars missing; Google provider disabled");
-} else {
-  console.log("[auth] Google OAuth provider enabled");
-}
 
 /**
  * Google sign-in uses NextAuth at `/api/auth/callback/google` only.
- * In Google Cloud, register both local and current deployed callback URLs.
+ * In Google Cloud, Authorized redirect URIs must be exactly (see `lib/googleOAuthCallback.ts`):
+ * - http://localhost:3000/api/auth/callback/google
+ * - https://veya-beta.vercel.app/api/auth/callback/google
  * Set NEXTAUTH_URL to the matching origin (no trailing slash).
  */
 export const authOptions: NextAuthOptions = {
@@ -38,33 +25,19 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) {
-          console.log("[auth] authorize: missing credentials");
-          return null;
-        }
-        try {
-          const user = await prisma.user.findUnique({
-            where: { email: credentials.email.trim().toLowerCase() },
-          });
-          if (!user?.password) {
-            console.log("[auth] authorize: user not found or no password");
-            return null;
-          }
-          const valid = await compare(credentials.password, user.password);
-          if (!valid) {
-            console.log("[auth] authorize: invalid password");
-            return null;
-          }
-          return {
-            id: user.id,
-            email: user.email,
-            name: user.name,
-            image: user.image,
-          };
-        } catch (err) {
-          console.error("[auth] authorize error:", err);
-          return null;
-        }
+        if (!credentials?.email || !credentials?.password) return null;
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email.trim().toLowerCase() },
+        });
+        if (!user?.password) return null;
+        const valid = await compare(credentials.password, user.password);
+        if (!valid) return null;
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+          image: user.image,
+        };
       },
     }),
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -87,90 +60,26 @@ export const authOptions: NextAuthOptions = {
       : []),
   ],
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
-  pages: { signIn: "/sign-in", error: "/sign-in" },
-  debug: process.env.NODE_ENV !== "production",
-  logger: {
-    error(code, metadata) {
-      console.error("[nextauth][error]", code, metadata);
-    },
-    warn(code) {
-      console.warn("[nextauth][warn]", code);
-    },
-    debug(code, metadata) {
-      console.log("[nextauth][debug]", code, metadata);
-    },
-  },
+  pages: { signIn: "/sign-in" },
   callbacks: {
-    async signIn({ user, account, profile }) {
-      try {
-        console.log("[auth] signIn callback entry", {
-          provider: account?.provider,
-          userId: user?.id,
-          email: user?.email,
-          providerAccountId: account?.providerAccountId,
-        });
-        if (account?.provider === "google") {
-          if (!user?.email) {
-            console.error("[auth] Google callback missing user email", { profile });
-            return false;
-          }
-          console.log("[auth] Google callback accepted for email:", user.email);
-        }
-        return true;
-      } catch (err) {
-        console.error("[auth] signIn callback error:", err);
-        return false;
-      }
-    },
-    async redirect({ url, baseUrl }) {
-      try {
-        // Allow relative callback URLs and same-origin absolute URLs only.
-        if (url.startsWith("/")) return `${baseUrl}${url}`;
-        const target = new URL(url);
-        if (target.origin === baseUrl) return url;
-      } catch (err) {
-        console.error("[auth] redirect callback parse error:", err, { url, baseUrl });
-      }
-      return `${baseUrl}/dashboard`;
-    },
     async jwt({ token, user, account }) {
-      try {
-        if (user) {
-          token.id = user.id;
-          token.email = user.email;
-          token.name = user.name;
-          token.picture = user.image;
-        }
-        if (account?.provider) {
-          token.provider = account.provider;
-        }
-      } catch (err) {
-        console.error("[auth] jwt callback error:", err);
+      if (user) {
+        token.id = user.id;
+        token.email = user.email;
+        token.name = user.name;
+        token.picture = user.image;
+      }
+      if (account?.provider) {
+        token.provider = account.provider;
       }
       return token;
     },
     async session({ session, token }) {
-      try {
-        if (session.user) {
-          (session.user as { id?: string }).id = (token.id as string | undefined) ?? undefined;
-        }
-        (session as { provider?: string }).provider = (token.provider as string) ?? undefined;
-      } catch (err) {
-        console.error("[auth] session callback error:", err);
+      if (session.user) {
+        (session.user as { id: string }).id = token.id as string;
       }
+      (session as { provider?: string }).provider = (token.provider as string) ?? undefined;
       return session;
-    },
-  },
-  events: {
-    async signIn({ user, account, isNewUser }) {
-      console.log("[auth] signIn event", {
-        userId: user?.id,
-        provider: account?.provider,
-        isNewUser,
-      });
-    },
-    async signOut() {
-      console.log("[auth] signOut event");
     },
   },
 };

@@ -18,7 +18,7 @@ export function Sidebar() {
   const pathname = usePathname();
 
   return (
-    <aside className="fixed left-0 top-0 z-40 h-screen w-64 border-r border-border bg-card/80 backdrop-blur-xl">
+    <aside className="fixed left-0 top-0 z-40 h-screen w-56 border-r border-border bg-card/80 backdrop-blur-xl">
       <div className="flex h-16 items-center px-6">
         <Link href="/dashboard" className="text-xl font-bold text-text-primary">
           Veya

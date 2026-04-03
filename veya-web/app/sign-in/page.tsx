@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useState } from "react";
+import { useState, Suspense } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -18,26 +18,6 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
-function getAuthErrorMessage(errorParam: string | null): string {
-  if (!errorParam) return "";
-  if (errorParam === "OAuthAccountNotLinked") {
-    return "This email is already registered with a password. Sign in with your email and password above.";
-  }
-  if (errorParam === "Callback" || errorParam === "OAuthCallback") {
-    return "Google sign-in callback failed. Check OAuth redirect URI and server logs for details.";
-  }
-  if (errorParam === "OAuthSignin" || errorParam === "OAuthCreateAccount") {
-    return "Google sign-in failed during provider handshake. Please try again.";
-  }
-  if (errorParam === "AccessDenied") {
-    return "Google sign-in was denied. Please allow access and try again.";
-  }
-  if (errorParam === "Configuration") {
-    return "Google auth is not configured correctly on the server.";
-  }
-  return decodeURIComponent(errorParam.replace(/\+/g, " "));
-}
-
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -45,10 +25,13 @@ function SignInForm() {
   const created = searchParams.get("created") === "1";
   const verified = searchParams.get("verified") === "1";
   const errorParam = searchParams.get("error");
-  const errorMessage = getAuthErrorMessage(errorParam);
-
+  const errorMessage =
+    errorParam === "OAuthAccountNotLinked"
+      ? "This email is already registered with a password. Sign in with your email and password above."
+      : errorParam
+        ? decodeURIComponent(errorParam.replace(/\+/g, " "))
+        : "";
   const [error, setError] = useState(errorMessage);
-
   const {
     register,
     handleSubmit,
@@ -62,7 +45,7 @@ function SignInForm() {
       password: data.password,
       redirect: false,
     });
-
+    console.log("[sign-in] signIn result:", { error: res?.error, status: res?.status, url: res?.url });
     if (res?.error) {
       const message =
         res.error === "CredentialsSignin"
@@ -73,7 +56,6 @@ function SignInForm() {
       setError(message);
       return;
     }
-
     router.push(callbackUrl);
     router.refresh();
   };
@@ -98,17 +80,29 @@ function SignInForm() {
         <h1 className="text-2xl font-bold text-text-primary">Sign in</h1>
         <p className="mt-1 text-text-secondary">Welcome back to Veya</p>
         {created && (
-          <motion.p initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="mt-4 text-success text-sm">
+          <motion.p
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="mt-4 text-success text-sm"
+          >
             Account created! Sign in below.
           </motion.p>
         )}
         {verified && (
-          <motion.p initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="mt-4 text-success text-sm">
+          <motion.p
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="mt-4 text-success text-sm"
+          >
             Email verified! You can sign in now.
           </motion.p>
         )}
         {error && (
-          <motion.p initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="mt-4 text-danger text-sm">
+          <motion.p
+            initial={{ opacity: 0, x: -8 }}
+            animate={{ opacity: 1, x: 0 }}
+            className="mt-4 text-danger text-sm"
+          >
             {error}
           </motion.p>
         )}
@@ -135,7 +129,10 @@ function SignInForm() {
               <p className="mt-1 text-danger text-sm">{errors.password.message}</p>
             )}
           </div>
-          <Link href="/forgot-password" className="block text-sm text-accent hover:underline">
+          <Link
+            href="/forgot-password"
+            className="block text-sm text-accent hover:underline"
+          >
             Forgot password?
           </Link>
           <Button type="submit" className="w-full" isLoading={isSubmitting}>

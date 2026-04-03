@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { PageLayout } from "@/components/layout/PageLayout";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { ChatBubble } from "@/components/coach/ChatBubble";
 import { ChatInput } from "@/components/coach/ChatInput";
 import { QuickPrompts } from "@/components/coach/QuickPrompts";
@@ -289,131 +289,133 @@ export default function CoachPage() {
   }
 
   return (
-    <PageLayout fullHeight>
-      {/* Single card panel that fills the available height */}
-      <motion.div
-        initial={{ opacity: 0, y: 8 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col flex-1 min-h-0 rounded-2xl border border-border bg-card/60 backdrop-blur-sm overflow-hidden"
-      >
-        {/* ── Header ─────────────────────────────────────────────────────── */}
-        <div className="flex items-center justify-between gap-4 px-6 py-5 border-b border-border shrink-0">
-          <div>
-            <h1 className="text-xl font-bold text-text-primary">Veya AI Coach</h1>
-            <p className="text-text-secondary text-sm mt-0.5">
-              Ask anything about your subscriptions. I have full context.
-            </p>
-          </div>
-          <div className="flex items-center gap-2">
-            <div ref={historyRef} className="relative">
+    <div className="min-h-screen bg-background">
+      <Sidebar />
+      <main className="pl-56 pr-6 py-8 flex flex-col h-screen">
+        <motion.div
+          initial={{ opacity: 0 }}
+          animate={{ opacity: 1 }}
+          className="mb-6"
+        >
+          <div className="flex items-start justify-between gap-4">
+            <div>
+              <h1 className="text-2xl font-bold text-text-primary">Veya AI Coach</h1>
+              <p className="text-text-secondary text-sm mt-1">
+                Ask anything about your subscriptions. I have full context.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              <div ref={historyRef} className="relative">
+                <button
+                  onClick={async () => {
+                    const next = !historyOpen;
+                    setHistoryOpen(next);
+                    if (next) {
+                      await refreshConversations();
+                    }
+                  }}
+                  disabled={loading}
+                  className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary hover:bg-border hover:text-text-primary transition-colors disabled:opacity-50"
+                >
+                  Chat History
+                </button>
+                <AnimatePresence>
+                  {historyOpen && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -6, scale: 0.98 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: -6, scale: 0.98 }}
+                      transition={{ duration: 0.15 }}
+                      className="absolute right-0 mt-2 w-[360px] rounded-xl border z-50"
+                      style={{ background: "#111118", borderColor: "#2a2a3a" }}
+                    >
+                      <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "#2a2a3a" }}>
+                        <span className="text-sm font-semibold text-text-primary">Previous Chats</span>
+                        <button
+                          onClick={createNewChat}
+                          className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                        >
+                          New Chat
+                        </button>
+                      </div>
+                      <div className="max-h-[400px] overflow-y-auto p-2">
+                        {conversations.length === 0 ? (
+                          <div className="px-3 py-8 text-center text-sm text-text-tertiary">No previous chats.</div>
+                        ) : (
+                          (["Today", "Yesterday", "This week", "Older"] as const).map((group) => {
+                            const items = groupedConversations[group];
+                            if (!items.length) return null;
+                            return (
+                              <div key={group} className="mb-2">
+                                <div className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-tertiary">
+                                  {group}
+                                </div>
+                                <div className="space-y-1">
+                                  {items.map((convo) => (
+                                    <button
+                                      key={convo.id}
+                                      onClick={async () => {
+                                        setHistoryOpen(false);
+                                        await loadConversation(convo.id);
+                                      }}
+                                      className={`group w-full rounded-lg border px-3 py-2 text-left transition-colors ${
+                                        convo.id === activeConversationId
+                                          ? "border-accent/50 bg-accent/20"
+                                          : "border-transparent hover:border-border hover:bg-surface"
+                                      }`}
+                                    >
+                                      <div className="flex items-center justify-between gap-2">
+                                        <span className="truncate text-sm text-text-primary">
+                                          {truncateTitle(convo.title || "New chat", 35)}
+                                        </span>
+                                        <div className="flex items-center gap-2 shrink-0">
+                                          <span className="text-[11px] text-text-tertiary">
+                                            {formatDateLabel(convo.updatedAt || convo.createdAt)}
+                                          </span>
+                                          <span
+                                            className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-danger transition-opacity"
+                                            onClick={(event) => {
+                                              event.preventDefault();
+                                              event.stopPropagation();
+                                              void deleteConversation(convo.id);
+                                            }}
+                                            title="Delete conversation"
+                                            role="button"
+                                          >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                              <path d="M4 7H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                              <path d="M10 11V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                              <path d="M14 11V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                              <path d="M6 7L7 20H17L18 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                              <path d="M9 7V4H15V7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+                                            </svg>
+                                          </span>
+                                        </div>
+                                      </div>
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                            );
+                          })
+                        )}
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
               <button
-                onClick={async () => {
-                  const next = !historyOpen;
-                  setHistoryOpen(next);
-                  if (next) await refreshConversations();
-                }}
-                disabled={loading}
+                onClick={clearChat}
+                disabled={loading || messages.length === 0}
                 className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary hover:bg-border hover:text-text-primary transition-colors disabled:opacity-50"
               >
-                Chat History
+                Clear chat
               </button>
-              <AnimatePresence>
-                {historyOpen && (
-                  <motion.div
-                    initial={{ opacity: 0, y: -6, scale: 0.98 }}
-                    animate={{ opacity: 1, y: 0, scale: 1 }}
-                    exit={{ opacity: 0, y: -6, scale: 0.98 }}
-                    transition={{ duration: 0.15 }}
-                    className="absolute right-0 mt-2 w-[360px] rounded-xl border z-50"
-                    style={{ background: "#111118", borderColor: "#2a2a3a" }}
-                  >
-                    <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "#2a2a3a" }}>
-                      <span className="text-sm font-semibold text-text-primary">Previous Chats</span>
-                      <button
-                        onClick={createNewChat}
-                        className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90"
-                      >
-                        New Chat
-                      </button>
-                    </div>
-                    <div className="max-h-[400px] overflow-y-auto p-2">
-                      {conversations.length === 0 ? (
-                        <div className="px-3 py-8 text-center text-sm text-text-tertiary">No previous chats.</div>
-                      ) : (
-                        (["Today", "Yesterday", "This week", "Older"] as const).map((group) => {
-                          const items = groupedConversations[group];
-                          if (!items.length) return null;
-                          return (
-                            <div key={group} className="mb-2">
-                              <div className="px-2 py-1 text-[11px] uppercase tracking-wide text-text-tertiary">
-                                {group}
-                              </div>
-                              <div className="space-y-1">
-                                {items.map((convo) => (
-                                  <button
-                                    key={convo.id}
-                                    onClick={async () => {
-                                      setHistoryOpen(false);
-                                      await loadConversation(convo.id);
-                                    }}
-                                    className={`group w-full rounded-lg border px-3 py-2 text-left transition-colors ${
-                                      convo.id === activeConversationId
-                                        ? "border-accent/50 bg-accent/20"
-                                        : "border-transparent hover:border-border hover:bg-surface"
-                                    }`}
-                                  >
-                                    <div className="flex items-center justify-between gap-2">
-                                      <span className="truncate text-sm text-text-primary">
-                                        {truncateTitle(convo.title || "New chat", 35)}
-                                      </span>
-                                      <div className="flex items-center gap-2 shrink-0">
-                                        <span className="text-[11px] text-text-tertiary">
-                                          {formatDateLabel(convo.updatedAt || convo.createdAt)}
-                                        </span>
-                                        <span
-                                          className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-danger transition-opacity"
-                                          onClick={(event) => {
-                                            event.preventDefault();
-                                            event.stopPropagation();
-                                            void deleteConversation(convo.id);
-                                          }}
-                                          title="Delete conversation"
-                                          role="button"
-                                        >
-                                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                            <path d="M4 7H20" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                            <path d="M10 11V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                            <path d="M14 11V17" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                            <path d="M6 7L7 20H17L18 7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                            <path d="M9 7V4H15V7" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
-                                          </svg>
-                                        </span>
-                                      </div>
-                                    </div>
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-                          );
-                        })
-                      )}
-                    </div>
-                  </motion.div>
-                )}
-              </AnimatePresence>
             </div>
-            <button
-              onClick={clearChat}
-              disabled={loading || messages.length === 0}
-              className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary hover:bg-border hover:text-text-primary transition-colors disabled:opacity-50"
-            >
-              Clear chat
-            </button>
           </div>
-        </div>
+        </motion.div>
 
-        {/* ── Messages ───────────────────────────────────────────────────── */}
-        <div className="flex-1 overflow-y-auto px-6 py-5 space-y-4">
+        <div className="flex-1 overflow-y-auto space-y-4 pb-4">
           {messages.length === 0 && (
             <motion.div
               initial={{ opacity: 0 }}
@@ -455,14 +457,15 @@ export default function CoachPage() {
           <div ref={bottomRef} />
         </div>
 
-        {/* ── Input area ─────────────────────────────────────────────────── */}
-        <div className="px-6 py-4 border-t border-border shrink-0 space-y-3">
+        <div className="border-t border-border pt-4">
           {messages.length > 0 && (
-            <QuickPrompts onSelect={sendMessage} disabled={loading} />
+            <div className="mb-3">
+              <QuickPrompts onSelect={sendMessage} disabled={loading} />
+            </div>
           )}
           <ChatInput onSend={sendMessage} disabled={loading} />
         </div>
-      </motion.div>
-    </PageLayout>
+      </main>
+    </div>
   );
 }

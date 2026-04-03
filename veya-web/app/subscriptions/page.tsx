@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { PageLayout } from "@/components/layout/PageLayout";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { SubscriptionCard } from "@/components/subscriptions/SubscriptionCard";
 import { AddSubscriptionModal } from "@/components/subscriptions/AddSubscriptionModal";
 import { EditSubscriptionModal } from "@/components/subscriptions/EditSubscriptionModal";
@@ -21,10 +21,6 @@ import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
-import {
-  SUBSCRIPTION_CATEGORIES,
-  categoryIcon,
-} from "@/lib/subscriptionCategories";
 
 function SubscriptionsContent() {
   const { status } = useSession();
@@ -211,11 +207,9 @@ function SubscriptionsContent() {
         return nextRenewalSortKey(a) - nextRenewalSortKey(b);
       }) ?? [];
 
-  const fromSubs = Array.from(new Set(subs?.map((s) => s.category) ?? []));
-  const extras = fromSubs.filter(
-    (c) => !(SUBSCRIPTION_CATEGORIES as readonly string[]).includes(c)
-  );
-  const categories = [...SUBSCRIPTION_CATEGORIES, ...extras.sort((a, b) => a.localeCompare(b))];
+  const categories = Array.from(
+    new Set(subs?.map((s) => s.category) ?? [])
+  ).sort();
 
   const handlePause = (id: string) => {
     const sub = subs?.find((s) => s.id === id);
@@ -257,7 +251,9 @@ function SubscriptionsContent() {
   };
 
   return (
-    <PageLayout>
+    <div className="min-h-screen bg-background">
+      <Sidebar />
+      <main className="pl-56 pr-6 py-8">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -333,7 +329,7 @@ function SubscriptionsContent() {
             <option value="">All categories</option>
             {categories.map((c) => (
               <option key={c} value={c}>
-                {categoryIcon(c)} {c}
+                {c}
               </option>
             ))}
           </select>
@@ -382,6 +378,7 @@ function SubscriptionsContent() {
             ))}
           </div>
         )}
+      </main>
 
       <AddSubscriptionModal
         open={addOpen}
@@ -411,7 +408,7 @@ function SubscriptionsContent() {
           onExit={() => setPlaidLinkToken(null)}
         />
       )}
-    </PageLayout>
+    </div>
   );
 }
 

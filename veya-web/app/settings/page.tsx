@@ -5,12 +5,10 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { PageLayout } from "@/components/layout/PageLayout";
+import { Sidebar } from "@/components/layout/Sidebar";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
-import { Input } from "@/components/ui/Input";
-import { cn } from "@/lib/utils";
 import {
   GmailScanResultsModal,
   type GmailScanRow,
@@ -28,90 +26,6 @@ type GmailInfo = {
   lastGmailScanFoundCount: number;
 };
 
-type NotifPrefs = {
-  renewalReminders: boolean;
-  budgetAlerts: boolean;
-  weeklyDigest: boolean;
-  newSubDetected: boolean;
-  priceAlerts: boolean;
-};
-
-function getDeviceLabel(): string {
-  if (typeof navigator === "undefined") return "This device";
-  const ua = navigator.userAgent;
-  const isWin = /Windows/i.test(ua);
-  const isMac = /Mac/i.test(ua);
-  const isChrome = /Chrome/i.test(ua) && !/Edg/i.test(ua);
-  const isFirefox = /Firefox/i.test(ua);
-  const isSafari = /Safari/i.test(ua) && !/Chrome/i.test(ua);
-  const isEdg = /Edg/i.test(ua);
-  let browser = "Browser";
-  if (isChrome) browser = "Chrome";
-  else if (isEdg) browser = "Edge";
-  else if (isFirefox) browser = "Firefox";
-  else if (isSafari) browser = "Safari";
-  let os = "device";
-  if (isWin) os = "Windows";
-  else if (isMac) os = "macOS";
-  else if (/Linux/i.test(ua)) os = "Linux";
-  else if (/Android/i.test(ua)) os = "Android";
-  else if (/iPhone|iPad/i.test(ua)) os = "iOS";
-  return `${browser} on ${os}`;
-}
-
-function scorePassword(pw: string): number {
-  let s = 0;
-  if (pw.length >= 8) s++;
-  if (pw.length >= 12) s++;
-  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++;
-  if (/\d/.test(pw)) s++;
-  if (/[^a-zA-Z0-9]/.test(pw)) s++;
-  return Math.min(s, 4);
-}
-
-function strengthLabel(score: number): string {
-  if (score <= 1) return "Weak";
-  if (score === 2) return "Fair";
-  if (score === 3) return "Good";
-  return "Strong";
-}
-
-function NotifToggle({
-  label,
-  description,
-  checked,
-  disabled,
-  onChange,
-}: {
-  label: string;
-  description: string;
-  checked: boolean;
-  disabled?: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <div className="flex items-center justify-between gap-4 py-3 border-b border-border last:border-0">
-      <div className="min-w-0 pr-2">
-        <p className="font-medium text-text-primary text-sm">{label}</p>
-        <p className="text-xs text-text-secondary mt-0.5">{description}</p>
-      </div>
-      <button
-        type="button"
-        role="switch"
-        aria-checked={checked}
-        disabled={disabled}
-        onClick={() => onChange(!checked)}
-        className={cn(
-          "relative h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors flex items-center focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50",
-          checked ? "bg-success justify-end" : "justify-start bg-[#3f3f4f]"
-        )}
-      >
-        <span className="pointer-events-none block h-6 w-6 rounded-full bg-white shadow-md" />
-      </button>
-    </div>
-  );
-}
-
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -126,17 +40,7 @@ export default function SettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
-  const [notifPrefs, setNotifPrefs] = useState<NotifPrefs | null>(null);
-  const [hasPassword, setHasPassword] = useState(true);
-  const [pwCurrent, setPwCurrent] = useState("");
-  const [pwNew, setPwNew] = useState("");
-  const [pwConfirm, setPwConfirm] = useState("");
-  const [pwBusy, setPwBusy] = useState(false);
-  const [pwResetBusy, setPwResetBusy] = useState(false);
-  const [pwResetMsg, setPwResetMsg] = useState<string | null>(null);
-  const [signoutBusy, setSignoutBusy] = useState(false);
-  const [deviceLabel, setDeviceLabel] = useState("This device");
+  const [deleteToast, setDeleteToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -152,32 +56,8 @@ export default function SettingsPage() {
         .then((r) => r.json())
         .then((d) => setGmail(d))
         .catch(() => {});
-      fetch("/api/user/settings")
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.error) return;
-          setNotifPrefs({
-            renewalReminders: d.renewalReminders ?? true,
-            budgetAlerts: d.budgetAlerts ?? true,
-            weeklyDigest: d.weeklyDigest ?? true,
-            newSubDetected: d.newSubDetected ?? true,
-            priceAlerts: d.priceAlerts ?? true,
-          });
-          setHasPassword(!!d.hasPassword);
-        })
-        .catch(() => {});
     }
   }, [status]);
-
-  useEffect(() => {
-    setDeviceLabel(getDeviceLabel());
-  }, []);
-
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   const refreshGmail = () =>
     fetch("/api/settings/gmail")
@@ -342,97 +222,12 @@ export default function SettingsPage() {
     if (json.plan) setPlan(json.plan);
   };
 
-  const updateNotif = async (key: keyof NotifPrefs, value: boolean) => {
-    if (!notifPrefs) return;
-    const prev: NotifPrefs = { ...notifPrefs };
-    setNotifPrefs({ ...notifPrefs, [key]: value });
-    try {
-      const res = await fetch("/api/user/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ [key]: value }),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "Save failed");
-      setToast({ type: "success", message: "Notification preference saved." });
-    } catch (e) {
-      setNotifPrefs(prev);
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Save failed" });
-    }
-  };
-
-  const submitPassword = async () => {
-    if (pwNew !== pwConfirm) {
-      setToast({ type: "error", message: "New passwords do not match." });
-      return;
-    }
-    setPwBusy(true);
-    try {
-      const res = await fetch("/api/user/password", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentPassword: pwCurrent,
-          newPassword: pwNew,
-          confirmPassword: pwConfirm,
-        }),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "Update failed");
-      setPwCurrent("");
-      setPwNew("");
-      setPwConfirm("");
-      setToast({ type: "success", message: j.message ?? "Password updated." });
-    } catch (e) {
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Update failed" });
-    } finally {
-      setPwBusy(false);
-    }
-  };
-
-  const sendPasswordReset = async () => {
-    const email = session?.user?.email;
-    if (!email) return;
-    setPwResetBusy(true);
-    setPwResetMsg(null);
-    try {
-      const res = await fetch("/api/auth/forgot-password", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email }),
-      });
-      await res.json();
-      setPwResetMsg(`Reset link sent to ${email} ✅`);
-    } catch {
-      setPwResetMsg("Failed to send reset email.");
-    } finally {
-      setPwResetBusy(false);
-    }
-  };
-
-  const signOutOthers = async () => {
-    setSignoutBusy(true);
-    try {
-      const res = await fetch("/api/auth/signout-all", { method: "POST" });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "Failed");
-      setToast({ type: "success", message: "Signed out all other devices." });
-    } catch (e) {
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Failed" });
-    } finally {
-      setSignoutBusy(false);
-    }
-  };
-
-  const pwScore = scorePassword(pwNew);
-  const pwStrengthText = strengthLabel(pwScore);
-
   if (status === "loading" || status === "unauthenticated") {
     return <div className="min-h-screen flex items-center justify-center" />;
   }
 
   const runDeleteAccount = async () => {
-    setToast(null);
+    setDeleteToast(null);
     setDeleteBusy(true);
     try {
       const res = await fetch("/api/user/account", { method: "DELETE" });
@@ -441,13 +236,15 @@ export default function SettingsPage() {
       // Ensure client session clears too.
       await signOut({ callbackUrl: "/" });
     } catch (e) {
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Failed to delete account" });
+      setDeleteToast(e instanceof Error ? e.message : "Failed to delete account");
       setDeleteBusy(false);
     }
   };
 
   return (
-    <PageLayout>
+    <div className="min-h-screen bg-background">
+      <Sidebar />
+      <main className="pl-56 pr-6 py-8">
         <motion.h1
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -580,147 +377,20 @@ export default function SettingsPage() {
             <h2 className="text-lg font-semibold text-text-primary mb-4">
               Notifications
             </h2>
-            {!notifPrefs ? (
-              <p className="text-sm text-text-secondary">Loading…</p>
-            ) : (
-              <div className="rounded-xl border border-border/80 bg-surface/40 overflow-hidden px-4">
-                <NotifToggle
-                  label="Renewal reminders"
-                  description="Get notified before subscriptions renew"
-                  checked={notifPrefs.renewalReminders}
-                  onChange={(v) => updateNotif("renewalReminders", v)}
-                />
-                <NotifToggle
-                  label="Budget alerts"
-                  description="Alert when approaching budget limits"
-                  checked={notifPrefs.budgetAlerts}
-                  onChange={(v) => updateNotif("budgetAlerts", v)}
-                />
-                <NotifToggle
-                  label="Weekly spending summary"
-                  description="Weekly email with your spending recap"
-                  checked={notifPrefs.weeklyDigest}
-                  onChange={(v) => updateNotif("weeklyDigest", v)}
-                />
-                <NotifToggle
-                  label="New subscription detected"
-                  description="When Gmail or bank detects a new subscription"
-                  checked={notifPrefs.newSubDetected}
-                  onChange={(v) => updateNotif("newSubDetected", v)}
-                />
-                <NotifToggle
-                  label="Price increase alerts"
-                  description="When a subscription price changes"
-                  checked={notifPrefs.priceAlerts}
-                  onChange={(v) => updateNotif("priceAlerts", v)}
-                />
-              </div>
-            )}
+            <p className="text-sm text-text-secondary">
+              Renewal reminders and alerts can be configured here. (UI toggles
+              can be wired to UserSettings in the API.)
+            </p>
           </Card>
 
           <Card>
-            <h2 className="text-lg font-semibold text-text-primary mb-6">
+            <h2 className="text-lg font-semibold text-text-primary mb-4">
               Security
             </h2>
-
-            <div className="space-y-8">
-              <div>
-                <h3 className="text-sm font-semibold text-text-primary mb-3">Change password</h3>
-                {!hasPassword ? (
-                  <p className="text-sm text-text-secondary">
-                    No password set for this account. Sign in with Google or use forgot password from the sign-in page
-                    to set one.
-                  </p>
-                ) : (
-                  <div className="space-y-3 max-w-md">
-                    <div>
-                      <label className="block text-xs text-text-tertiary mb-1.5">Current password</label>
-                      <Input
-                        type="password"
-                        autoComplete="current-password"
-                        value={pwCurrent}
-                        onChange={(e) => setPwCurrent(e.target.value)}
-                        disabled={pwBusy}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-text-tertiary mb-1.5">New password</label>
-                      <Input
-                        type="password"
-                        autoComplete="new-password"
-                        value={pwNew}
-                        onChange={(e) => setPwNew(e.target.value)}
-                        disabled={pwBusy}
-                      />
-                    </div>
-                    <div>
-                      <label className="block text-xs text-text-tertiary mb-1.5">Confirm new password</label>
-                      <Input
-                        type="password"
-                        autoComplete="new-password"
-                        value={pwConfirm}
-                        onChange={(e) => setPwConfirm(e.target.value)}
-                        disabled={pwBusy}
-                      />
-                    </div>
-                    <div className="space-y-2">
-                      <div className="flex gap-1">
-                        {[0, 1, 2, 3].map((i) => (
-                          <div
-                            key={i}
-                            className={cn(
-                              "h-1 flex-1 rounded-full transition-colors",
-                              i < pwScore ? "bg-success" : "bg-border"
-                            )}
-                          />
-                        ))}
-                      </div>
-                      <p className="text-xs text-text-tertiary">
-                        Password strength: <span className="text-text-secondary">{pwStrengthText}</span>
-                      </p>
-                    </div>
-                    <Button onClick={submitPassword} disabled={pwBusy || !pwCurrent || !pwNew || !pwConfirm}>
-                      {pwBusy ? "Updating…" : "Update password"}
-                    </Button>
-                    <div className="pt-1">
-                      <button
-                        type="button"
-                        onClick={() => void sendPasswordReset()}
-                        disabled={pwResetBusy}
-                        className="text-xs text-accent hover:underline disabled:opacity-50"
-                      >
-                        {pwResetBusy ? "Sending…" : "Send reset link"}
-                      </button>
-                      {pwResetMsg && (
-                        <p className="mt-1 text-xs text-success">{pwResetMsg}</p>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-border pt-6">
-                <h3 className="text-sm font-semibold text-text-primary mb-3">Active sessions</h3>
-                <div className="rounded-xl border border-border/80 bg-surface/40 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
-                  <div>
-                    <p className="text-sm text-text-primary">
-                      <span className="text-text-tertiary">Device:</span> {deviceLabel}
-                    </p>
-                    <p className="text-sm text-text-secondary mt-1">
-                      <span className="text-text-tertiary">Location:</span> Current session
-                    </p>
-                  </div>
-                  <Badge variant="success" className="self-start sm:self-center">
-                    This device
-                  </Badge>
-                </div>
-                <div className="mt-4">
-                  <Button variant="secondary" onClick={signOutOthers} disabled={signoutBusy}>
-                    {signoutBusy ? "Signing out…" : "Sign out all other devices"}
-                  </Button>
-                </div>
-              </div>
-            </div>
+            <p className="text-sm text-text-secondary mb-4">
+              Change password and 2FA settings. (Implement via NextAuth or
+              custom API.)
+            </p>
           </Card>
 
           <Card className="border-danger/30">
@@ -730,7 +400,7 @@ export default function SettingsPage() {
             <p className="text-sm text-text-secondary mb-4">
               Delete your account and all data. This cannot be undone.
             </p>
-            <Button variant="danger" onClick={() => { setDeleteOpen(true); setDeleteConfirm(""); setToast(null); }}>
+            <Button variant="danger" onClick={() => { setDeleteOpen(true); setDeleteConfirm(""); setDeleteToast(null); }}>
               Delete account
             </Button>
           </Card>
@@ -744,23 +414,12 @@ export default function SettingsPage() {
             </Button>
           </div>
         </div>
+      </main>
 
-      {toast && (
-        <div
-          className={cn(
-            "fixed top-4 right-4 z-[60] max-w-sm rounded-xl border bg-card px-4 py-3 text-sm text-text-primary shadow-lg",
-            toast.type === "success" ? "border-success/30" : "border-danger/30"
-          )}
-        >
-          <div
-            className={cn(
-              "font-medium mb-1",
-              toast.type === "success" ? "text-success" : "text-danger"
-            )}
-          >
-            {toast.type === "success" ? "Success" : "Error"}
-          </div>
-          <div className="text-text-secondary">{toast.message}</div>
+      {deleteToast && (
+        <div className="fixed top-4 right-4 z-[60] max-w-sm rounded-xl border border-danger/30 bg-card px-4 py-3 text-sm text-text-primary shadow-lg">
+          <div className="font-medium text-danger mb-1">Error</div>
+          <div className="text-text-secondary">{deleteToast}</div>
         </div>
       )}
 
@@ -834,6 +493,6 @@ export default function SettingsPage() {
           onExit={() => setPlaidLinkToken(null)}
         />
       )}
-    </PageLayout>
+    </div>
   );
 }
