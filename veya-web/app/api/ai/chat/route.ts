@@ -1,7 +1,13 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import type { Prisma } from "@prisma/client";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
+
+/** Prisma Json fields expect InputJsonValue; message arrays are structurally valid JSON. */
+function toJsonMessages(value: unknown): Prisma.InputJsonValue {
+  return value as Prisma.InputJsonValue;
+}
 import { pricePerMonth, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -210,7 +216,7 @@ export async function POST(req: Request) {
     ? await prisma.aIConversation.findFirst({ where: { id: body.conversationId, userId: user.id } })
     : null;
   if (!convo) {
-    convo = await prisma.aIConversation.create({ data: { userId: user.id, messages: [] } });
+    convo = await prisma.aIConversation.create({ data: { userId: user.id, messages: toJsonMessages([]) } });
   }
 
   const existingMessages = (convo.messages as Record<string, unknown>[]) ?? [];
@@ -222,7 +228,7 @@ export async function POST(req: Request) {
     kind: "chat",
   };
   const withUser = [...existingMessages, userMsgObj];
-  await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: withUser } });
+  await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: toJsonMessages(withUser) } });
 
   // ─── Pending action confirmation ─────────────────────────────────────────────
 
@@ -277,7 +283,7 @@ export async function POST(req: Request) {
     if (!action) {
       const msg = chatMsg(rawReply);
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: final } });
+      await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: toJsonMessages(final) } });
       return NextResponse.json({ reply: rawReply, messages: final });
     }
 
@@ -306,7 +312,7 @@ async function executePendingAction(
     if (!target) {
       const msg = chatMsg("That subscription no longer exists.");
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
       return NextResponse.json({ reply: msg.content, messages: final });
     }
     await prisma.subscription.delete({ where: { id: target.id } });
@@ -316,7 +322,7 @@ async function executePendingAction(
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
     return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
   }
 
@@ -328,7 +334,7 @@ async function executePendingAction(
     if (!target) {
       const msg = chatMsg("That budget no longer exists.");
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
       return NextResponse.json({ reply: msg.content, messages: final });
     }
     await prisma.budget.delete({ where: { id: target.id } });
@@ -338,7 +344,7 @@ async function executePendingAction(
       "/analytics"
     );
     const final = [...withUser, confirm, success];
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
     return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
   }
 
@@ -352,7 +358,7 @@ async function executePendingAction(
     if (targets.length === 0) {
       const msg = chatMsg(`No active subscriptions found in the **${category}** category.`);
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
       return NextResponse.json({ reply: msg.content, messages: final });
     }
     await Promise.all(
@@ -365,7 +371,7 @@ async function executePendingAction(
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
     return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
   }
 
@@ -377,7 +383,7 @@ async function executePendingAction(
     if (targets.length === 0) {
       const msg = chatMsg("None of those subscriptions were found.");
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
       return NextResponse.json({ reply: msg.content, messages: final });
     }
     await prisma.subscription.deleteMany({ where: { id: { in: targets.map((t) => t.id) } } });
@@ -391,7 +397,7 @@ async function executePendingAction(
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
     return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
   }
 
@@ -412,7 +418,7 @@ async function executeAction(
   const data = (action.data ?? {}) as Record<string, unknown>;
 
   const save = async (msgs: Record<string, unknown>[], actionPerformed = false) => {
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: msgs } });
+    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(msgs) } });
     const lastMsg = msgs[msgs.length - 1] as Record<string, unknown>;
     return NextResponse.json({ reply: lastMsg.content, messages: msgs, actionPerformed });
   };
@@ -608,6 +614,6 @@ async function executeAction(
 
   const msg = chatMsg(replyText);
   const final = [...withUser, msg];
-  await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+  await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: toJsonMessages(final) } });
   return NextResponse.json({ reply: replyText, messages: final });
 }
