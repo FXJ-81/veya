@@ -18,6 +18,26 @@ const schema = z.object({
 
 type FormData = z.infer<typeof schema>;
 
+function getAuthErrorMessage(errorParam: string | null): string {
+  if (!errorParam) return "";
+  if (errorParam === "OAuthAccountNotLinked") {
+    return "This email is already registered with a password. Sign in with your email and password above.";
+  }
+  if (errorParam === "Callback" || errorParam === "OAuthCallback") {
+    return "Google sign-in callback failed. Check OAuth redirect URI and server logs for details.";
+  }
+  if (errorParam === "OAuthSignin" || errorParam === "OAuthCreateAccount") {
+    return "Google sign-in failed during provider handshake. Please try again.";
+  }
+  if (errorParam === "AccessDenied") {
+    return "Google sign-in was denied. Please allow access and try again.";
+  }
+  if (errorParam === "Configuration") {
+    return "Google auth is not configured correctly on the server.";
+  }
+  return decodeURIComponent(errorParam.replace(/\+/g, " "));
+}
+
 function SignInForm() {
   const router = useRouter();
   const searchParams = useSearchParams();
@@ -25,12 +45,7 @@ function SignInForm() {
   const created = searchParams.get("created") === "1";
   const verified = searchParams.get("verified") === "1";
   const errorParam = searchParams.get("error");
-  const errorMessage =
-    errorParam === "OAuthAccountNotLinked"
-      ? "This email is already registered with a password. Sign in with your email and password above."
-      : errorParam
-        ? decodeURIComponent(errorParam.replace(/\+/g, " "))
-        : "";
+  const errorMessage = getAuthErrorMessage(errorParam);
 
   const [error, setError] = useState(errorMessage);
 

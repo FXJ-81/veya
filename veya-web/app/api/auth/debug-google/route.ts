@@ -1,8 +1,8 @@
 import { NextResponse } from "next/server";
 import {
-  AUTHORIZED_GOOGLE_OAUTH_REDIRECT_URIS,
   getGoogleOAuthOrigin,
   getGoogleOAuthRedirectUri,
+  getAuthorizedGoogleOAuthRedirectUris,
 } from "@/lib/googleOAuthCallback";
 
 /**
@@ -15,6 +15,7 @@ export async function GET() {
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
   const origin = getGoogleOAuthOrigin();
   const redirectUri = getGoogleOAuthRedirectUri();
+  const allowedUris = getAuthorizedGoogleOAuthRedirectUris();
 
   const ok = clientId.length > 10 && clientSecret.length > 10;
   return NextResponse.json({
@@ -26,11 +27,11 @@ export async function GET() {
     GOOGLE_CLIENT_ID_startsWith: clientId ? clientId.slice(0, 14) + "..." : "(empty)",
     NEXTAUTH_URL_effective_origin: origin,
     redirect_uri_sent_to_Google: redirectUri,
-    authorized_redirect_uris_register_both_in_Google_Cloud: AUTHORIZED_GOOGLE_OAUTH_REDIRECT_URIS,
+    authorized_redirect_uris_register_in_Google_Cloud: allowedUris,
     checklist: [
       "In Google Cloud, use an OAuth client with Application type = Web application",
-      "Authorized redirect URIs must be exactly these two (no other hosts, paths, or ports):",
-      ...AUTHORIZED_GOOGLE_OAUTH_REDIRECT_URIS.map((u) => `  - ${u}`),
+      "Authorized redirect URIs must include both local and your deployed callback URL:",
+      ...allowedUris.map((u) => `  - ${u}`),
       `NEXTAUTH_URL must be exactly ${origin} (no trailing slash) so NextAuth matches the same callback.`,
       "Use http://localhost:3000 locally — not 127.0.0.1 or another port.",
       "After changing .env, restart: npm run dev",

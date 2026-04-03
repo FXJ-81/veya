@@ -1,68 +1,65 @@
 /**
- * Google OAuth "Authorized redirect URIs" for this app must be exactly these two — no other format.
- * NextAuth uses the same path: /api/auth/callback/google
+ * NextAuth + Google callback path.
  */
-
 export const GOOGLE_OAUTH_CALLBACK_PATH = "/api/auth/callback/google" as const;
 
 const LOCAL_ORIGIN = "http://localhost:3000" as const;
-const PROD_ORIGIN = "https://veya-beta.vercel.app" as const;
 
-export const GOOGLE_OAUTH_REDIRECT_URI_LOCAL = `${LOCAL_ORIGIN}${GOOGLE_OAUTH_CALLBACK_PATH}`;
-export const GOOGLE_OAUTH_REDIRECT_URI_PROD = `${PROD_ORIGIN}${GOOGLE_OAUTH_CALLBACK_PATH}`;
+function trimOrigin(value: string): string {
+  return value.trim().replace(/\/+$/, "");
+}
 
-/** Register both in Google Cloud Console → OAuth client → Authorized redirect URIs */
-export const AUTHORIZED_GOOGLE_OAUTH_REDIRECT_URIS: readonly string[] = [
-  GOOGLE_OAUTH_REDIRECT_URI_LOCAL,
-  GOOGLE_OAUTH_REDIRECT_URI_PROD,
-];
-
-const PROD_HOST = new URL(PROD_ORIGIN).hostname;
+function parseOrigin(value: string): string | null {
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
 
 /**
- * Vercel preview URLs (`*.vercel.app` except `veya-beta`) are not registered in Google Cloud.
- * NextAuth otherwise uses that host as `redirect_uri` → `redirect_uri_mismatch`.
- * Force the canonical beta origin so Google sign-in and Gmail OAuth match the two allowed URIs.
+ * Ensure NEXTAUTH_URL is set to the *current deployment host* when missing.
+ * Never force to a different host, otherwise OAuth state/callback cookies can mismatch.
  */
 export function applyCanonicalNextAuthUrlForOAuth(): void {
-  const raw = process.env.NEXTAUTH_URL?.trim().replace(/\/+$/, "") ?? "";
-  if (raw === LOCAL_ORIGIN) return;
-
-  let hostname = "";
+  const raw = trimOrigin(process.env.NEXTAUTH_URL ?? "");
   if (raw) {
-    try {
-      hostname = new URL(raw).hostname;
-    } catch {
+    const parsed = parseOrigin(raw);
+    if (parsed) {
+      process.env.NEXTAUTH_URL = parsed;
       return;
     }
+    console.error("[google-oauth] Invalid NEXTAUTH_URL:", process.env.NEXTAUTH_URL);
   }
 
-  const isNonProdVercelApp =
-    hostname.endsWith(".vercel.app") && hostname !== PROD_HOST;
-
-  if (process.env.VERCEL_ENV === "preview" || isNonProdVercelApp) {
-    process.env.NEXTAUTH_URL = PROD_ORIGIN;
+  const vercelUrl = process.env.VERCEL_URL?.trim();
+  if (vercelUrl) {
+    const inferred = `https://${vercelUrl}`;
+    process.env.NEXTAUTH_URL = inferred;
+    console.warn("[google-oauth] NEXTAUTH_URL missing; inferred from VERCEL_URL:", inferred);
     return;
   }
 
-  if (process.env.VERCEL === "1" && !raw) {
-    process.env.NEXTAUTH_URL = PROD_ORIGIN;
-  }
+  process.env.NEXTAUTH_URL = LOCAL_ORIGIN;
+  console.warn("[google-oauth] NEXTAUTH_URL missing; defaulting to local:", LOCAL_ORIGIN);
 }
 
 /**
- * Origin only (no path) — must be LOCAL_ORIGIN or PROD_ORIGIN so the callback URL stays standard.
+ * Origin only (no path).
  */
-export function getGoogleOAuthOrigin(): typeof LOCAL_ORIGIN | typeof PROD_ORIGIN {
+export function getGoogleOAuthOrigin(): string {
   applyCanonicalNextAuthUrlForOAuth();
-  const raw = process.env.NEXTAUTH_URL?.trim().replace(/\/+$/, "") ?? "";
-  if (raw === PROD_ORIGIN) return PROD_ORIGIN;
-  if (raw === LOCAL_ORIGIN) return LOCAL_ORIGIN;
-  if (process.env.VERCEL_ENV === "production") return PROD_ORIGIN;
-  return LOCAL_ORIGIN;
+  return trimOrigin(process.env.NEXTAUTH_URL ?? LOCAL_ORIGIN);
 }
 
-/** Full redirect URI passed to google.auth.OAuth2 — always one of the two allowed URLs above. */
+/** Full redirect URI passed to google.auth.OAuth2. */
 export function getGoogleOAuthRedirectUri(): string {
   return `${getGoogleOAuthOrigin()}${GOOGLE_OAUTH_CALLBACK_PATH}`;
+}
+
+/** Helpful for debug endpoint / docs; includes local + current effective host. */
+export function getAuthorizedGoogleOAuthRedirectUris(): string[] {
+  const current = getGoogleOAuthRedirectUri();
+  const local = `${LOCAL_ORIGIN}${GOOGLE_OAUTH_CALLBACK_PATH}`;
+  return Array.from(new Set([local, current]));
 }
