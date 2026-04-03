@@ -9,6 +9,8 @@ import { Sidebar } from "@/components/layout/Sidebar";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Input } from "@/components/ui/Input";
+import { cn } from "@/lib/utils";
 import {
   GmailScanResultsModal,
   type GmailScanRow,
@@ -26,6 +28,90 @@ type GmailInfo = {
   lastGmailScanFoundCount: number;
 };
 
+type NotifPrefs = {
+  renewalReminders: boolean;
+  budgetAlerts: boolean;
+  weeklyDigest: boolean;
+  newSubDetected: boolean;
+  priceAlerts: boolean;
+};
+
+function getDeviceLabel(): string {
+  if (typeof navigator === "undefined") return "This device";
+  const ua = navigator.userAgent;
+  const isWin = /Windows/i.test(ua);
+  const isMac = /Mac/i.test(ua);
+  const isChrome = /Chrome/i.test(ua) && !/Edg/i.test(ua);
+  const isFirefox = /Firefox/i.test(ua);
+  const isSafari = /Safari/i.test(ua) && !/Chrome/i.test(ua);
+  const isEdg = /Edg/i.test(ua);
+  let browser = "Browser";
+  if (isChrome) browser = "Chrome";
+  else if (isEdg) browser = "Edge";
+  else if (isFirefox) browser = "Firefox";
+  else if (isSafari) browser = "Safari";
+  let os = "device";
+  if (isWin) os = "Windows";
+  else if (isMac) os = "macOS";
+  else if (/Linux/i.test(ua)) os = "Linux";
+  else if (/Android/i.test(ua)) os = "Android";
+  else if (/iPhone|iPad/i.test(ua)) os = "iOS";
+  return `${browser} on ${os}`;
+}
+
+function scorePassword(pw: string): number {
+  let s = 0;
+  if (pw.length >= 8) s++;
+  if (pw.length >= 12) s++;
+  if (/[a-z]/.test(pw) && /[A-Z]/.test(pw)) s++;
+  if (/\d/.test(pw)) s++;
+  if (/[^a-zA-Z0-9]/.test(pw)) s++;
+  return Math.min(s, 4);
+}
+
+function strengthLabel(score: number): string {
+  if (score <= 1) return "Weak";
+  if (score === 2) return "Fair";
+  if (score === 3) return "Good";
+  return "Strong";
+}
+
+function NotifToggle({
+  label,
+  description,
+  checked,
+  disabled,
+  onChange,
+}: {
+  label: string;
+  description: string;
+  checked: boolean;
+  disabled?: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 py-3 border-b border-border last:border-0">
+      <div className="min-w-0 pr-2">
+        <p className="font-medium text-text-primary text-sm">{label}</p>
+        <p className="text-xs text-text-secondary mt-0.5">{description}</p>
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        disabled={disabled}
+        onClick={() => onChange(!checked)}
+        className={cn(
+          "relative h-7 w-12 shrink-0 rounded-full p-0.5 transition-colors flex items-center focus:outline-none focus:ring-2 focus:ring-accent/40 focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50",
+          checked ? "bg-success justify-end" : "justify-start bg-[#3f3f4f]"
+        )}
+      >
+        <span className="pointer-events-none block h-6 w-6 rounded-full bg-white shadow-md" />
+      </button>
+    </div>
+  );
+}
+
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -40,7 +126,22 @@ export default function SettingsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
-  const [deleteToast, setDeleteToast] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
+  const [notifPrefs, setNotifPrefs] = useState<NotifPrefs | null>(null);
+  const [hasPassword, setHasPassword] = useState(true);
+  const [pwCurrent, setPwCurrent] = useState("");
+  const [pwNew, setPwNew] = useState("");
+  const [pwConfirm, setPwConfirm] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [twoFAEnabled, setTwoFAEnabled] = useState<boolean | null>(null);
+  const [twoFAAwaitingCode, setTwoFAAwaitingCode] = useState(false);
+  const [twoFAOtp, setTwoFAOtp] = useState("");
+  const [twoFASendBusy, setTwoFASendBusy] = useState(false);
+  const [twoFAVerifyBusy, setTwoFAVerifyBusy] = useState(false);
+  const [twoFAResendSec, setTwoFAResendSec] = useState(0);
+  const [twoFAInlineMsg, setTwoFAInlineMsg] = useState<string | null>(null);
+  const [signoutBusy, setSignoutBusy] = useState(false);
+  const [deviceLabel, setDeviceLabel] = useState("This device");
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -56,8 +157,45 @@ export default function SettingsPage() {
         .then((r) => r.json())
         .then((d) => setGmail(d))
         .catch(() => {});
+      fetch("/api/user/settings")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.error) return;
+          setNotifPrefs({
+            renewalReminders: d.renewalReminders ?? true,
+            budgetAlerts: d.budgetAlerts ?? true,
+            weeklyDigest: d.weeklyDigest ?? true,
+            newSubDetected: d.newSubDetected ?? true,
+            priceAlerts: d.priceAlerts ?? true,
+          });
+          setHasPassword(!!d.hasPassword);
+        })
+        .catch(() => {});
+      fetch("/api/auth/2fa/status")
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.error) return;
+          setTwoFAEnabled(!!d.twoFactorEnabled);
+        })
+        .catch(() => {});
     }
   }, [status]);
+
+  useEffect(() => {
+    setDeviceLabel(getDeviceLabel());
+  }, []);
+
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  useEffect(() => {
+    if (twoFAResendSec <= 0) return;
+    const t = setTimeout(() => setTwoFAResendSec((s) => s - 1), 1000);
+    return () => clearTimeout(t);
+  }, [twoFAResendSec]);
 
   const refreshGmail = () =>
     fetch("/api/settings/gmail")
@@ -222,12 +360,139 @@ export default function SettingsPage() {
     if (json.plan) setPlan(json.plan);
   };
 
+  const updateNotif = async (key: keyof NotifPrefs, value: boolean) => {
+    if (!notifPrefs) return;
+    const prev: NotifPrefs = { ...notifPrefs };
+    setNotifPrefs({ ...notifPrefs, [key]: value });
+    try {
+      const res = await fetch("/api/user/settings", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: value }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Save failed");
+      setToast({ type: "success", message: "Notification preference saved." });
+    } catch (e) {
+      setNotifPrefs(prev);
+      setToast({ type: "error", message: e instanceof Error ? e.message : "Save failed" });
+    }
+  };
+
+  const submitPassword = async () => {
+    if (pwNew !== pwConfirm) {
+      setToast({ type: "error", message: "New passwords do not match." });
+      return;
+    }
+    setPwBusy(true);
+    try {
+      const res = await fetch("/api/user/password", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: pwCurrent,
+          newPassword: pwNew,
+          confirmPassword: pwConfirm,
+        }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Update failed");
+      setPwCurrent("");
+      setPwNew("");
+      setPwConfirm("");
+      setToast({ type: "success", message: j.message ?? "Password updated." });
+    } catch (e) {
+      setToast({ type: "error", message: e instanceof Error ? e.message : "Update failed" });
+    } finally {
+      setPwBusy(false);
+    }
+  };
+
+  const signOutOthers = async () => {
+    setSignoutBusy(true);
+    try {
+      const res = await fetch("/api/auth/signout-all", { method: "POST" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Failed");
+      setToast({ type: "success", message: "Signed out all other devices." });
+    } catch (e) {
+      setToast({ type: "error", message: e instanceof Error ? e.message : "Failed" });
+    } finally {
+      setSignoutBusy(false);
+    }
+  };
+
+  const sendTwoFACode = async (): Promise<boolean> => {
+    setTwoFASendBusy(true);
+    try {
+      const res = await fetch("/api/auth/2fa/send-code", { method: "POST" });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Failed to send code");
+      setTwoFAResendSec(30);
+      return true;
+    } catch (e) {
+      setToast({ type: "error", message: e instanceof Error ? e.message : "Failed to send code" });
+      return false;
+    } finally {
+      setTwoFASendBusy(false);
+    }
+  };
+
+  const startEnable2FA = async () => {
+    setTwoFAInlineMsg(null);
+    setTwoFAOtp("");
+    setTwoFAAwaitingCode(true);
+    const ok = await sendTwoFACode();
+    if (!ok) setTwoFAAwaitingCode(false);
+  };
+
+  const startDisable2FA = async () => {
+    setTwoFAInlineMsg(null);
+    setTwoFAOtp("");
+    setTwoFAAwaitingCode(true);
+    const ok = await sendTwoFACode();
+    if (!ok) setTwoFAAwaitingCode(false);
+  };
+
+  const verifyTwoFACode = async () => {
+    setTwoFAVerifyBusy(true);
+    try {
+      const res = await fetch("/api/auth/2fa/verify-code", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: twoFAOtp }),
+      });
+      const j = await res.json();
+      if (!res.ok) throw new Error(j.error ?? "Verification failed");
+      setTwoFAEnabled(!!j.twoFactorEnabled);
+      setTwoFAAwaitingCode(false);
+      setTwoFAOtp("");
+      if (j.twoFactorEnabled) {
+        setTwoFAInlineMsg("✅ 2FA enabled successfully");
+      } else {
+        setTwoFAInlineMsg("2FA disabled");
+      }
+    } catch (e) {
+      setToast({ type: "error", message: e instanceof Error ? e.message : "Verification failed" });
+    } finally {
+      setTwoFAVerifyBusy(false);
+    }
+  };
+
+  const cancelTwoFAFlow = () => {
+    setTwoFAAwaitingCode(false);
+    setTwoFAOtp("");
+  };
+
+  const pwScore = scorePassword(pwNew);
+  const pwStrengthText = strengthLabel(pwScore);
+
   if (status === "loading" || status === "unauthenticated") {
     return <div className="min-h-screen flex items-center justify-center" />;
   }
 
   const runDeleteAccount = async () => {
-    setDeleteToast(null);
+    setToast(null);
     setDeleteBusy(true);
     try {
       const res = await fetch("/api/user/account", { method: "DELETE" });
@@ -236,7 +501,7 @@ export default function SettingsPage() {
       // Ensure client session clears too.
       await signOut({ callbackUrl: "/" });
     } catch (e) {
-      setDeleteToast(e instanceof Error ? e.message : "Failed to delete account");
+      setToast({ type: "error", message: e instanceof Error ? e.message : "Failed to delete account" });
       setDeleteBusy(false);
     }
   };
@@ -377,20 +642,206 @@ export default function SettingsPage() {
             <h2 className="text-lg font-semibold text-text-primary mb-4">
               Notifications
             </h2>
-            <p className="text-sm text-text-secondary">
-              Renewal reminders and alerts can be configured here. (UI toggles
-              can be wired to UserSettings in the API.)
-            </p>
+            {!notifPrefs ? (
+              <p className="text-sm text-text-secondary">Loading…</p>
+            ) : (
+              <div className="rounded-xl border border-border/80 bg-surface/40 overflow-hidden px-4">
+                <NotifToggle
+                  label="Renewal reminders"
+                  description="Get notified before subscriptions renew"
+                  checked={notifPrefs.renewalReminders}
+                  onChange={(v) => updateNotif("renewalReminders", v)}
+                />
+                <NotifToggle
+                  label="Budget alerts"
+                  description="Alert when approaching budget limits"
+                  checked={notifPrefs.budgetAlerts}
+                  onChange={(v) => updateNotif("budgetAlerts", v)}
+                />
+                <NotifToggle
+                  label="Weekly spending summary"
+                  description="Weekly email with your spending recap"
+                  checked={notifPrefs.weeklyDigest}
+                  onChange={(v) => updateNotif("weeklyDigest", v)}
+                />
+                <NotifToggle
+                  label="New subscription detected"
+                  description="When Gmail or bank detects a new subscription"
+                  checked={notifPrefs.newSubDetected}
+                  onChange={(v) => updateNotif("newSubDetected", v)}
+                />
+                <NotifToggle
+                  label="Price increase alerts"
+                  description="When a subscription price changes"
+                  checked={notifPrefs.priceAlerts}
+                  onChange={(v) => updateNotif("priceAlerts", v)}
+                />
+              </div>
+            )}
           </Card>
 
           <Card>
-            <h2 className="text-lg font-semibold text-text-primary mb-4">
+            <h2 className="text-lg font-semibold text-text-primary mb-6">
               Security
             </h2>
-            <p className="text-sm text-text-secondary mb-4">
-              Change password and 2FA settings. (Implement via NextAuth or
-              custom API.)
-            </p>
+
+            <div className="space-y-8">
+              <div>
+                <h3 className="text-sm font-semibold text-text-primary mb-3">Change password</h3>
+                {!hasPassword ? (
+                  <p className="text-sm text-text-secondary">
+                    No password set for this account. Sign in with Google or use forgot password from the sign-in page
+                    to set one.
+                  </p>
+                ) : (
+                  <div className="space-y-3 max-w-md">
+                    <div>
+                      <label className="block text-xs text-text-tertiary mb-1.5">Current password</label>
+                      <Input
+                        type="password"
+                        autoComplete="current-password"
+                        value={pwCurrent}
+                        onChange={(e) => setPwCurrent(e.target.value)}
+                        disabled={pwBusy}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-tertiary mb-1.5">New password</label>
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        value={pwNew}
+                        onChange={(e) => setPwNew(e.target.value)}
+                        disabled={pwBusy}
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-xs text-text-tertiary mb-1.5">Confirm new password</label>
+                      <Input
+                        type="password"
+                        autoComplete="new-password"
+                        value={pwConfirm}
+                        onChange={(e) => setPwConfirm(e.target.value)}
+                        disabled={pwBusy}
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <div className="flex gap-1">
+                        {[0, 1, 2, 3].map((i) => (
+                          <div
+                            key={i}
+                            className={cn(
+                              "h-1 flex-1 rounded-full transition-colors",
+                              i < pwScore ? "bg-success" : "bg-border"
+                            )}
+                          />
+                        ))}
+                      </div>
+                      <p className="text-xs text-text-tertiary">
+                        Password strength: <span className="text-text-secondary">{pwStrengthText}</span>
+                      </p>
+                    </div>
+                    <Button onClick={submitPassword} disabled={pwBusy || !pwCurrent || !pwNew || !pwConfirm}>
+                      {pwBusy ? "Updating…" : "Update password"}
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-border pt-6">
+                {twoFAEnabled === null ? (
+                  <p className="text-sm text-text-secondary">Loading…</p>
+                ) : twoFAAwaitingCode ? (
+                  <div className="space-y-4 max-w-md">
+                    <div>
+                      <h3 className="text-sm font-semibold text-text-primary mb-1">Two-Factor Authentication</h3>
+                      <p className="text-sm text-text-secondary">
+                        Enter the code sent to {session?.user?.email ?? "your email"}
+                      </p>
+                    </div>
+                    <Input
+                      inputMode="numeric"
+                      autoComplete="one-time-code"
+                      placeholder="6-digit code"
+                      value={twoFAOtp}
+                      onChange={(e) => setTwoFAOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      disabled={twoFAVerifyBusy}
+                    />
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => void sendTwoFACode()}
+                        disabled={twoFASendBusy || twoFAResendSec > 0}
+                      >
+                        {twoFAResendSec > 0 ? `Resend (${twoFAResendSec}s)` : "Resend"}
+                      </Button>
+                      <Button
+                        type="button"
+                        onClick={() => void verifyTwoFACode()}
+                        disabled={twoFAVerifyBusy || twoFAOtp.length !== 6}
+                        isLoading={twoFAVerifyBusy}
+                      >
+                        Verify
+                      </Button>
+                      <Button type="button" variant="ghost" size="sm" onClick={cancelTwoFAFlow}>
+                        Cancel
+                      </Button>
+                    </div>
+                  </div>
+                ) : twoFAEnabled ? (
+                  <div className="space-y-4">
+                    <div>
+                      <p className="text-sm font-medium text-success">✅ Two-Factor Authentication Enabled</p>
+                      {twoFAInlineMsg && (
+                        <p className="text-sm text-text-secondary mt-2">{twoFAInlineMsg}</p>
+                      )}
+                    </div>
+                    <Button type="button" variant="danger" onClick={() => void startDisable2FA()}>
+                      Disable 2FA
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="space-y-4">
+                    <div>
+                      <h3 className="text-sm font-semibold text-text-primary">Two-Factor Authentication</h3>
+                      <p className="text-sm text-text-secondary mt-1">
+                        Add an extra layer of security to your account
+                      </p>
+                      {twoFAInlineMsg && (
+                        <p className="text-sm text-text-secondary mt-2">{twoFAInlineMsg}</p>
+                      )}
+                    </div>
+                    <Button type="button" variant="success" onClick={() => void startEnable2FA()}>
+                      Enable 2FA
+                    </Button>
+                  </div>
+                )}
+              </div>
+
+              <div className="border-t border-border pt-6">
+                <h3 className="text-sm font-semibold text-text-primary mb-3">Active sessions</h3>
+                <div className="rounded-xl border border-border/80 bg-surface/40 p-4 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+                  <div>
+                    <p className="text-sm text-text-primary">
+                      <span className="text-text-tertiary">Device:</span> {deviceLabel}
+                    </p>
+                    <p className="text-sm text-text-secondary mt-1">
+                      <span className="text-text-tertiary">Location:</span> Current session
+                    </p>
+                  </div>
+                  <Badge variant="success" className="self-start sm:self-center">
+                    This device
+                  </Badge>
+                </div>
+                <div className="mt-4">
+                  <Button variant="secondary" onClick={signOutOthers} disabled={signoutBusy}>
+                    {signoutBusy ? "Signing out…" : "Sign out all other devices"}
+                  </Button>
+                </div>
+              </div>
+            </div>
           </Card>
 
           <Card className="border-danger/30">
@@ -400,7 +851,7 @@ export default function SettingsPage() {
             <p className="text-sm text-text-secondary mb-4">
               Delete your account and all data. This cannot be undone.
             </p>
-            <Button variant="danger" onClick={() => { setDeleteOpen(true); setDeleteConfirm(""); setDeleteToast(null); }}>
+            <Button variant="danger" onClick={() => { setDeleteOpen(true); setDeleteConfirm(""); setToast(null); }}>
               Delete account
             </Button>
           </Card>
@@ -416,10 +867,22 @@ export default function SettingsPage() {
         </div>
       </main>
 
-      {deleteToast && (
-        <div className="fixed top-4 right-4 z-[60] max-w-sm rounded-xl border border-danger/30 bg-card px-4 py-3 text-sm text-text-primary shadow-lg">
-          <div className="font-medium text-danger mb-1">Error</div>
-          <div className="text-text-secondary">{deleteToast}</div>
+      {toast && (
+        <div
+          className={cn(
+            "fixed top-4 right-4 z-[60] max-w-sm rounded-xl border bg-card px-4 py-3 text-sm text-text-primary shadow-lg",
+            toast.type === "success" ? "border-success/30" : "border-danger/30"
+          )}
+        >
+          <div
+            className={cn(
+              "font-medium mb-1",
+              toast.type === "success" ? "text-success" : "text-danger"
+            )}
+          >
+            {toast.type === "success" ? "Success" : "Error"}
+          </div>
+          <div className="text-text-secondary">{toast.message}</div>
         </div>
       )}
 
