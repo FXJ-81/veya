@@ -10,7 +10,6 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
-import { OtpInput } from "@/components/ui/OtpInput";
 import { cn } from "@/lib/utils";
 import {
   GmailScanResultsModal,
@@ -136,13 +135,6 @@ export default function SettingsPage() {
   const [pwBusy, setPwBusy] = useState(false);
   const [pwResetBusy, setPwResetBusy] = useState(false);
   const [pwResetMsg, setPwResetMsg] = useState<string | null>(null);
-  const [twoFAEnabled, setTwoFAEnabled] = useState<boolean | null>(null);
-  const [twoFAAwaitingCode, setTwoFAAwaitingCode] = useState(false);
-  const [twoFAOtp, setTwoFAOtp] = useState("");
-  const [twoFASendBusy, setTwoFASendBusy] = useState(false);
-  const [twoFAVerifyBusy, setTwoFAVerifyBusy] = useState(false);
-  const [twoFAResendSec, setTwoFAResendSec] = useState(0);
-  const [twoFAInlineMsg, setTwoFAInlineMsg] = useState<string | null>(null);
   const [signoutBusy, setSignoutBusy] = useState(false);
   const [deviceLabel, setDeviceLabel] = useState("This device");
 
@@ -174,13 +166,6 @@ export default function SettingsPage() {
           setHasPassword(!!d.hasPassword);
         })
         .catch(() => {});
-      fetch("/api/auth/2fa/status")
-        .then((r) => r.json())
-        .then((d) => {
-          if (d.error) return;
-          setTwoFAEnabled(!!d.twoFactorEnabled);
-        })
-        .catch(() => {});
     }
   }, [status]);
 
@@ -193,12 +178,6 @@ export default function SettingsPage() {
     const t = setTimeout(() => setToast(null), 4000);
     return () => clearTimeout(t);
   }, [toast]);
-
-  useEffect(() => {
-    if (twoFAResendSec <= 0) return;
-    const t = setTimeout(() => setTwoFAResendSec((s) => s - 1), 1000);
-    return () => clearTimeout(t);
-  }, [twoFAResendSec]);
 
   const refreshGmail = () =>
     fetch("/api/settings/gmail")
@@ -443,70 +422,6 @@ export default function SettingsPage() {
     } finally {
       setSignoutBusy(false);
     }
-  };
-
-  const sendTwoFACode = async (): Promise<boolean> => {
-    setTwoFASendBusy(true);
-    try {
-      const res = await fetch("/api/auth/2fa/send-code", { method: "POST" });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "Failed to send code");
-      setTwoFAResendSec(30);
-      return true;
-    } catch (e) {
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Failed to send code" });
-      return false;
-    } finally {
-      setTwoFASendBusy(false);
-    }
-  };
-
-  const startEnable2FA = async () => {
-    setTwoFAInlineMsg(null);
-    setTwoFAOtp("");
-    setTwoFAAwaitingCode(true);
-    const ok = await sendTwoFACode();
-    if (!ok) setTwoFAAwaitingCode(false);
-  };
-
-  const startDisable2FA = async () => {
-    setTwoFAInlineMsg(null);
-    setTwoFAOtp("");
-    setTwoFAAwaitingCode(true);
-    const ok = await sendTwoFACode();
-    if (!ok) setTwoFAAwaitingCode(false);
-  };
-
-  const verifyTwoFACode = async (codeOverride?: string) => {
-    const code = codeOverride ?? twoFAOtp;
-    if (code.length !== 6) return;
-    setTwoFAVerifyBusy(true);
-    try {
-      const res = await fetch("/api/auth/2fa/verify-code", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code }),
-      });
-      const j = await res.json();
-      if (!res.ok) throw new Error(j.error ?? "Verification failed");
-      setTwoFAEnabled(!!j.twoFactorEnabled);
-      setTwoFAAwaitingCode(false);
-      setTwoFAOtp("");
-      if (j.twoFactorEnabled) {
-        setTwoFAInlineMsg("✅ 2FA enabled successfully");
-      } else {
-        setTwoFAInlineMsg("2FA disabled");
-      }
-    } catch (e) {
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Verification failed" });
-    } finally {
-      setTwoFAVerifyBusy(false);
-    }
-  };
-
-  const cancelTwoFAFlow = () => {
-    setTwoFAAwaitingCode(false);
-    setTwoFAOtp("");
   };
 
   const pwScore = scorePassword(pwNew);
@@ -780,77 +695,6 @@ export default function SettingsPage() {
                         <p className="mt-1 text-xs text-success">{pwResetMsg}</p>
                       )}
                     </div>
-                  </div>
-                )}
-              </div>
-
-              <div className="border-t border-border pt-6">
-                {twoFAEnabled === null ? (
-                  <p className="text-sm text-text-secondary">Loading…</p>
-                ) : twoFAAwaitingCode ? (
-                  <div className="space-y-4 max-w-md">
-                    <div>
-                      <h3 className="text-sm font-semibold text-text-primary mb-1">Two-Factor Authentication</h3>
-                      <p className="text-sm text-text-secondary">
-                        Enter the code sent to {session?.user?.email ?? "your email"}
-                      </p>
-                    </div>
-                    <OtpInput
-                      value={twoFAOtp}
-                      onChange={setTwoFAOtp}
-                      onComplete={(val) => void verifyTwoFACode(val)}
-                      disabled={twoFAVerifyBusy}
-                      autoFocus
-                    />
-                    <div className="flex flex-wrap items-center gap-2">
-                      <Button
-                        type="button"
-                        variant="secondary"
-                        size="sm"
-                        onClick={() => void sendTwoFACode()}
-                        disabled={twoFASendBusy || twoFAResendSec > 0}
-                      >
-                        {twoFAResendSec > 0 ? `Resend (${twoFAResendSec}s)` : "Resend"}
-                      </Button>
-                      <Button
-                        type="button"
-                        onClick={() => void verifyTwoFACode()}
-                        disabled={twoFAVerifyBusy || twoFAOtp.replace(/\s/g, "").length !== 6}
-                        isLoading={twoFAVerifyBusy}
-                      >
-                        Verify
-                      </Button>
-                      <Button type="button" variant="ghost" size="sm" onClick={cancelTwoFAFlow}>
-                        Cancel
-                      </Button>
-                    </div>
-                  </div>
-                ) : twoFAEnabled ? (
-                  <div className="space-y-4">
-                    <div>
-                      <p className="text-sm font-medium text-success">✅ Two-Factor Authentication Enabled</p>
-                      {twoFAInlineMsg && (
-                        <p className="text-sm text-text-secondary mt-2">{twoFAInlineMsg}</p>
-                      )}
-                    </div>
-                    <Button type="button" variant="danger" onClick={() => void startDisable2FA()}>
-                      Disable 2FA
-                    </Button>
-                  </div>
-                ) : (
-                  <div className="space-y-4">
-                    <div>
-                      <h3 className="text-sm font-semibold text-text-primary">Two-Factor Authentication</h3>
-                      <p className="text-sm text-text-secondary mt-1">
-                        Add an extra layer of security to your account
-                      </p>
-                      {twoFAInlineMsg && (
-                        <p className="text-sm text-text-secondary mt-2">{twoFAInlineMsg}</p>
-                      )}
-                    </div>
-                    <Button type="button" variant="success" onClick={() => void startEnable2FA()}>
-                      Enable 2FA
-                    </Button>
                   </div>
                 )}
               </div>
