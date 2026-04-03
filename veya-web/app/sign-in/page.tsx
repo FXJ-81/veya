@@ -69,69 +69,91 @@ function SignInForm() {
 
   const onSubmit = async (data: FormData) => {
     setError("");
+    const email = data.email.trim().toLowerCase();
 
-    // Step 1: check if credentials are valid via a test signIn (don't redirect)
-    const res = await signIn("credentials", {
-      email: data.email.trim().toLowerCase(),
-      password: data.password,
-      redirect: false,
-    });
-
-    console.log("[sign-in] signIn result:", { error: res?.error, status: res?.status });
-
-    if (res?.error) {
-      const message =
-        res.error === "CredentialsSignin"
-          ? "Invalid email or password"
-          : typeof res.error === "string"
-            ? res.error
-            : "Sign in failed";
-      setError(message);
+    // ── Step 1: verify credentials server-side WITHOUT creating a session ──────
+    console.log("[sign-in] Step 1: preflight credential check for", email);
+    let preflight: { valid?: boolean; twoFactorEnabled?: boolean } = {};
+    try {
+      const preflightRes = await fetch("/api/auth/preflight", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, password: data.password }),
+      });
+      preflight = await preflightRes.json().catch(() => ({})) as typeof preflight;
+      console.log("[sign-in] Preflight result:", preflight);
+    } catch (err) {
+      console.error("[sign-in] Preflight fetch error:", err);
+      setError("Network error. Please try again.");
       return;
     }
 
-    // Step 2: check if 2FA is required for this user
-    const twoFARes = await fetch("/api/auth/2fa/status");
-    const twoFAData = await twoFARes.json().catch(() => ({})) as { twoFactorEnabled?: boolean };
+    if (!preflight.valid) {
+      setError("Invalid email or password");
+      return;
+    }
 
-    if (!twoFAData.twoFactorEnabled) {
-      // No 2FA — login complete
+    // ── Step 2a: no 2FA — create session and redirect ─────────────────────────
+    if (!preflight.twoFactorEnabled) {
+      console.log("[sign-in] No 2FA required — calling signIn");
+      const res = await signIn("credentials", {
+        email,
+        password: data.password,
+        redirect: false,
+      });
+      console.log("[sign-in] signIn result:", { ok: res?.ok, error: res?.error });
+      if (res?.error) {
+        setError("Sign in failed. Please try again.");
+        return;
+      }
       router.push(callbackUrl);
       router.refresh();
       return;
     }
 
-    // Step 3: 2FA required — sign back out (without redirect) so session isn't active yet,
-    // send code, show OTP screen
-    await signIn("credentials", {
-      email: data.email.trim().toLowerCase(),
-      password: data.password,
-      redirect: false,
-    });
-
-    setPendingEmail(data.email.trim().toLowerCase());
+    // ── Step 2b: 2FA required — send code, show OTP screen ───────────────────
+    console.log("[sign-in] 2FA required — sending code to", email);
+    setPendingEmail(email);
     setPendingPassword(data.password);
     setOtpValue("");
     setOtpError("");
 
-    // Send the code
-    await fetch("/api/auth/2fa/login-send", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ email: data.email.trim().toLowerCase() }),
-    });
+    try {
+      const sendRes = await fetch("/api/auth/2fa/login-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      const sendData = await sendRes.json().catch(() => ({})) as { success?: boolean; error?: string };
+      console.log("[sign-in] login-send result:", { status: sendRes.status, ...sendData });
 
+      if (!sendRes.ok) {
+        console.error("[sign-in] login-send failed:", sendData.error);
+        setError(sendData.error ?? "Failed to send verification code. Try again.");
+        return;
+      }
+    } catch (err) {
+      console.error("[sign-in] login-send fetch error:", err);
+      setError("Failed to send verification code. Check your connection.");
+      return;
+    }
+
+    console.log("[sign-in] Code sent — showing OTP screen");
     setTwoFARequired(true);
   };
 
   const resendCode = async () => {
     setResendBusy(true);
+    console.log("[sign-in] Resending code to", pendingEmail);
     try {
-      await fetch("/api/auth/2fa/login-send", {
+      const res = await fetch("/api/auth/2fa/login-send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: pendingEmail }),
       });
+      const data = await res.json().catch(() => ({})) as { success?: boolean; error?: string };
+      console.log("[sign-in] Resend result:", { status: res.status, ...data });
+
       setResendSec(30);
       clearInterval(resendTimer.current!);
       resendTimer.current = setInterval(() => {
@@ -141,6 +163,8 @@ function SignInForm() {
         });
       }, 1000);
       setOtpError("");
+    } catch (err) {
+      console.error("[sign-in] Resend fetch error:", err);
     } finally {
       setResendBusy(false);
     }
@@ -150,6 +174,7 @@ function SignInForm() {
     if (code.length !== 6) return;
     setOtpBusy(true);
     setOtpError("");
+    console.log("[sign-in] Verifying OTP for", pendingEmail);
     try {
       const verifyRes = await fetch("/api/auth/2fa/login-verify", {
         method: "POST",
@@ -157,6 +182,7 @@ function SignInForm() {
         body: JSON.stringify({ email: pendingEmail, code }),
       });
       const j = await verifyRes.json().catch(() => ({})) as { success?: boolean; error?: string };
+      console.log("[sign-in] login-verify result:", { status: verifyRes.status, ...j });
 
       if (!verifyRes.ok || !j.success) {
         setOtpError(j.error ?? "Invalid or expired code");
@@ -164,12 +190,14 @@ function SignInForm() {
         return;
       }
 
-      // Code verified — complete sign-in
+      // ── Step 3: code verified — now create the session ───────────────────
+      console.log("[sign-in] OTP verified — calling signIn to create session");
       const finalRes = await signIn("credentials", {
         email: pendingEmail,
         password: pendingPassword,
         redirect: false,
       });
+      console.log("[sign-in] Final signIn result:", { ok: finalRes?.ok, error: finalRes?.error });
 
       if (finalRes?.error) {
         setOtpError("Sign-in failed. Please try again.");
@@ -178,6 +206,9 @@ function SignInForm() {
 
       router.push(callbackUrl);
       router.refresh();
+    } catch (err) {
+      console.error("[sign-in] verifyOtp error:", err);
+      setOtpError("Something went wrong. Please try again.");
     } finally {
       setOtpBusy(false);
     }
