@@ -776,7 +776,7 @@ export default function SettingsPage() {
                         disabled={pwResetBusy}
                         className="text-xs text-accent hover:underline disabled:opacity-50"
                       >
-                        {pwResetBusy ? "Sending…" : "Forgot your password? Send reset link"}
+                        {pwResetBusy ? "Sending…" : "Send reset link"}
                       </button>
                       {pwResetMsg && (
                         <p className="mt-1 text-xs text-success">{pwResetMsg}</p>
