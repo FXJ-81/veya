@@ -22,8 +22,11 @@ export function PageLayout({ children, fullHeight = false }: PageLayoutProps) {
     return (
       <div className="min-h-screen bg-background">
         <Sidebar />
-        <main className="pl-64 pr-10 pt-8 pb-6 flex flex-col h-screen overflow-hidden">
-          {children}
+        {/* pl-64 clears the fixed sidebar; the inner div adds equal px-10 gap on both sides */}
+        <main className="pl-64 flex flex-col h-screen overflow-hidden">
+          <div className="flex flex-col flex-1 min-h-0 px-10 pt-8 pb-6">
+            {children}
+          </div>
         </main>
       </div>
     );
