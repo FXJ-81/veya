@@ -3,27 +3,10 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { BudgetStatus } from "@/app/api/budgets/status/route";
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-const KNOWN_CATEGORIES = [
-  "Streaming", "Music", "Productivity", "Storage", "Gaming",
-  "Education", "News", "Health", "Food & Dining", "AI",
-  "Entertainment", "Finance", "Transport", "Travel",
-  "Utilities", "Shopping", "Other",
-];
-
-const CATEGORY_ICONS: Record<string, string> = {
-  __total__: "💰", Streaming: "📺", Music: "🎵", Productivity: "💼",
-  Storage: "☁️", Gaming: "🎮", Education: "📚", News: "📰",
-  Health: "🏃", "Food & Dining": "🍔", AI: "🤖", Other: "📦",
-  Entertainment: "🎭", Finance: "💳", Transport: "🚗",
-  Travel: "✈️", Utilities: "🔌", Shopping: "🛍️",
-};
-
-function catIcon(c: string) {
-  return CATEGORY_ICONS[c] ?? "📦";
-}
+import {
+  SUBSCRIPTION_CATEGORIES,
+  categoryIcon,
+} from "@/lib/subscriptionCategories";
 
 // ─── progress bar ─────────────────────────────────────────────────────────────
 
@@ -72,7 +55,7 @@ function BudgetCard({
     >
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-base shrink-0">{catIcon(bs.category)}</span>
+          <span className="text-base shrink-0">{categoryIcon(bs.category)}</span>
           <span className="text-sm font-medium text-text-primary truncate">{label}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -140,7 +123,7 @@ function BudgetModal({
   const [err, setErr] = useState("");
 
   const used = new Set(existingCategories);
-  const available = ["__total__", ...KNOWN_CATEGORIES].filter(
+  const available = ["__total__", ...SUBSCRIPTION_CATEGORIES].filter(
     (c) => !used.has(c) || c === editing?.category
   );
 
@@ -191,7 +174,7 @@ function BudgetModal({
                 <option value="">Select category…</option>
                 {available.map((c) => (
                   <option key={c} value={c}>
-                    {c === "__total__" ? "💰 Total subscriptions" : `${catIcon(c)} ${c}`}
+                    {c === "__total__" ? "💰 Total subscriptions" : `${categoryIcon(c)} ${c}`}
                   </option>
                 ))}
               </select>

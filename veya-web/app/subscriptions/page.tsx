@@ -21,6 +21,10 @@ import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
+import {
+  SUBSCRIPTION_CATEGORIES,
+  categoryIcon,
+} from "@/lib/subscriptionCategories";
 
 function SubscriptionsContent() {
   const { status } = useSession();
@@ -207,9 +211,11 @@ function SubscriptionsContent() {
         return nextRenewalSortKey(a) - nextRenewalSortKey(b);
       }) ?? [];
 
-  const categories = Array.from(
-    new Set(subs?.map((s) => s.category) ?? [])
-  ).sort();
+  const fromSubs = Array.from(new Set(subs?.map((s) => s.category) ?? []));
+  const extras = fromSubs.filter(
+    (c) => !(SUBSCRIPTION_CATEGORIES as readonly string[]).includes(c)
+  );
+  const categories = [...SUBSCRIPTION_CATEGORIES, ...extras.sort((a, b) => a.localeCompare(b))];
 
   const handlePause = (id: string) => {
     const sub = subs?.find((s) => s.id === id);
@@ -329,7 +335,7 @@ function SubscriptionsContent() {
             <option value="">All categories</option>
             {categories.map((c) => (
               <option key={c} value={c}>
-                {c}
+                {categoryIcon(c)} {c}
               </option>
             ))}
           </select>
