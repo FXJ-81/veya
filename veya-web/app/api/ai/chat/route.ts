@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import OpenAI from "openai";
+import { Prisma } from "@prisma/client";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { pricePerMonth, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
@@ -13,6 +14,12 @@ type ActionPayload = {
   // legacy fields kept for backward compat
   [key: string]: unknown;
 };
+
+type ChatMessage = Record<string, unknown>;
+
+function toConversationJson(messages: ChatMessage[]): Prisma.InputJsonValue {
+  return messages as Prisma.InputJsonArray;
+}
 
 // ─── JSON extraction ──────────────────────────────────────────────────────────
 
@@ -210,10 +217,12 @@ export async function POST(req: Request) {
     ? await prisma.aIConversation.findFirst({ where: { id: body.conversationId, userId: user.id } })
     : null;
   if (!convo) {
-    convo = await prisma.aIConversation.create({ data: { userId: user.id, messages: [] } });
+    convo = await prisma.aIConversation.create({
+      data: { userId: user.id, messages: [] as Prisma.InputJsonArray },
+    });
   }
 
-  const existingMessages = (convo.messages as Record<string, unknown>[]) ?? [];
+  const existingMessages = (convo.messages as ChatMessage[]) ?? [];
   const userMsgObj = {
     id: crypto.randomUUID(),
     role: "user",
@@ -222,7 +231,10 @@ export async function POST(req: Request) {
     kind: "chat",
   };
   const withUser = [...existingMessages, userMsgObj];
-  await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: withUser } });
+  await prisma.aIConversation.update({
+    where: { id: convo.id },
+    data: { messages: toConversationJson(withUser) },
+  });
 
   // ─── Pending action confirmation ─────────────────────────────────────────────
 
@@ -277,7 +289,10 @@ export async function POST(req: Request) {
     if (!action) {
       const msg = chatMsg(rawReply);
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convo.id }, data: { messages: final } });
+      await prisma.aIConversation.update({
+        where: { id: convo.id },
+        data: { messages: toConversationJson(final) },
+      });
       return NextResponse.json({ reply: rawReply, messages: final });
     }
 
@@ -293,7 +308,7 @@ export async function POST(req: Request) {
 async function executePendingAction(
   action: ActionPayload,
   userId: string,
-  withUser: Record<string, unknown>[],
+  withUser: ChatMessage[],
   convoId: string
 ): Promise<NextResponse | null> {
   const data = (action.data ?? {}) as Record<string, unknown>;
@@ -306,7 +321,10 @@ async function executePendingAction(
     if (!target) {
       const msg = chatMsg("That subscription no longer exists.");
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      await prisma.aIConversation.update({
+        where: { id: convoId },
+        data: { messages: toConversationJson(final) },
+      });
       return NextResponse.json({ reply: msg.content, messages: final });
     }
     await prisma.subscription.delete({ where: { id: target.id } });
@@ -316,7 +334,10 @@ async function executePendingAction(
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    await prisma.aIConversation.update({
+      where: { id: convoId },
+      data: { messages: toConversationJson(final) },
+    });
     return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
   }
 
@@ -328,7 +349,10 @@ async function executePendingAction(
     if (!target) {
       const msg = chatMsg("That budget no longer exists.");
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      await prisma.aIConversation.update({
+        where: { id: convoId },
+        data: { messages: toConversationJson(final) },
+      });
       return NextResponse.json({ reply: msg.content, messages: final });
     }
     await prisma.budget.delete({ where: { id: target.id } });
@@ -338,7 +362,10 @@ async function executePendingAction(
       "/analytics"
     );
     const final = [...withUser, confirm, success];
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    await prisma.aIConversation.update({
+      where: { id: convoId },
+      data: { messages: toConversationJson(final) },
+    });
     return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
   }
 
@@ -352,7 +379,10 @@ async function executePendingAction(
     if (targets.length === 0) {
       const msg = chatMsg(`No active subscriptions found in the **${category}** category.`);
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      await prisma.aIConversation.update({
+        where: { id: convoId },
+        data: { messages: toConversationJson(final) },
+      });
       return NextResponse.json({ reply: msg.content, messages: final });
     }
     await Promise.all(
@@ -365,7 +395,10 @@ async function executePendingAction(
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    await prisma.aIConversation.update({
+      where: { id: convoId },
+      data: { messages: toConversationJson(final) },
+    });
     return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
   }
 
@@ -377,7 +410,10 @@ async function executePendingAction(
     if (targets.length === 0) {
       const msg = chatMsg("None of those subscriptions were found.");
       const final = [...withUser, msg];
-      await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+      await prisma.aIConversation.update({
+        where: { id: convoId },
+        data: { messages: toConversationJson(final) },
+      });
       return NextResponse.json({ reply: msg.content, messages: final });
     }
     await prisma.subscription.deleteMany({ where: { id: { in: targets.map((t) => t.id) } } });
@@ -391,7 +427,10 @@ async function executePendingAction(
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+    await prisma.aIConversation.update({
+      where: { id: convoId },
+      data: { messages: toConversationJson(final) },
+    });
     return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
   }
 
@@ -404,16 +443,19 @@ async function executeAction(
   action: ActionPayload,
   replyText: string,
   userId: string,
-  withUser: Record<string, unknown>[],
+  withUser: ChatMessage[],
   convoId: string,
   subs: Awaited<ReturnType<typeof prisma.subscription.findMany>>,
   budgets: Awaited<ReturnType<typeof prisma.budget.findMany>>
 ): Promise<NextResponse> {
   const data = (action.data ?? {}) as Record<string, unknown>;
 
-  const save = async (msgs: Record<string, unknown>[], actionPerformed = false) => {
-    await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: msgs } });
-    const lastMsg = msgs[msgs.length - 1] as Record<string, unknown>;
+  const save = async (msgs: ChatMessage[], actionPerformed = false) => {
+    await prisma.aIConversation.update({
+      where: { id: convoId },
+      data: { messages: toConversationJson(msgs) },
+    });
+    const lastMsg = msgs[msgs.length - 1] as ChatMessage;
     return NextResponse.json({ reply: lastMsg.content, messages: msgs, actionPerformed });
   };
 
@@ -608,6 +650,9 @@ async function executeAction(
 
   const msg = chatMsg(replyText);
   const final = [...withUser, msg];
-  await prisma.aIConversation.update({ where: { id: convoId }, data: { messages: final } });
+  await prisma.aIConversation.update({
+    where: { id: convoId },
+    data: { messages: toConversationJson(final) },
+  });
   return NextResponse.json({ reply: replyText, messages: final });
 }
