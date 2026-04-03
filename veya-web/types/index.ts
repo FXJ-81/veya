@@ -72,6 +72,11 @@ export interface NotificationItem {
 export interface UserSettings {
   notificationPrefs?: Record<string, boolean>;
   budgetLimit?: number | null;
+  renewalReminders?: boolean;
+  budgetAlerts?: boolean;
+  weeklyDigest?: boolean;
+  newSubDetected?: boolean;
+  priceAlerts?: boolean;
 }
 
 export interface AIMessage {
