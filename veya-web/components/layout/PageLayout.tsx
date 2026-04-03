@@ -22,7 +22,7 @@ export function PageLayout({ children, fullHeight = false }: PageLayoutProps) {
     return (
       <div className="min-h-screen bg-background">
         <Sidebar />
-        <main className="pl-64 pr-10 py-10 flex flex-col h-screen">
+        <main className="pl-64 pr-10 pt-8 pb-6 flex flex-col h-screen">
           {children}
         </main>
       </div>
