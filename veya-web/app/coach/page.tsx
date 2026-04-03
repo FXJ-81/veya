@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { PageLayout } from "@/components/layout/PageLayout";
 import { ChatBubble } from "@/components/coach/ChatBubble";
 import { ChatInput } from "@/components/coach/ChatInput";
 import { QuickPrompts } from "@/components/coach/QuickPrompts";
@@ -289,9 +289,7 @@ export default function CoachPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-56 pr-6 py-8 flex flex-col h-screen">
+    <PageLayout fullHeight>
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -465,7 +463,6 @@ export default function CoachPage() {
           )}
           <ChatInput onSend={sendMessage} disabled={loading} />
         </div>
-      </main>
-    </div>
+    </PageLayout>
   );
 }

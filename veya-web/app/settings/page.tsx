@@ -5,7 +5,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { PageLayout } from "@/components/layout/PageLayout";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -532,9 +532,7 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-56 pr-6 py-8">
+    <PageLayout>
         <motion.h1
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -902,7 +900,6 @@ export default function SettingsPage() {
             </Button>
           </div>
         </div>
-      </main>
 
       {toast && (
         <div
@@ -993,6 +990,6 @@ export default function SettingsPage() {
           onExit={() => setPlaidLinkToken(null)}
         />
       )}
-    </div>
+    </PageLayout>
   );
 }

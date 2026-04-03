@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { PageLayout } from "@/components/layout/PageLayout";
 import { HeroCard } from "@/components/dashboard/HeroCard";
 import { StatsRow } from "@/components/dashboard/StatsRow";
 import { RenewalCard } from "@/components/dashboard/RenewalCard";
@@ -77,9 +77,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-56 pr-6 py-8">
+    <PageLayout>
         <Suspense fallback={null}>
           <GmailOnboarding />
         </Suspense>
@@ -167,7 +165,6 @@ export default function DashboardPage() {
             </div>
           </div>
         </div>
-      </main>
-    </div>
+    </PageLayout>
   );
 }

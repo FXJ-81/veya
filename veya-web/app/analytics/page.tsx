@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { PageLayout } from "@/components/layout/PageLayout";
 import { ScoreGauge } from "@/components/analytics/ScoreGauge";
 import { SpendChart } from "@/components/analytics/SpendChart";
 import { CategoryDonut } from "@/components/analytics/CategoryDonut";
@@ -26,9 +26,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-56 pr-6 py-8">
+    <PageLayout>
         <div className="flex flex-wrap items-center gap-3 mb-8">
           <motion.h1
             initial={{ opacity: 0 }}
@@ -109,7 +107,6 @@ export default function AnalyticsPage() {
             <BudgetLimitsSection />
           </div>
         )}
-      </main>
-    </div>
+    </PageLayout>
   );
 }

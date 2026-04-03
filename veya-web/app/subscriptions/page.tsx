@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { PageLayout } from "@/components/layout/PageLayout";
 import { SubscriptionCard } from "@/components/subscriptions/SubscriptionCard";
 import { AddSubscriptionModal } from "@/components/subscriptions/AddSubscriptionModal";
 import { EditSubscriptionModal } from "@/components/subscriptions/EditSubscriptionModal";
@@ -257,9 +257,7 @@ function SubscriptionsContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-56 pr-6 py-8">
+    <PageLayout>
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -384,7 +382,6 @@ function SubscriptionsContent() {
             ))}
           </div>
         )}
-      </main>
 
       <AddSubscriptionModal
         open={addOpen}
@@ -414,7 +411,7 @@ function SubscriptionsContent() {
           onExit={() => setPlaidLinkToken(null)}
         />
       )}
-    </div>
+    </PageLayout>
   );
 }
 
