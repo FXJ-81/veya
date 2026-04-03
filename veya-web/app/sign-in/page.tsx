@@ -25,12 +25,26 @@ function SignInForm() {
   const created = searchParams.get("created") === "1";
   const verified = searchParams.get("verified") === "1";
   const errorParam = searchParams.get("error");
-  const errorMessage =
-    errorParam === "OAuthAccountNotLinked"
-      ? "This email is already registered with a password. Sign in with your email and password above."
-      : errorParam
-        ? decodeURIComponent(errorParam.replace(/\+/g, " "))
-        : "";
+  const errorMessage = (() => {
+    if (!errorParam) return "";
+    switch (errorParam) {
+      case "OAuthAccountNotLinked":
+        return "An account with this email already exists. Sign in with your original method first, then link Google in settings.";
+      case "Callback":
+      case "OAuthCallback":
+        return "Google sign-in failed. Please try again or sign up with email instead.";
+      case "OAuthSignin":
+        return "Could not start Google sign-in. Please try again.";
+      case "OAuthCreateAccount":
+        return "Could not create your account via Google. Please try again or sign up with email.";
+      case "EmailCreateAccount":
+        return "Could not create your account. Please try again.";
+      case "SessionRequired":
+        return "Please sign in to continue.";
+      default:
+        return decodeURIComponent(errorParam.replace(/\+/g, " "));
+    }
+  })();
   const [error, setError] = useState(errorMessage);
   const {
     register,
