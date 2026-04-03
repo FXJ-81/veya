@@ -9,9 +9,16 @@ export async function getAuthUser(request: Request): Promise<{
   name: string | null;
 } | null> {
   const session = await getServerSession(authOptions);
-  if (session?.user?.email) {
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
+  const su = session?.user as { id?: string; email?: string | null } | undefined;
+
+  if (su?.id) {
+    const user = await prisma.user.findUnique({ where: { id: su.id } });
+    if (user) return { id: user.id, email: user.email, name: user.name };
+  }
+
+  if (su?.email) {
+    const user = await prisma.user.findFirst({
+      where: { email: { equals: su.email.trim(), mode: "insensitive" } },
     });
     if (user) return { id: user.id, email: user.email, name: user.name };
   }

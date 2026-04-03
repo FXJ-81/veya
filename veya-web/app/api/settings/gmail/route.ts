@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
+import { findAccountWithGmailAccess, summarizeGmailConnection } from "@/lib/gmailAccount";
 import { prisma } from "@/lib/prisma";
 
 async function ensureSettings(userId: string) {
@@ -23,14 +24,16 @@ export async function GET(req: Request) {
     select: { plaidLinked: true, lastPlaidSync: true },
   });
 
-  const gmailAccount = await prisma.account.findFirst({
-    where: {
+  const gmailAccount = await findAccountWithGmailAccess(authUser.id);
+  const summary = summarizeGmailConnection(gmailAccount);
+  const gmailConnected = summary.gmailConnected;
+
+  if (process.env.NODE_ENV === "development") {
+    console.log("[settings/gmail GET] Gmail connection", {
       userId: authUser.id,
-      OR: [{ provider: "google-gmail" }, { provider: "google" }],
-      refresh_token: { not: null },
-    },
-  });
-  const gmailConnected = !!gmailAccount?.refresh_token;
+      ...summary,
+    });
+  }
 
   return NextResponse.json({
     gmailConnected,

@@ -1,6 +1,11 @@
 import { prisma } from "@/lib/prisma";
 import { google } from "googleapis";
 import type { gmail_v1 } from "googleapis";
+import {
+  accountHasGmailScope,
+  findAccountWithGmailAccess,
+  gmailTokenMode,
+} from "@/lib/gmailAccount";
 import { clearbitLogoUrl, normalizeSenderDomain } from "@/lib/knownSubscriptionDomains";
 import { parseDateFromEmail, extractSenderDisplayName } from "@/lib/subscriptionEmailAnalyze";
 import type { DiscoverSuggestion } from "@/lib/parseSubscriptionEmail";
@@ -13,15 +18,9 @@ export function normalizeSubName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
 }
 
-/** Gmail access: dedicated connect flow or Google sign-in with Gmail scope */
+/** Gmail access: dedicated `google-gmail` row or NextAuth `google` login with usable tokens */
 export async function getAccountWithGmailAccess(userId: string) {
-  const gmailOnly = await prisma.account.findFirst({
-    where: { userId, provider: "google-gmail", refresh_token: { not: null } },
-  });
-  if (gmailOnly) return gmailOnly;
-  return prisma.account.findFirst({
-    where: { userId, provider: "google", refresh_token: { not: null } },
-  });
+  return findAccountWithGmailAccess(userId);
 }
 
 const MAX_TOTAL_IDS = 320;
@@ -288,8 +287,29 @@ async function getGmailClientForUser(
   | { ok: false; connected: boolean; error?: string }
 > {
   const account = await getAccountWithGmailAccess(userId);
-  if (!account?.refresh_token) {
+  if (!account) {
+    console.log("[gmailScan] getGmailClientForUser: no account row with usable Gmail tokens");
     return { ok: false, connected: false };
+  }
+
+  if (!accountHasGmailScope(account.scope)) {
+    console.log("[gmailScan] getGmailClientForUser: scope missing gmail.readonly", {
+      scopeSnippet: account.scope?.slice(0, 80),
+    });
+    return { ok: false, connected: false, error: "Gmail permission not granted for this account." };
+  }
+
+  const mode = gmailTokenMode(account);
+  if (mode === "none") {
+    console.log("[gmailScan] getGmailClientForUser: tokens expired and no refresh_token", {
+      accountId: account.id,
+      provider: account.provider,
+    });
+    return {
+      ok: false,
+      connected: false,
+      error: "Gmail session expired. Sign in with Google again or reconnect Gmail.",
+    };
   }
 
   const clientId = process.env.GOOGLE_CLIENT_ID;
@@ -301,11 +321,18 @@ async function getGmailClientForUser(
 
   const oauth2Client = new google.auth.OAuth2(clientId, clientSecret, redirectUri);
   oauth2Client.setCredentials({
-    refresh_token: account.refresh_token,
+    refresh_token: account.refresh_token ?? undefined,
     access_token: account.access_token ?? undefined,
+    expiry_date: account.expires_at != null ? account.expires_at * 1000 : undefined,
   });
 
-  if (account.expires_at && account.expires_at * 1000 < Date.now() + 60_000) {
+  const needsRefresh =
+    mode === "refresh" &&
+    !!account.refresh_token &&
+    account.expires_at != null &&
+    account.expires_at * 1000 < Date.now() + 60_000;
+
+  if (needsRefresh) {
     try {
       const { credentials } = await oauth2Client.refreshAccessToken();
       if (credentials.access_token) {
@@ -313,15 +340,19 @@ async function getGmailClientForUser(
           where: { id: account.id },
           data: {
             access_token: credentials.access_token,
-            expires_at: credentials.expiry_date ? Math.floor(credentials.expiry_date / 1000) : null,
+            expires_at: credentials.expiry_date
+              ? Math.floor(credentials.expiry_date / 1000)
+              : null,
+            refresh_token: credentials.refresh_token ?? account.refresh_token,
           },
         });
       }
-    } catch {
+    } catch (e) {
+      console.error("[gmailScan] refreshAccessToken failed:", e);
       return {
         ok: false,
-        connected: false,
-        error: "Gmail session expired. Please connect Gmail again.",
+        connected: mode === "refresh",
+        error: "Gmail session expired. Sign in with Google again or reconnect Gmail.",
       };
     }
   }

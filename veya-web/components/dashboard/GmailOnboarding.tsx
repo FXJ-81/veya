@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useSession } from "next-auth/react";
+import { signIn, useSession } from "next-auth/react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
@@ -192,8 +192,11 @@ export function GmailOnboarding() {
   };
 
   const connectGmail = () => {
-    const callbackUrl = encodeURIComponent("/dashboard?gmail_connected=1");
-    window.location.href = `/api/auth/signin/google?callbackUrl=${callbackUrl}`;
+    void signIn(
+      "google",
+      { callbackUrl: "/dashboard?gmail_connected=1" },
+      { prompt: "consent", access_type: "offline" },
+    );
   };
 
   const dismissResults = async () => {
@@ -259,11 +262,14 @@ export function GmailOnboarding() {
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
             <h3 className="text-lg font-semibold text-text-primary mb-2">
-              Find subscriptions automatically?
+              {(session?.provider ?? "") === "google"
+                ? "Allow Gmail scanning"
+                : "Find subscriptions automatically?"}
             </h3>
             <p className="text-sm text-text-secondary mb-6">
-              Want Veya to find your subscriptions automatically? Connect your Gmail to get
-              started.
+              {(session?.provider ?? "") === "google"
+                ? "You signed in with Google. One quick consent lets Veya read subscription emails from this same account—no second login."
+                : "Want Veya to find your subscriptions automatically? Connect your Google account (Gmail) to get started."}
             </p>
             <div className="flex flex-col sm:flex-row gap-3">
               <button
@@ -271,7 +277,9 @@ export function GmailOnboarding() {
                 onClick={connectGmail}
                 className="flex-1 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
               >
-                Connect Gmail
+                {(session?.provider ?? "") === "google"
+                  ? "Continue with Google"
+                  : "Connect Gmail"}
               </button>
               <button
                 type="button"

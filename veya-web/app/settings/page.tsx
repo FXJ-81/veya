@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useSession, signOut } from "next-auth/react";
+import { useSession, signOut, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -65,8 +65,11 @@ export default function SettingsPage() {
       .then((d) => setGmail(d));
 
   const connectGmail = () => {
-    const callbackUrl = encodeURIComponent("/settings?gmail_connected=1");
-    window.location.href = `/api/auth/signin/google?callbackUrl=${callbackUrl}`;
+    void signIn(
+      "google",
+      { callbackUrl: "/settings?gmail_connected=1" },
+      { prompt: "consent", access_type: "offline" },
+    );
   };
 
   const disconnectGmail = async () => {
@@ -309,10 +312,17 @@ export default function SettingsPage() {
                     Last scan: {scanLabel(gmail.lastGmailScanAt)} — last scan matched{" "}
                     {gmail.lastGmailScanFoundCount} subscription candidate(s).
                   </p>
+                  {!gmail.gmailConnected && session?.provider === "google" && (
+                    <p className="text-xs text-text-tertiary">
+                      You&apos;re signed in with Google. Use the same account to allow Veya to scan subscription emails—one consent, no broken redirect.
+                    </p>
+                  )}
                   <div className="flex flex-wrap gap-2">
                     {!gmail.gmailConnected ? (
                       <Button onClick={connectGmail} disabled={gmailLoading}>
-                        Connect Gmail
+                        {session?.provider === "google"
+                          ? "Allow Gmail access"
+                          : "Connect Gmail"}
                       </Button>
                     ) : (
                       <>

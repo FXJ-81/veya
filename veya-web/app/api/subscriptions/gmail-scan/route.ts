@@ -89,7 +89,7 @@ export async function POST(req: Request) {
 
   if (parsed.data.action === "import") {
     const account = await getAccountWithGmailAccess(authUser.id);
-    if (!account?.refresh_token) {
+    if (!account) {
       return NextResponse.json(
         { ok: false, error: "Gmail not connected", imported: 0 },
         { status: 400 }
@@ -134,7 +134,7 @@ export async function POST(req: Request) {
   }
 
   const account = await getAccountWithGmailAccess(authUser.id);
-  if (!account?.refresh_token) {
+  if (!account) {
     if (mode === "first-auto") {
       return NextResponse.json({
         ok: false,
