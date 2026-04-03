@@ -28,7 +28,7 @@ export default function AnalyticsPage() {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <main className="pl-56 pr-6 py-8">
+      <main className="pl-4 pr-4 pt-16 pb-6 md:pl-56 md:pr-6 md:pt-8 md:pb-8">
         <div className="flex flex-wrap items-center gap-3 mb-8">
           <motion.h1
             initial={{ opacity: 0 }}

@@ -291,20 +291,20 @@ export default function CoachPage() {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <main className="pl-56 pr-6 py-8 flex flex-col h-screen">
+      <main className="pl-4 pr-4 pt-16 pb-4 md:pl-56 md:pr-6 md:pt-8 md:pb-8 flex flex-col h-[100dvh]">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           className="mb-6"
         >
-          <div className="flex items-start justify-between gap-4">
-            <div>
-              <h1 className="text-2xl font-bold text-text-primary">Veya AI Coach</h1>
+          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+            <div className="min-w-0">
+              <h1 className="text-xl sm:text-2xl font-bold text-text-primary">Veya AI Coach</h1>
               <p className="text-text-secondary text-sm mt-1">
                 Ask anything about your subscriptions. I have full context.
               </p>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 shrink-0">
               <div ref={historyRef} className="relative">
                 <button
                   onClick={async () => {
@@ -326,7 +326,7 @@ export default function CoachPage() {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -6, scale: 0.98 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2 w-[360px] rounded-xl border z-50"
+                      className="absolute right-0 mt-2 w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border z-50"
                       style={{ background: "#111118", borderColor: "#2a2a3a" }}
                     >
                       <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "#2a2a3a" }}>

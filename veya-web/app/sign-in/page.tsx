@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
@@ -32,7 +32,7 @@ function SignInForm() {
         return "An account with this email already exists. Sign in with your original method first, then link Google in settings.";
       case "Callback":
       case "OAuthCallback":
-        return "Google sign-in failed. Please try again or sign up with email instead.";
+        return "Google sign-in could not finish. If you already use this email with a password, sign in with email and password first. Otherwise try again.";
       case "OAuthSignin":
         return "Could not start Google sign-in. Please try again.";
       case "OAuthCreateAccount":
@@ -51,6 +51,28 @@ function SignInForm() {
     handleSubmit,
     formState: { errors, isSubmitting },
   } = useForm<FormData>({ resolver: zodResolver(schema) });
+
+  useEffect(() => {
+    const needDetail =
+      errorParam === "Callback" ||
+      errorParam === "OAuthCallback" ||
+      errorParam === "OAuthCreateAccount";
+    if (!needDetail) return;
+    let cancelled = false;
+    fetch("/api/auth/debug-oauth-error")
+      .then((r) => r.json())
+      .then((j: { detail?: string | null }) => {
+        if (cancelled || !j.detail?.trim()) return;
+        setError(
+          (prev) =>
+            `${prev || "Google sign-in failed."}\n\n(Development) Server: ${j.detail}`,
+        );
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [errorParam]);
 
   const onSubmit = async (data: FormData) => {
     setError("");
@@ -115,7 +137,7 @@ function SignInForm() {
           <motion.p
             initial={{ opacity: 0, x: -8 }}
             animate={{ opacity: 1, x: 0 }}
-            className="mt-4 text-danger text-sm"
+            className="mt-4 text-danger text-sm whitespace-pre-wrap break-words"
           >
             {error}
           </motion.p>

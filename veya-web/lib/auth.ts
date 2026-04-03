@@ -5,9 +5,25 @@ import GoogleProvider from "next-auth/providers/google";
 import { compare } from "bcryptjs";
 import { applyCanonicalNextAuthUrlForOAuth } from "./googleOAuthCallback";
 import { prisma } from "./prisma";
+import { recordOAuthError } from "./oauthErrorBuffer";
 import type { Adapter, AdapterUser } from "next-auth/adapters";
 
 applyCanonicalNextAuthUrlForOAuth();
+
+function normalizeEmail(email: string | undefined | null): string | null {
+  if (email == null || typeof email !== "string") return null;
+  const t = email.trim().toLowerCase();
+  return t.length ? t : null;
+}
+
+/** Match credentials-registered users and legacy rows regardless of email casing. */
+async function findUserByEmailCaseInsensitive(email: string) {
+  const n = normalizeEmail(email);
+  if (!n) return null;
+  return prisma.user.findFirst({
+    where: { email: { equals: n, mode: "insensitive" } },
+  });
+}
 
 /* ------------------------------------------------------------------ */
 /*  Robust adapter wrapper                                            */
@@ -46,23 +62,31 @@ function createRobustAdapter(): Adapter {
     createUser: async (raw: Record<string, unknown>) => {
       const data = pick(raw, USER_FIELDS);
       const stripped = Object.keys(raw).filter((k) => !USER_FIELDS.has(k));
-      console.log("[auth][createUser]", { email: data.email, name: data.name,
+      const emailNorm = normalizeEmail(data.email as string | undefined);
+      if (emailNorm) data.email = emailNorm;
+
+      console.log("[auth][createUser] start", {
+        email: data.email,
+        name: data.name,
+        hasEmailVerified: data.emailVerified != null,
         ...(stripped.length ? { strippedFields: stripped } : {}),
       });
 
       try {
         const user = await prisma.user.create({ data: data as never });
-        console.log("[auth][createUser] OK id:", user.id);
+        console.log("[auth][createUser] success userId:", user.id, "email:", user.email);
         return user as AdapterUser;
       } catch (err: unknown) {
         const code = (err as { code?: string }).code;
         if (code === "P2002" && data.email) {
-          console.log("[auth][createUser] P2002 – email exists, returning existing user");
-          const existing = await prisma.user.findUnique({
-            where: { email: data.email as string },
-          });
-          if (existing) return existing as AdapterUser;
+          console.log("[auth][createUser] P2002 unique violation — resolving existing user by email");
+          const existing = await findUserByEmailCaseInsensitive(data.email as string);
+          if (existing) {
+            console.log("[auth][createUser] returning existing userId:", existing.id);
+            return existing as AdapterUser;
+          }
         }
+        recordOAuthError("createUser", err);
         console.error("[auth][createUser] FAILED:", err);
         throw err;
       }
@@ -109,19 +133,47 @@ function createRobustAdapter(): Adapter {
             return updated as never;
           }
         }
+        recordOAuthError("linkAccount", err);
         console.error("[auth][linkAccount] FAILED:", err);
+        throw err;
+      }
+    },
+
+    /* ---------- updateUser (normalize email for Google profile updates) ---------- */
+    updateUser: async (data) => {
+      const { id, ...raw } = data as AdapterUser & Record<string, unknown>;
+      const rest = pick(raw as Record<string, unknown>, USER_FIELDS);
+      if (typeof rest.email === "string") {
+        const n = normalizeEmail(rest.email);
+        if (n) rest.email = n;
+      }
+      console.log("[auth][updateUser] start", { id, keys: Object.keys(rest) });
+      try {
+        const user = await prisma.user.update({
+          where: { id },
+          data: rest as never,
+        });
+        console.log("[auth][updateUser] success userId:", user.id);
+        return user as AdapterUser;
+      } catch (err) {
+        recordOAuthError("updateUser", err);
+        console.error("[auth][updateUser] FAILED:", err);
         throw err;
       }
     },
 
     /* ---------- getUserByEmail ---------- */
     getUserByEmail: async (email: string) => {
-      console.log("[auth][getUserByEmail]", email);
+      console.log("[auth][getUserByEmail] lookup", email);
       try {
-        const user = await base.getUserByEmail!(email);
-        console.log("[auth][getUserByEmail]", user ? `found ${user.id}` : "not found");
-        return user;
+        const user = await findUserByEmailCaseInsensitive(email);
+        console.log(
+          "[auth][getUserByEmail]",
+          user ? `found userId=${user.id} emailInDb=${user.email}` : "no user for this email (any casing)",
+        );
+        return user as AdapterUser | null;
       } catch (err) {
+        recordOAuthError("getUserByEmail", err);
         console.error("[auth][getUserByEmail] FAILED:", err);
         throw err;
       }
@@ -138,6 +190,7 @@ function createRobustAdapter(): Adapter {
         console.log("[auth][getUserByAccount]", user ? `found ${user.id}` : "not found");
         return user;
       } catch (err) {
+        recordOAuthError("getUserByAccount", err);
         console.error("[auth][getUserByAccount] FAILED:", err);
         throw err;
       }
@@ -201,6 +254,16 @@ export const authOptions: NextAuthOptions = {
   ],
   session: { strategy: "jwt", maxAge: 30 * 24 * 60 * 60 },
   pages: { signIn: "/sign-in" },
+  events: {
+    async signIn({ user, account, isNewUser }) {
+      console.log("[auth][event signIn]", {
+        provider: account?.provider,
+        userId: user.id,
+        email: user.email,
+        isNewUser: isNewUser ?? undefined,
+      });
+    },
+  },
   debug: process.env.NODE_ENV === "development",
   logger: {
     error(code, metadata) {
@@ -218,17 +281,39 @@ export const authOptions: NextAuthOptions = {
   callbacks: {
     async signIn({ user, account, profile }) {
       if (account?.provider === "google") {
-        const email =
-          (profile as { email?: string })?.email ?? user.email;
-        console.log("[auth][signIn cb] Google:", {
-          email, userId: user.id, name: user.name,
+        const profileEmail = (profile as { email?: string })?.email;
+        const email = profileEmail ?? user.email;
+        console.log("[auth][signIn cb] Google allow check:", {
+          profileEmail,
+          userEmail: user.email,
+          userId: user.id,
+          name: user.name,
         });
 
-        if (!email) {
-          console.error("[auth][signIn cb] Google profile has no email – denied");
+        const emailNorm = normalizeEmail(email);
+        if (!emailNorm) {
+          console.error("[auth][signIn cb] denied: no usable email on Google profile");
           return "/sign-in?error=" +
             encodeURIComponent("Google account has no email address.");
         }
+
+        const existingByEmail = await findUserByEmailCaseInsensitive(emailNorm);
+        const existingGoogleAccount =
+          account.providerAccountId
+            ? await prisma.account.findFirst({
+                where: {
+                  provider: "google",
+                  providerAccountId: account.providerAccountId,
+                },
+              })
+            : null;
+
+        console.log("[auth][signIn cb] Google linkage snapshot:", {
+          existingUserByEmail: existingByEmail?.id ?? null,
+          existingGoogleAccountRow: existingGoogleAccount?.id ?? null,
+          googleAccountUserId: existingGoogleAccount?.userId ?? null,
+        });
+
         return true;
       }
       return true;

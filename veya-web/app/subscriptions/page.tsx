@@ -253,7 +253,7 @@ function SubscriptionsContent() {
   return (
     <div className="min-h-screen bg-background">
       <Sidebar />
-      <main className="pl-56 pr-6 py-8">
+      <main className="pl-4 pr-4 pt-16 pb-6 md:pl-56 md:pr-6 md:pt-8 md:pb-8">
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
