@@ -294,7 +294,7 @@ export default function CoachPage() {
       <motion.div
         initial={{ opacity: 0, y: 8 }}
         animate={{ opacity: 1, y: 0 }}
-        className="flex flex-col h-full rounded-2xl border border-border bg-card/60 backdrop-blur-sm overflow-hidden"
+        className="flex flex-col flex-1 min-h-0 rounded-2xl border border-border bg-card/60 backdrop-blur-sm overflow-hidden"
       >
         {/* ── Header ─────────────────────────────────────────────────────── */}
         <div className="flex items-center justify-between gap-4 px-6 py-5 border-b border-border shrink-0">
