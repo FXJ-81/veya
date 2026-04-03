@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Input } from "@/components/ui/Input";
+import { OtpInput } from "@/components/ui/OtpInput";
 import { cn } from "@/lib/utils";
 import {
   GmailScanResultsModal,
@@ -133,6 +134,8 @@ export default function SettingsPage() {
   const [pwNew, setPwNew] = useState("");
   const [pwConfirm, setPwConfirm] = useState("");
   const [pwBusy, setPwBusy] = useState(false);
+  const [pwResetBusy, setPwResetBusy] = useState(false);
+  const [pwResetMsg, setPwResetMsg] = useState<string | null>(null);
   const [twoFAEnabled, setTwoFAEnabled] = useState<boolean | null>(null);
   const [twoFAAwaitingCode, setTwoFAAwaitingCode] = useState(false);
   const [twoFAOtp, setTwoFAOtp] = useState("");
@@ -408,6 +411,26 @@ export default function SettingsPage() {
     }
   };
 
+  const sendPasswordReset = async () => {
+    const email = session?.user?.email;
+    if (!email) return;
+    setPwResetBusy(true);
+    setPwResetMsg(null);
+    try {
+      const res = await fetch("/api/auth/forgot-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email }),
+      });
+      await res.json();
+      setPwResetMsg(`Reset link sent to ${email} ✅`);
+    } catch {
+      setPwResetMsg("Failed to send reset email.");
+    } finally {
+      setPwResetBusy(false);
+    }
+  };
+
   const signOutOthers = async () => {
     setSignoutBusy(true);
     try {
@@ -454,13 +477,15 @@ export default function SettingsPage() {
     if (!ok) setTwoFAAwaitingCode(false);
   };
 
-  const verifyTwoFACode = async () => {
+  const verifyTwoFACode = async (codeOverride?: string) => {
+    const code = codeOverride ?? twoFAOtp;
+    if (code.length !== 6) return;
     setTwoFAVerifyBusy(true);
     try {
       const res = await fetch("/api/auth/2fa/verify-code", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ code: twoFAOtp }),
+        body: JSON.stringify({ code }),
       });
       const j = await res.json();
       if (!res.ok) throw new Error(j.error ?? "Verification failed");
@@ -744,6 +769,19 @@ export default function SettingsPage() {
                     <Button onClick={submitPassword} disabled={pwBusy || !pwCurrent || !pwNew || !pwConfirm}>
                       {pwBusy ? "Updating…" : "Update password"}
                     </Button>
+                    <div className="pt-1">
+                      <button
+                        type="button"
+                        onClick={() => void sendPasswordReset()}
+                        disabled={pwResetBusy}
+                        className="text-xs text-accent hover:underline disabled:opacity-50"
+                      >
+                        {pwResetBusy ? "Sending…" : "Forgot your password? Send reset link"}
+                      </button>
+                      {pwResetMsg && (
+                        <p className="mt-1 text-xs text-success">{pwResetMsg}</p>
+                      )}
+                    </div>
                   </div>
                 )}
               </div>
@@ -759,13 +797,12 @@ export default function SettingsPage() {
                         Enter the code sent to {session?.user?.email ?? "your email"}
                       </p>
                     </div>
-                    <Input
-                      inputMode="numeric"
-                      autoComplete="one-time-code"
-                      placeholder="6-digit code"
+                    <OtpInput
                       value={twoFAOtp}
-                      onChange={(e) => setTwoFAOtp(e.target.value.replace(/\D/g, "").slice(0, 6))}
+                      onChange={setTwoFAOtp}
+                      onComplete={(val) => void verifyTwoFACode(val)}
                       disabled={twoFAVerifyBusy}
+                      autoFocus
                     />
                     <div className="flex flex-wrap items-center gap-2">
                       <Button
@@ -780,7 +817,7 @@ export default function SettingsPage() {
                       <Button
                         type="button"
                         onClick={() => void verifyTwoFACode()}
-                        disabled={twoFAVerifyBusy || twoFAOtp.length !== 6}
+                        disabled={twoFAVerifyBusy || twoFAOtp.replace(/\s/g, "").length !== 6}
                         isLoading={twoFAVerifyBusy}
                       >
                         Verify

@@ -8,6 +8,14 @@ import { prisma } from "./prisma";
 
 applyCanonicalNextAuthUrlForOAuth();
 
+// Surface configuration problems early in logs
+if (!process.env.NEXTAUTH_SECRET) {
+  console.error("[auth] NEXTAUTH_SECRET is not set — NextAuth callbacks will fail");
+}
+if (!process.env.NEXTAUTH_URL && process.env.VERCEL !== "1") {
+  console.warn("[auth] NEXTAUTH_URL is not set");
+}
+
 /**
  * Google sign-in uses NextAuth at `/api/auth/callback/google` only.
  * In Google Cloud, Authorized redirect URIs must be exactly (see `lib/googleOAuthCallback.ts`):
@@ -25,19 +33,33 @@ export const authOptions: NextAuthOptions = {
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
-        if (!credentials?.email || !credentials?.password) return null;
-        const user = await prisma.user.findUnique({
-          where: { email: credentials.email.trim().toLowerCase() },
-        });
-        if (!user?.password) return null;
-        const valid = await compare(credentials.password, user.password);
-        if (!valid) return null;
-        return {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          image: user.image,
-        };
+        if (!credentials?.email || !credentials?.password) {
+          console.log("[auth] authorize: missing credentials");
+          return null;
+        }
+        try {
+          const user = await prisma.user.findUnique({
+            where: { email: credentials.email.trim().toLowerCase() },
+          });
+          if (!user?.password) {
+            console.log("[auth] authorize: user not found or no password");
+            return null;
+          }
+          const valid = await compare(credentials.password, user.password);
+          if (!valid) {
+            console.log("[auth] authorize: invalid password");
+            return null;
+          }
+          return {
+            id: user.id,
+            email: user.email,
+            name: user.name,
+            image: user.image,
+          };
+        } catch (err) {
+          console.error("[auth] authorize error:", err);
+          return null;
+        }
       },
     }),
     ...(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET
@@ -63,23 +85,43 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: "/sign-in" },
   callbacks: {
     async jwt({ token, user, account }) {
-      if (user) {
-        token.id = user.id;
-        token.email = user.email;
-        token.name = user.name;
-        token.picture = user.image;
-      }
-      if (account?.provider) {
-        token.provider = account.provider;
+      try {
+        if (user) {
+          token.id = user.id;
+          token.email = user.email;
+          token.name = user.name;
+          token.picture = user.image;
+        }
+        if (account?.provider) {
+          token.provider = account.provider;
+        }
+      } catch (err) {
+        console.error("[auth] jwt callback error:", err);
       }
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
-        (session.user as { id: string }).id = token.id as string;
+      try {
+        if (session.user) {
+          (session.user as { id: string }).id = token.id as string;
+        }
+        (session as { provider?: string }).provider = (token.provider as string) ?? undefined;
+      } catch (err) {
+        console.error("[auth] session callback error:", err);
       }
-      (session as { provider?: string }).provider = (token.provider as string) ?? undefined;
       return session;
+    },
+  },
+  events: {
+    async signIn({ user, account, isNewUser }) {
+      console.log("[auth] signIn event", {
+        userId: user?.id,
+        provider: account?.provider,
+        isNewUser,
+      });
+    },
+    async signOut() {
+      console.log("[auth] signOut event");
     },
   },
 };

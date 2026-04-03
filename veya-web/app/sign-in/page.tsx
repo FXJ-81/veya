@@ -1,15 +1,16 @@
 "use client";
 
-import { useState, Suspense } from "react";
+import { useEffect, useRef, useState, Suspense } from "react";
 import Link from "next/link";
 import { signIn } from "next-auth/react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
-import { motion } from "framer-motion";
+import { motion, AnimatePresence } from "framer-motion";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { OtpInput } from "@/components/ui/OtpInput";
 
 const schema = z.object({
   email: z.string().email("Invalid email"),
@@ -31,7 +32,35 @@ function SignInForm() {
       : errorParam
         ? decodeURIComponent(errorParam.replace(/\+/g, " "))
         : "";
+
   const [error, setError] = useState(errorMessage);
+  // 2FA state
+  const [twoFARequired, setTwoFARequired] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState("");
+  const [pendingPassword, setPendingPassword] = useState("");
+  const [otpValue, setOtpValue] = useState("");
+  const [otpError, setOtpError] = useState("");
+  const [otpBusy, setOtpBusy] = useState(false);
+  const [resendSec, setResendSec] = useState(30);
+  const [resendBusy, setResendBusy] = useState(false);
+
+  const resendTimer = useRef<ReturnType<typeof setInterval> | null>(null);
+
+  useEffect(() => {
+    if (!twoFARequired) return;
+    setResendSec(30);
+    resendTimer.current = setInterval(() => {
+      setResendSec((s) => {
+        if (s <= 1) {
+          clearInterval(resendTimer.current!);
+          return 0;
+        }
+        return s - 1;
+      });
+    }, 1000);
+    return () => clearInterval(resendTimer.current!);
+  }, [twoFARequired]);
+
   const {
     register,
     handleSubmit,
@@ -40,12 +69,16 @@ function SignInForm() {
 
   const onSubmit = async (data: FormData) => {
     setError("");
+
+    // Step 1: check if credentials are valid via a test signIn (don't redirect)
     const res = await signIn("credentials", {
       email: data.email.trim().toLowerCase(),
       password: data.password,
       redirect: false,
     });
-    console.log("[sign-in] signIn result:", { error: res?.error, status: res?.status, url: res?.url });
+
+    console.log("[sign-in] signIn result:", { error: res?.error, status: res?.status });
+
     if (res?.error) {
       const message =
         res.error === "CredentialsSignin"
@@ -56,9 +89,180 @@ function SignInForm() {
       setError(message);
       return;
     }
-    router.push(callbackUrl);
-    router.refresh();
+
+    // Step 2: check if 2FA is required for this user
+    const twoFARes = await fetch("/api/auth/2fa/status");
+    const twoFAData = await twoFARes.json().catch(() => ({})) as { twoFactorEnabled?: boolean };
+
+    if (!twoFAData.twoFactorEnabled) {
+      // No 2FA — login complete
+      router.push(callbackUrl);
+      router.refresh();
+      return;
+    }
+
+    // Step 3: 2FA required — sign back out (without redirect) so session isn't active yet,
+    // send code, show OTP screen
+    await signIn("credentials", {
+      email: data.email.trim().toLowerCase(),
+      password: data.password,
+      redirect: false,
+    });
+
+    setPendingEmail(data.email.trim().toLowerCase());
+    setPendingPassword(data.password);
+    setOtpValue("");
+    setOtpError("");
+
+    // Send the code
+    await fetch("/api/auth/2fa/login-send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ email: data.email.trim().toLowerCase() }),
+    });
+
+    setTwoFARequired(true);
   };
+
+  const resendCode = async () => {
+    setResendBusy(true);
+    try {
+      await fetch("/api/auth/2fa/login-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingEmail }),
+      });
+      setResendSec(30);
+      clearInterval(resendTimer.current!);
+      resendTimer.current = setInterval(() => {
+        setResendSec((s) => {
+          if (s <= 1) { clearInterval(resendTimer.current!); return 0; }
+          return s - 1;
+        });
+      }, 1000);
+      setOtpError("");
+    } finally {
+      setResendBusy(false);
+    }
+  };
+
+  const verifyOtp = async (code: string) => {
+    if (code.length !== 6) return;
+    setOtpBusy(true);
+    setOtpError("");
+    try {
+      const verifyRes = await fetch("/api/auth/2fa/login-verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: pendingEmail, code }),
+      });
+      const j = await verifyRes.json().catch(() => ({})) as { success?: boolean; error?: string };
+
+      if (!verifyRes.ok || !j.success) {
+        setOtpError(j.error ?? "Invalid or expired code");
+        setOtpValue("");
+        return;
+      }
+
+      // Code verified — complete sign-in
+      const finalRes = await signIn("credentials", {
+        email: pendingEmail,
+        password: pendingPassword,
+        redirect: false,
+      });
+
+      if (finalRes?.error) {
+        setOtpError("Sign-in failed. Please try again.");
+        return;
+      }
+
+      router.push(callbackUrl);
+      router.refresh();
+    } finally {
+      setOtpBusy(false);
+    }
+  };
+
+  const handleOtpComplete = (val: string) => {
+    void verifyOtp(val);
+  };
+
+  if (twoFARequired) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6">
+        <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+          <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+            <Link href="/" className="text-xl font-bold text-text-primary">Veya</Link>
+          </div>
+        </nav>
+        <motion.div
+          initial={{ opacity: 0, y: 12 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="w-full max-w-md rounded-2xl border border-border bg-surface p-8 mt-16"
+        >
+          <h1 className="text-2xl font-bold text-text-primary text-center">Check your email</h1>
+          <p className="mt-2 text-text-secondary text-center text-sm">
+            We sent a 6-digit code to <span className="text-text-primary font-medium">{pendingEmail}</span>
+          </p>
+
+          <div className="mt-8">
+            <OtpInput
+              value={otpValue}
+              onChange={setOtpValue}
+              onComplete={handleOtpComplete}
+              disabled={otpBusy}
+              autoFocus
+            />
+          </div>
+
+          <AnimatePresence>
+            {otpError && (
+              <motion.p
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 1 }}
+                exit={{ opacity: 0 }}
+                className="mt-4 text-danger text-sm text-center"
+              >
+                {otpError}
+              </motion.p>
+            )}
+          </AnimatePresence>
+
+          <div className="mt-6 space-y-3">
+            <Button
+              className="w-full"
+              onClick={() => void verifyOtp(otpValue)}
+              disabled={otpBusy || otpValue.length !== 6}
+              isLoading={otpBusy}
+            >
+              Verify
+            </Button>
+
+            <button
+              type="button"
+              onClick={() => void resendCode()}
+              disabled={resendBusy || resendSec > 0}
+              className="w-full text-sm text-accent hover:underline disabled:opacity-50 disabled:no-underline"
+            >
+              {resendSec > 0 ? `Resend code in ${resendSec}s` : "Resend code"}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                setTwoFARequired(false);
+                setOtpValue("");
+                setOtpError("");
+              }}
+              className="w-full text-sm text-text-tertiary hover:text-text-secondary"
+            >
+              ← Back to sign in
+            </button>
+          </div>
+        </motion.div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-background flex items-center justify-center p-6">
@@ -80,29 +284,17 @@ function SignInForm() {
         <h1 className="text-2xl font-bold text-text-primary">Sign in</h1>
         <p className="mt-1 text-text-secondary">Welcome back to Veya</p>
         {created && (
-          <motion.p
-            initial={{ opacity: 0, x: -8 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="mt-4 text-success text-sm"
-          >
+          <motion.p initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="mt-4 text-success text-sm">
             Account created! Sign in below.
           </motion.p>
         )}
         {verified && (
-          <motion.p
-            initial={{ opacity: 0, x: -8 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="mt-4 text-success text-sm"
-          >
+          <motion.p initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="mt-4 text-success text-sm">
             Email verified! You can sign in now.
           </motion.p>
         )}
         {error && (
-          <motion.p
-            initial={{ opacity: 0, x: -8 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="mt-4 text-danger text-sm"
-          >
+          <motion.p initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="mt-4 text-danger text-sm">
             {error}
           </motion.p>
         )}
@@ -129,10 +321,7 @@ function SignInForm() {
               <p className="mt-1 text-danger text-sm">{errors.password.message}</p>
             )}
           </div>
-          <Link
-            href="/forgot-password"
-            className="block text-sm text-accent hover:underline"
-          >
+          <Link href="/forgot-password" className="block text-sm text-accent hover:underline">
             Forgot password?
           </Link>
           <Button type="submit" className="w-full" isLoading={isSubmitting}>
