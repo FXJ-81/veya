@@ -34,11 +34,8 @@ function SubscriptionsContent() {
   const { update, remove, create } = useSubscriptionMutations();
   const qc = useQueryClient();
   const isMutating = create.isPending || update.isPending || remove.isPending;
-  const [gmailConnected, setGmailConnected] = useState(false);
   const [plaidLinked, setPlaidLinked] = useState(false);
   const [lastPlaidSync, setLastPlaidSync] = useState<string | null>(null);
-  const [lastGmailScanAt, setLastGmailScanAt] = useState<string | null>(null);
-  const [gmailScanning, setGmailScanning] = useState(false);
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
@@ -49,53 +46,14 @@ function SubscriptionsContent() {
     fetch("/api/settings/gmail")
       .then((r) => r.json())
       .then((d) => {
-        setGmailConnected(!!d.gmailConnected);
         setPlaidLinked(!!d.plaidLinked);
         setLastPlaidSync(d.lastPlaidSync ?? null);
-        setLastGmailScanAt(d.lastGmailScanAt ?? null);
       })
       .catch(() => {});
 
   useEffect(() => {
     refreshConnectionSettings();
   }, []);
-
-  const daysAgo = (iso: string | null) => {
-    if (!iso) return null;
-    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-    if (d <= 0) return "today";
-    if (d === 1) return "1 day ago";
-    return `${d} days ago`;
-  };
-
-  const handleRescanGmail = async () => {
-    if (!gmailConnected || gmailScanning) return;
-    setGmailScanning(true);
-    try {
-      const res = await fetch("/api/subscriptions/gmail-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "scan", mode: "manual" }),
-      });
-      const j = await res.json();
-      if (!j.ok && j.error) {
-        alert(j.error);
-        return;
-      }
-      if (j.ok && Array.isArray(j.candidates)) {
-        const mapped = (j.candidates as GmailScanRow[]).map((c) => ({
-          ...c,
-          rowId: c.messageId ?? c.rowId,
-          source: "gmail" as const,
-        }));
-        setGmailCandidates(mapped);
-        setGmailResultsOpen(true);
-      }
-      await refreshConnectionSettings();
-    } finally {
-      setGmailScanning(false);
-    }
-  };
 
   const closeGmailResults = () => {
     if (gmailImportBusy) return;
@@ -269,21 +227,6 @@ function SubscriptionsContent() {
             )}
           </div>
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            {gmailConnected && (
-              <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
-                <button
-                  type="button"
-                  onClick={handleRescanGmail}
-                  disabled={gmailScanning}
-                  className="rounded-lg border border-border bg-background-secondary px-3 py-2 font-medium text-text-primary hover:border-accent disabled:opacity-50"
-                >
-                  {gmailScanning ? "Scanning…" : "🔍 Rescan Gmail"}
-                </button>
-                {lastGmailScanAt && (
-                  <span>Last scanned: {daysAgo(lastGmailScanAt)}</span>
-                )}
-              </div>
-            )}
             {plaidLinked ? (
               <button
                 type="button"

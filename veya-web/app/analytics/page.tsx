@@ -78,28 +78,32 @@ export default function AnalyticsPage() {
 
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <CategoryDonut data={analytics?.categoryBreakdown ?? []} />
-              <div className="rounded-2xl border border-border bg-card p-6">
-                <h3 className="text-lg font-semibold text-text-primary mb-4">
+              <div className="rounded-2xl border border-border bg-card p-4 sm:p-6">
+                <h3 className="mb-4 text-lg font-semibold text-text-primary">
                   AI insights
                 </h3>
-                <div className="space-y-3">
-                  {(analytics?.insights ?? []).map((insight, i) => (
-                    <motion.p
+                <div className="grid max-h-[min(70vh,720px)] gap-3 overflow-y-auto pr-1 sm:max-h-none sm:overflow-visible">
+                  {(analytics?.insightCards ?? []).map((card, i) => (
+                    <motion.div
                       key={i}
                       initial={{ opacity: 0, x: -8 }}
                       animate={{ opacity: 1, x: 0 }}
-                      transition={{ delay: i * 0.1 }}
-                      className="text-sm text-text-secondary"
+                      transition={{ delay: Math.min(i * 0.05, 0.2) }}
+                      className="rounded-xl border border-border/80 bg-background-secondary/40 p-3 sm:p-4"
                     >
-                      {insight}
-                    </motion.p>
+                      <div className="flex gap-3">
+                        <span className="shrink-0 text-xl leading-none" aria-hidden>
+                          {card.icon}
+                        </span>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-sm font-bold text-text-primary">{card.title}</p>
+                          <p className="mt-1 text-sm leading-snug text-text-secondary line-clamp-2">
+                            {card.description}
+                          </p>
+                        </div>
+                      </div>
+                    </motion.div>
                   ))}
-                  {(!analytics?.insights || analytics.insights.length === 0) && (
-                    <p className="text-text-tertiary text-sm">
-                      Add subscriptions and use the AI coach for personalized
-                      insights.
-                    </p>
-                  )}
                 </div>
               </div>
             </div>

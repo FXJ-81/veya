@@ -19,13 +19,13 @@ export function AppShell({
   const isCoach = variant === "coach";
 
   return (
-    <div className="min-h-screen min-w-0 bg-background">
+    <div className="min-h-screen min-w-[320px] bg-background">
       <Sidebar />
       <BottomNav />
 
       <div
         className={cn(
-          "w-full min-w-0",
+          "w-full min-w-0 max-w-[100vw]",
           isCoach &&
             "flex min-h-[100dvh] flex-col lg:h-[100dvh] lg:max-h-screen lg:min-h-0",
         )}
@@ -46,7 +46,7 @@ export function AppShell({
         >
           <div
             className={cn(
-              "mx-auto w-full min-w-0 max-w-[var(--app-workspace-max)]",
+              "mx-auto w-full min-w-0 max-w-[var(--app-workspace-max)] break-words",
               isCoach && "flex min-h-0 flex-1 flex-col",
             )}
           >

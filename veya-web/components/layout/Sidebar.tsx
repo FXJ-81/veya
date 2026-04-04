@@ -33,7 +33,7 @@ export function Sidebar() {
   const navContent = (
     <>
       <div className="flex h-16 items-center justify-between px-4">
-        <Link href="/dashboard" className="text-xl font-bold text-text-primary">
+        <Link href="/dashboard" className="text-2xl font-bold tracking-tight text-text-primary">
           Veya
         </Link>
         <button
@@ -48,19 +48,21 @@ export function Sidebar() {
           </svg>
         </button>
       </div>
-      <nav className="mt-3 space-y-0.5 px-2">
+      <nav className="mt-3 space-y-1 px-2">
         {links.map((link) => (
           <Link
             key={link.href}
             href={link.href}
             className={cn(
-              "flex min-h-[44px] items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
+              "flex min-h-[48px] items-center gap-3 rounded-lg px-4 py-3 text-[15px] font-medium leading-snug transition-colors",
               pathname === link.href
                 ? "bg-accent/20 text-accent"
                 : "text-text-secondary hover:bg-surface hover:text-text-primary",
             )}
           >
-            <span>{link.icon}</span>
+            <span className="text-xl leading-none" aria-hidden>
+              {link.icon}
+            </span>
             {link.label}
           </Link>
         ))}
@@ -69,7 +71,7 @@ export function Sidebar() {
         <button
           type="button"
           onClick={() => signOut({ callbackUrl: "/" })}
-          className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-text-secondary hover:bg-surface hover:text-danger"
+          className="flex min-h-[48px] w-full items-center gap-3 rounded-lg px-4 py-3 text-[15px] text-text-secondary hover:bg-surface hover:text-danger"
         >
           Sign out
         </button>
@@ -79,21 +81,17 @@ export function Sidebar() {
 
   return (
     <>
-      {/* Tablet (768–1023px): top bar + hamburger; hidden on mobile & desktop */}
+      {/* Tablet: top bar + hamburger (768px–1023px); hidden on mobile and on desktop */}
       <div className="fixed left-0 right-0 top-0 z-40 hidden h-14 items-center justify-between border-b border-border bg-card/80 px-4 backdrop-blur-xl md:flex lg:hidden">
         <button
           type="button"
           onClick={() => setTabletMenuOpen(true)}
-          className="min-h-[44px] min-w-[44px] rounded-lg p-2 text-text-secondary hover:bg-surface hover:text-text-primary"
+          className="min-h-[44px] min-w-[44px] rounded-lg text-xl leading-none text-text-secondary hover:bg-surface hover:text-text-primary"
           aria-label="Open menu"
         >
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M3 12h18" />
-            <path d="M3 6h18" />
-            <path d="M3 18h18" />
-          </svg>
+          ☰
         </button>
-        <Link href="/dashboard" className="text-lg font-bold text-text-primary">
+        <Link href="/dashboard" className="text-xl font-bold tracking-tight text-text-primary">
           Veya
         </Link>
         <span className="min-w-[44px]" aria-hidden />
@@ -125,7 +123,8 @@ export function Sidebar() {
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed left-0 top-0 z-50 h-screen w-64 max-w-[85vw] border-r border-border bg-card backdrop-blur-xl md:block lg:hidden"
+              className="fixed left-0 top-0 z-50 h-screen max-w-[85vw] border-r border-border bg-card backdrop-blur-xl md:block lg:hidden"
+              style={{ width: "var(--app-sidebar-width)" }}
             >
               {navContent}
             </motion.aside>

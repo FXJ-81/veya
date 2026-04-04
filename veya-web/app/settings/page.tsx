@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { useSession, signOut, signIn } from "next-auth/react";
+import { useEffect, useState, useMemo, type FormEvent } from "react";
+import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
@@ -18,20 +18,43 @@ import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
 
-type GmailInfo = {
-  gmailConnected: boolean;
+type BankConnectionInfo = {
   plaidLinked: boolean;
   lastPlaidSync: string | null;
-  lastGmailScanAt: string | null;
-  lastGmailScanFoundCount: number;
 };
+
+function strengthScore(pw: string): number {
+  let s = 0;
+  if (pw.length >= 8) s++;
+  if (pw.length >= 12) s++;
+  if (/[A-Z]/.test(pw)) s++;
+  if (/[0-9]/.test(pw)) s++;
+  if (/[^A-Za-z0-9]/.test(pw)) s++;
+  return Math.min(s, 4);
+}
+
+function browserSessionLabel(): string {
+  if (typeof navigator === "undefined") return "this device";
+  const ua = navigator.userAgent;
+  let browser = "Browser";
+  if (ua.includes("Edg/")) browser = "Edge";
+  else if (ua.includes("Chrome") && !ua.includes("Edg")) browser = "Chrome";
+  else if (ua.includes("Firefox")) browser = "Firefox";
+  else if (ua.includes("Safari") && !ua.includes("Chrome")) browser = "Safari";
+  let os = "this device";
+  if (ua.includes("Windows")) os = "Windows";
+  else if (ua.includes("Mac OS")) os = "macOS";
+  else if (ua.includes("Linux")) os = "Linux";
+  else if (ua.includes("Android")) os = "Android";
+  else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
+  return `${browser} on ${os}`;
+}
 
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [plan, setPlan] = useState<"free" | "premium">("free");
-  const [gmail, setGmail] = useState<GmailInfo | null>(null);
-  const [gmailLoading, setGmailLoading] = useState(false);
+  const [bank, setBank] = useState<BankConnectionInfo | null>(null);
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
@@ -41,6 +64,21 @@ export default function SettingsPage() {
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteToast, setDeleteToast] = useState<string | null>(null);
+  const [hasPassword, setHasPassword] = useState<boolean | null>(null);
+  const [currentPw, setCurrentPw] = useState("");
+  const [newPw, setNewPw] = useState("");
+  const [confirmPw, setConfirmPw] = useState("");
+  const [pwBusy, setPwBusy] = useState(false);
+  const [pwMsg, setPwMsg] = useState<string | null>(null);
+  const [pwErr, setPwErr] = useState<string | null>(null);
+  const [sessionLabel, setSessionLabel] = useState("this device");
+  const [signOutAllBusy, setSignOutAllBusy] = useState(false);
+
+  const strength = useMemo(() => strengthScore(newPw), [newPw]);
+
+  useEffect(() => {
+    setSessionLabel(browserSessionLabel());
+  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -54,63 +92,29 @@ export default function SettingsPage() {
         .catch(() => {});
       fetch("/api/settings/gmail")
         .then((r) => r.json())
-        .then((d) => setGmail(d))
+        .then((d) =>
+          setBank({
+            plaidLinked: !!d.plaidLinked,
+            lastPlaidSync: d.lastPlaidSync ?? null,
+          }),
+        )
         .catch(() => {});
+      fetch("/api/user/password")
+        .then((r) => r.json())
+        .then((d: { hasPassword?: boolean }) => setHasPassword(!!d.hasPassword))
+        .catch(() => setHasPassword(false));
     }
   }, [status]);
 
-  const refreshGmail = () =>
+  const refreshBank = () =>
     fetch("/api/settings/gmail")
       .then((r) => r.json())
-      .then((d) => setGmail(d));
-
-  const connectGmail = () => {
-    void signIn(
-      "google",
-      { callbackUrl: "/settings?gmail_connected=1" },
-      { prompt: "consent", access_type: "offline" },
-    );
-  };
-
-  const disconnectGmail = async () => {
-    setGmailLoading(true);
-    try {
-      await fetch("/api/settings/gmail", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disconnectGmail: true }),
-      });
-      await refreshGmail();
-    } finally {
-      setGmailLoading(false);
-    }
-  };
-
-  const rescanGmail = async () => {
-    if (!gmail?.gmailConnected) return;
-    setGmailLoading(true);
-    try {
-      const res = await fetch("/api/subscriptions/gmail-scan", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action: "scan", mode: "manual" }),
-      });
-      const j = await res.json();
-      if (!j.ok && j.error) alert(j.error);
-      else if (j.ok && Array.isArray(j.candidates)) {
-        const mapped = (j.candidates as GmailScanRow[]).map((c) => ({
-          ...c,
-          rowId: c.messageId ?? c.rowId,
-          source: "gmail" as const,
-        }));
-        setGmailCandidates(mapped);
-        setGmailResultsOpen(true);
-      }
-      await refreshGmail();
-    } finally {
-      setGmailLoading(false);
-    }
-  };
+      .then((d) =>
+        setBank({
+          plaidLinked: !!d.plaidLinked,
+          lastPlaidSync: d.lastPlaidSync ?? null,
+        }),
+      );
 
   const closeGmailResults = () => {
     if (gmailImportBusy) return;
@@ -122,7 +126,7 @@ export default function SettingsPage() {
     try {
       await executeScanImport(payload);
       setGmailResultsOpen(false);
-      await refreshGmail();
+      await refreshBank();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Import failed");
     } finally {
@@ -165,7 +169,7 @@ export default function SettingsPage() {
       );
       setGmailCandidates(rows);
       setGmailResultsOpen(true);
-      await refreshGmail();
+      await refreshBank();
     } catch (e) {
       alert(e instanceof Error ? e.message : "Bank linking failed");
     } finally {
@@ -181,14 +185,14 @@ export default function SettingsPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ disconnectPlaid: true }),
       });
-      await refreshGmail();
+      await refreshBank();
     } finally {
       setPlaidBusy(false);
     }
   };
 
   const resyncPlaid = async () => {
-    if (!gmail?.plaidLinked) return;
+    if (!bank?.plaidLinked) return;
     setPlaidBusy(true);
     try {
       const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
@@ -201,7 +205,7 @@ export default function SettingsPage() {
         mapPlaidDetectToScanRows(Array.isArray(dj.subscriptions) ? dj.subscriptions : [])
       );
       setGmailResultsOpen(true);
-      await refreshGmail();
+      await refreshBank();
     } finally {
       setPlaidBusy(false);
     }
@@ -213,6 +217,52 @@ export default function SettingsPage() {
     if (d <= 0) return "Today";
     if (d === 1) return "1 day ago";
     return `${d} days ago`;
+  };
+
+  const submitPasswordChange = async (e: FormEvent) => {
+    e.preventDefault();
+    setPwErr(null);
+    setPwMsg(null);
+    if (newPw.length < 8) {
+      setPwErr("New password must be at least 8 characters.");
+      return;
+    }
+    if (newPw !== confirmPw) {
+      setPwErr("New password and confirmation don’t match.");
+      return;
+    }
+    setPwBusy(true);
+    try {
+      const res = await fetch("/api/user/password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          currentPassword: currentPw,
+          newPassword: newPw,
+        }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        setPwErr((j as { error?: string }).error ?? "Could not update password.");
+        return;
+      }
+      setPwMsg("Password updated successfully.");
+      setCurrentPw("");
+      setNewPw("");
+      setConfirmPw("");
+    } finally {
+      setPwBusy(false);
+    }
+  };
+
+  const signOutAllDevices = async () => {
+    setSignOutAllBusy(true);
+    try {
+      await fetch("/api/user/sessions", { method: "DELETE" });
+      await signOut({ callbackUrl: "/sign-in" });
+    } finally {
+      setSignOutAllBusy(false);
+    }
   };
 
   const handleUpgrade = async () => {
@@ -297,98 +347,48 @@ export default function SettingsPage() {
           </Card>
 
           <Card>
-            <h2 className="text-lg font-semibold text-text-primary mb-4">
+            <h2 className="mb-4 text-lg font-semibold text-text-primary">
               Connected accounts
             </h2>
-            {gmail ? (
-              <div className="space-y-6">
-                <div className="space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-text-secondary">Gmail:</span>
-                    <Badge variant={gmail.gmailConnected ? "success" : "default"}>
-                      {gmail.gmailConnected ? "Connected ✓" : "Not connected"}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-text-secondary">
-                    Last scan: {scanLabel(gmail.lastGmailScanAt)} — last scan matched{" "}
-                    {gmail.lastGmailScanFoundCount} subscription candidate(s).
-                  </p>
-                  {!gmail.gmailConnected && session?.provider === "google" && (
-                    <p className="text-xs text-text-tertiary">
-                      You&apos;re signed in with Google. Use the same account to allow Veya to scan subscription emails—one consent, no broken redirect.
-                    </p>
+            {bank ? (
+              <div className="space-y-3">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-text-secondary">Bank account:</span>
+                  <Badge variant={bank.plaidLinked ? "success" : "default"}>
+                    {bank.plaidLinked ? "Connected ✓" : "Not connected"}
+                  </Badge>
+                </div>
+                <p className="text-sm text-text-secondary">
+                  Last synced: {scanLabel(bank.lastPlaidSync)}
+                </p>
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                  {bank.plaidLinked ? (
+                    <>
+                      <Button
+                        className="w-full sm:w-auto"
+                        variant="secondary"
+                        onClick={resyncPlaid}
+                        disabled={plaidBusy}
+                      >
+                        {plaidBusy ? "Syncing…" : "Resync bank"}
+                      </Button>
+                      <Button
+                        className="w-full sm:w-auto"
+                        variant="danger"
+                        onClick={disconnectPlaid}
+                        disabled={plaidBusy}
+                      >
+                        Disconnect bank
+                      </Button>
+                    </>
+                  ) : (
+                    <Button className="w-full sm:w-auto" onClick={startPlaidLink} disabled={plaidBusy}>
+                      {plaidBusy ? "…" : "🏦 Connect Bank Account"}
+                    </Button>
                   )}
-                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                    {!gmail.gmailConnected ? (
-                      <Button className="w-full sm:w-auto" onClick={connectGmail} disabled={gmailLoading}>
-                        {session?.provider === "google"
-                          ? "Allow Gmail access"
-                          : "Connect Gmail"}
-                      </Button>
-                    ) : (
-                      <>
-                        <Button
-                          className="w-full sm:w-auto"
-                          variant="secondary"
-                          onClick={rescanGmail}
-                          disabled={gmailLoading}
-                        >
-                          Rescan now
-                        </Button>
-                        <Button
-                          className="w-full sm:w-auto"
-                          variant="danger"
-                          onClick={disconnectGmail}
-                          disabled={gmailLoading}
-                        >
-                          Disconnect Gmail
-                        </Button>
-                      </>
-                    )}
-                  </div>
                 </div>
-
-                <div className="border-t border-border pt-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm text-text-secondary">Bank account:</span>
-                    <Badge variant={gmail.plaidLinked ? "success" : "default"}>
-                      {(gmail.plaidLinked ?? false) ? "Connected ✓" : "Not connected"}
-                    </Badge>
-                  </div>
-                  <p className="text-sm text-text-secondary">
-                    Last synced: {scanLabel(gmail.lastPlaidSync)}
-                  </p>
-                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                    {gmail.plaidLinked ?? false ? (
-                      <>
-                        <Button
-                          className="w-full sm:w-auto"
-                          variant="secondary"
-                          onClick={resyncPlaid}
-                          disabled={plaidBusy}
-                        >
-                          {plaidBusy ? "Syncing…" : "Resync bank"}
-                        </Button>
-                        <Button
-                          className="w-full sm:w-auto"
-                          variant="danger"
-                          onClick={disconnectPlaid}
-                          disabled={plaidBusy}
-                        >
-                          Disconnect bank
-                        </Button>
-                      </>
-                    ) : (
-                      <Button className="w-full sm:w-auto" onClick={startPlaidLink} disabled={plaidBusy}>
-                        {plaidBusy ? "…" : "🏦 Connect Bank Account"}
-                      </Button>
-                    )}
-                  </div>
-                </div>
-
                 <p className="text-xs text-text-tertiary">
-                  Gmail is used only to find subscription receipts. Bank linking uses Plaid to read
-                  transactions for subscription detection.
+                  Plaid reads transactions to suggest subscriptions you can add.
                 </p>
               </div>
             ) : (
@@ -397,23 +397,121 @@ export default function SettingsPage() {
           </Card>
 
           <Card>
-            <h2 className="text-lg font-semibold text-text-primary mb-4">
-              Notifications
-            </h2>
-            <p className="text-sm text-text-secondary">
-              Renewal reminders and alerts can be configured here. (UI toggles
-              can be wired to UserSettings in the API.)
-            </p>
+            <h2 className="mb-4 text-lg font-semibold text-text-primary">Notifications</h2>
+            <ul className="space-y-4 text-sm text-text-secondary">
+              <li>
+                <p className="font-medium text-text-primary">New subscription alerts</p>
+                <p className="mt-0.5">When bank detects a new subscription.</p>
+              </li>
+              <li>
+                <p className="font-medium text-text-primary">Renewal reminders</p>
+                <p className="mt-0.5">Heads-up before subscription renewals.</p>
+              </li>
+            </ul>
           </Card>
 
           <Card>
-            <h2 className="text-lg font-semibold text-text-primary mb-4">
-              Security
-            </h2>
-            <p className="text-sm text-text-secondary mb-4">
-              Change password and 2FA settings. (Implement via NextAuth or
-              custom API.)
-            </p>
+            <h2 className="mb-6 text-lg font-semibold text-text-primary">Security</h2>
+            <div className="space-y-10">
+              <div>
+                <h3 className="mb-3 text-sm font-semibold text-text-primary">Change password</h3>
+                {hasPassword === false ? (
+                  <p className="max-w-md text-sm text-text-secondary">
+                    You sign in with Google. Password change isn’t available for this account.
+                  </p>
+                ) : hasPassword === null ? (
+                  <p className="text-sm text-text-tertiary">Loading…</p>
+                ) : (
+                  <form
+                    onSubmit={submitPasswordChange}
+                    className="max-w-md space-y-3 rounded-xl border border-border bg-background-secondary/30 p-4"
+                  >
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-text-tertiary">
+                        Current password
+                      </label>
+                      <input
+                        type="password"
+                        autoComplete="current-password"
+                        value={currentPw}
+                        onChange={(e) => setCurrentPw(e.target.value)}
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/40"
+                      />
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-text-tertiary">
+                        New password
+                      </label>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={newPw}
+                        onChange={(e) => setNewPw(e.target.value)}
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/40"
+                      />
+                      <div className="mt-2 flex gap-1" aria-hidden>
+                        {[0, 1, 2, 3].map((i) => (
+                          <div
+                            key={i}
+                            className={`h-1.5 flex-1 rounded-full ${
+                              i < strength ? "bg-accent" : "bg-border"
+                            }`}
+                          />
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="mb-1 block text-xs font-medium text-text-tertiary">
+                        Confirm new password
+                      </label>
+                      <input
+                        type="password"
+                        autoComplete="new-password"
+                        value={confirmPw}
+                        onChange={(e) => setConfirmPw(e.target.value)}
+                        className="w-full rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/40"
+                      />
+                    </div>
+                    {pwErr && <p className="text-sm text-danger">{pwErr}</p>}
+                    {pwMsg && <p className="text-sm text-success">{pwMsg}</p>}
+                    <Button type="submit" className="w-full sm:w-auto" isLoading={pwBusy}>
+                      Update password
+                    </Button>
+                    <p className="pt-1">
+                      <Link
+                        href="/forgot-password"
+                        className="text-sm text-accent hover:underline"
+                      >
+                        Forgot password? Send reset link
+                      </Link>
+                    </p>
+                  </form>
+                )}
+              </div>
+
+              <div className="border-t border-border pt-8">
+                <h3 className="mb-3 text-sm font-semibold text-text-primary">Active sessions</h3>
+                <div className="flex max-w-md flex-col gap-3 rounded-xl border border-border bg-background-secondary/30 p-4 sm:flex-row sm:items-center sm:justify-between">
+                  <div className="min-w-0">
+                    <p className="text-sm text-text-primary">
+                      Current session — {sessionLabel}
+                    </p>
+                    <Badge variant="success" className="mt-2">
+                      This device
+                    </Badge>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="secondary"
+                    className="w-full shrink-0 sm:w-auto"
+                    onClick={() => void signOutAllDevices()}
+                    isLoading={signOutAllBusy}
+                  >
+                    Sign out all devices
+                  </Button>
+                </div>
+              </div>
+            </div>
           </Card>
 
           <Card className="border-danger/30">

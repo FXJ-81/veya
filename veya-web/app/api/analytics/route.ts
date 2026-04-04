@@ -7,21 +7,232 @@ import {
   monthlySpendInCalendarMonth,
   pricePerMonth,
 } from "@/lib/subscriptionBilling";
+import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
+import type { Subscription } from "@/types";
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
+/** Typical U.S. monthly subscription spend (reference benchmark for comparisons). */
+const US_AVG_MONTHLY_SUBS = 219;
+
 function round2(n: number) {
   return Math.round(n * 100) / 100;
+}
+
+export type AnalyticsInsightCard = {
+  icon: string;
+  title: string;
+  description: string;
+};
+
+function prismaSubToType(s: {
+  id: string;
+  userId: string;
+  name: string;
+  category: string;
+  price: number;
+  billingCycle: string;
+  startDate: Date;
+  nextRenewal: Date;
+  status: string;
+  logoUrl: string | null;
+  notes: string | null;
+  isShared: boolean;
+  color: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+}): Subscription {
+  return {
+    id: s.id,
+    userId: s.userId,
+    name: s.name,
+    category: s.category,
+    price: s.price,
+    billingCycle: s.billingCycle as Subscription["billingCycle"],
+    startDate: s.startDate.toISOString(),
+    nextRenewal: s.nextRenewal.toISOString(),
+    status: s.status as Subscription["status"],
+    logoUrl: s.logoUrl,
+    notes: s.notes,
+    isShared: s.isShared,
+    color: s.color,
+    createdAt: s.createdAt.toISOString(),
+    updatedAt: s.updatedAt.toISOString(),
+  };
+}
+
+function buildInsightCards(params: {
+  currentMonthlyNormalized: number;
+  yearlyProjection: number;
+  categoryBreakdown: { category: string; total: number }[];
+  activeStarted: Subscription[];
+  budgets: { id: string; category: string; limit: number }[];
+  spendByCategory: Map<string, number>;
+  totalMonthlySpend: number;
+}): AnalyticsInsightCard[] {
+  const {
+    currentMonthlyNormalized,
+    yearlyProjection,
+    categoryBreakdown,
+    activeStarted,
+    budgets,
+    spendByCategory,
+    totalMonthlySpend,
+  } = params;
+
+  const cards: AnalyticsInsightCard[] = [];
+
+  // 1 — Monthly total vs U.S. average (~$219/mo)
+  if (currentMonthlyNormalized <= 0) {
+    cards.push({
+      icon: "🇺🇸",
+      title: "Monthly spend vs U.S. average",
+      description: `You’re at $0/mo tracked; typical U.S. subscription spend is ~$${US_AVG_MONTHLY_SUBS}/mo.`,
+    });
+  } else {
+    const diff = currentMonthlyNormalized - US_AVG_MONTHLY_SUBS;
+    const absPct =
+      US_AVG_MONTHLY_SUBS > 0 ? Math.round((Math.abs(diff) / US_AVG_MONTHLY_SUBS) * 100) : 0;
+    if (diff > 1) {
+      cards.push({
+        icon: "📈",
+        title: "Monthly spend vs U.S. average",
+        description: `~$${currentMonthlyNormalized.toFixed(2)}/mo — about ${absPct}% above the ~$${US_AVG_MONTHLY_SUBS}/mo benchmark.`,
+      });
+    } else if (diff < -1) {
+      cards.push({
+        icon: "✅",
+        title: "Monthly spend vs U.S. average",
+        description: `~$${currentMonthlyNormalized.toFixed(2)}/mo — ${absPct}% under the ~$${US_AVG_MONTHLY_SUBS}/mo benchmark.`,
+      });
+    } else {
+      cards.push({
+        icon: "⚖️",
+        title: "Monthly spend vs U.S. average",
+        description: `~$${currentMonthlyNormalized.toFixed(2)}/mo — aligned with the ~$${US_AVG_MONTHLY_SUBS}/mo typical.`,
+      });
+    }
+  }
+
+  // 2 — Top spending category + amount
+  if (categoryBreakdown.length === 0) {
+    cards.push({
+      icon: "🏷️",
+      title: "Top spending category",
+      description: "Add subscriptions to see your #1 category and its monthly total.",
+    });
+  } else {
+    const top = categoryBreakdown[0];
+    const catSum = categoryBreakdown.reduce((a, c) => a + c.total, 0);
+    const share = catSum > 0 ? Math.round((top.total / catSum) * 100) : 0;
+    cards.push({
+      icon: "🏷️",
+      title: `${top.category} leads spending`,
+      description: `~$${top.total.toFixed(2)}/mo — ${share}% of categorized spend.`,
+    });
+  }
+
+  // 3 — Most expensive single subscription
+  const byMonthly = [...activeStarted].sort(
+    (a, b) => pricePerMonth(b.price, b.billingCycle) - pricePerMonth(a.price, a.billingCycle),
+  );
+  if (byMonthly.length === 0) {
+    cards.push({
+      icon: "💰",
+      title: "Most expensive subscription",
+      description: "Add active subscriptions to see your highest monthly line item.",
+    });
+  } else {
+    const m = byMonthly[0];
+    const pm = pricePerMonth(m.price, m.billingCycle);
+    cards.push({
+      icon: "💰",
+      title: `${m.name} is priciest`,
+      description: `~$${pm.toFixed(2)}/mo (${m.billingCycle}, normalized).`,
+    });
+  }
+
+  // 4 — Over budget (worst) OR renewals in 7d OR yearly projection
+  let worst: { label: string; spent: number; limit: number } | null = null;
+  let worstRatio = 0;
+  for (const b of budgets) {
+    const spent =
+      b.category === "__total__"
+        ? totalMonthlySpend
+        : (spendByCategory.get(b.category) ?? 0);
+    if (b.limit <= 0) continue;
+    if (spent > b.limit) {
+      const ratio = spent / b.limit;
+      if (ratio > worstRatio) {
+        worstRatio = ratio;
+        worst = {
+          label: b.category === "__total__" ? "All subscriptions" : b.category,
+          spent,
+          limit: b.limit,
+        };
+      }
+    }
+  }
+
+  const soon: { name: string; days: number }[] = [];
+  for (const s of activeStarted) {
+    const er = getEffectiveRenewal(s);
+    if (!Number.isFinite(er.daysUntil)) continue;
+    if (er.daysUntil >= 0 && er.daysUntil <= 7) {
+      soon.push({ name: s.name, days: Math.max(0, Math.floor(er.daysUntil)) });
+    }
+  }
+  soon.sort((a, b) => a.days - b.days);
+
+  let fourth: AnalyticsInsightCard;
+  if (worst) {
+    fourth = {
+      icon: "⚠️",
+      title: `Over budget: ${worst.label}`,
+      description: `$${worst.spent.toFixed(2)} of $${worst.limit.toFixed(2)}/mo — you’re above limit.`,
+    };
+  } else if (soon.length > 0) {
+    const list = soon
+      .slice(0, 3)
+      .map((x) => `${x.name} (${x.days === 0 ? "today" : `${x.days}d`})`)
+      .join(", ");
+    const more = soon.length > 3 ? ` +${soon.length - 3} more` : "";
+    fourth = {
+      icon: "⏰",
+      title: `${soon.length} renewal${soon.length === 1 ? "" : "s"} this week`,
+      description: `${list}${more}.`,
+    };
+  } else if (yearlyProjection > 0) {
+    fourth = {
+      icon: "📅",
+      title: "Yearly projection",
+      description: `~$${yearlyProjection.toFixed(0)}/yr at your current ~$${currentMonthlyNormalized.toFixed(2)}/mo run rate.`,
+    };
+  } else {
+    fourth = {
+      icon: "📅",
+      title: "Yearly projection",
+      description: "Add active subscriptions to estimate yearly subscription cost.",
+    };
+  }
+
+  cards.push(fourth);
+  return cards;
 }
 
 export async function GET(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  /** Active only: paused excluded from all months; future projections = active only (per product spec). */
-  const subs = await prisma.subscription.findMany({
-    where: { userId: authUser.id, status: "active" },
-  });
+  const [subsActive, budgets] = await Promise.all([
+    prisma.subscription.findMany({
+      where: { userId: authUser.id, status: "active" },
+    }),
+    prisma.budget.findMany({
+      where: { userId: authUser.id },
+      orderBy: { createdAt: "asc" },
+    }),
+  ]);
 
   const now = new Date();
   const year = now.getFullYear();
@@ -45,11 +256,11 @@ export async function GET(req: Request) {
     const contributors: { name: string; amount: number }[] = [];
     let total = 0;
 
-    for (const s of subs) {
+    for (const s of subsActive) {
       const raw = monthlySpendInCalendarMonth(
         { startDate: s.startDate, price: s.price, billingCycle: s.billingCycle },
         year,
-        monthIndex
+        monthIndex,
       );
       if (raw <= 0) continue;
 
@@ -70,7 +281,7 @@ export async function GET(req: Request) {
   }
 
   const categoryMap = new Map<string, { total: number; count: number }>();
-  for (const s of subs) {
+  for (const s of subsActive) {
     const perMonth = pricePerMonth(s.price, s.billingCycle);
     const cur = categoryMap.get(s.category) ?? { total: 0, count: 0 };
     cur.total += perMonth;
@@ -92,34 +303,48 @@ export async function GET(req: Request) {
       percentage: categorySum > 0 ? Math.round((c.total / categorySum) * 1000) / 10 : 0,
     }));
 
-  /** Normalized monthly burn for subs that have started by today (matches dashboard). */
   const currentMonthlyNormalized = round2(
-    subs
+    subsActive
       .filter((s) => hasSubscriptionStarted(s.startDate, now))
-      .reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0)
+      .reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0),
   );
 
   const yearlyProjection = round2(currentMonthlyNormalized * 12);
 
-  const hasActiveSubscriptions = subs.length > 0;
+  const hasActiveSubscriptions = subsActive.length > 0;
 
   const score = computeSubscriptionHealthScore(
-    subs.map((s) => ({
+    subsActive.map((s) => ({
       price: s.price,
       billingCycle: s.billingCycle,
       category: s.category,
     })),
-    currentMonthlyNormalized
+    currentMonthlyNormalized,
   );
 
-  const insights = [
-    currentMonthlyNormalized > 100
-      ? `You're spending $${currentMonthlyNormalized.toFixed(0)}/mo on subscriptions. Review unused services.`
-      : "Your subscription spend is under control.",
-    categoryBreakdown.length > 0
-      ? `Top category: ${categoryBreakdown[0].category} ($${categoryBreakdown[0].total.toFixed(2)}/mo).`
-      : "Add subscriptions to get insights.",
-  ];
+  const spendByCategory = new Map<string, number>();
+  let totalMonthlySpend = 0;
+  for (const s of subsActive) {
+    if (!hasSubscriptionStarted(s.startDate, now)) continue;
+    const monthly = pricePerMonth(s.price, s.billingCycle);
+    spendByCategory.set(s.category, (spendByCategory.get(s.category) ?? 0) + monthly);
+    totalMonthlySpend += monthly;
+  }
+  totalMonthlySpend = round2(totalMonthlySpend);
+
+  const activeStarted = subsActive
+    .filter((s) => hasSubscriptionStarted(s.startDate, now))
+    .map(prismaSubToType);
+
+  const insightCards = buildInsightCards({
+    currentMonthlyNormalized,
+    yearlyProjection,
+    categoryBreakdown,
+    activeStarted,
+    budgets,
+    spendByCategory,
+    totalMonthlySpend,
+  });
 
   return NextResponse.json({
     score,
@@ -127,6 +352,6 @@ export async function GET(req: Request) {
     monthlySpend,
     categoryBreakdown,
     yearlyProjection,
-    insights,
+    insightCards,
   });
 }

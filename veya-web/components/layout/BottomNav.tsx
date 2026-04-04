@@ -6,9 +6,9 @@ import { cn } from "@/lib/utils";
 
 const items = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/subscriptions", label: "Subs", icon: "📋" },
+  { href: "/subscriptions", label: "Subscriptions", icon: "📋" },
   { href: "/analytics", label: "Analytics", icon: "📈" },
-  { href: "/coach", label: "Coach", icon: "💬" },
+  { href: "/coach", label: "AI Coach", icon: "💬" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
 ];
 
@@ -21,7 +21,7 @@ export function BottomNav() {
       style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
       aria-label="Main navigation"
     >
-      <div className="mx-auto flex max-w-lg items-stretch justify-between gap-0.5 px-1 pt-1">
+      <div className="mx-auto flex max-w-lg items-stretch justify-between gap-0 px-0.5 pt-1 sm:gap-0.5 sm:px-1">
         {items.map((item) => {
           const active =
             pathname === item.href ||
@@ -31,14 +31,16 @@ export function BottomNav() {
               key={item.href}
               href={item.href}
               className={cn(
-                "flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center rounded-lg px-0.5 py-1 text-sm font-medium leading-tight",
-                active ? "text-accent" : "text-text-secondary",
+                "flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center rounded-lg px-0.5 py-1 text-[11px] font-medium leading-tight sm:text-xs",
+                active
+                  ? "bg-accent/15 text-accent"
+                  : "text-text-secondary hover:text-text-primary",
               )}
             >
-              <span className="text-[1.125rem] leading-none" aria-hidden>
+              <span className="text-[1.125rem] leading-none sm:text-[1.2rem]" aria-hidden>
                 {item.icon}
               </span>
-              <span className="mt-0.5 max-w-full truncate px-0.5 text-center text-sm">
+              <span className="mt-0.5 max-w-full truncate px-0.5 text-center leading-tight">
                 {item.label}
               </span>
             </Link>

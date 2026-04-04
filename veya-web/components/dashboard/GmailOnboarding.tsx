@@ -1,31 +1,28 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { signIn, useSession } from "next-auth/react";
-import { useSearchParams, useRouter } from "next/navigation";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import {
   GmailScanResultsModal,
   type GmailScanRow,
 } from "@/components/subscriptions/GmailScanResultsModal";
-import { mergeScanCandidates } from "@/lib/mergeScanCandidates";
-import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
+import { executeScanImport } from "@/lib/executeScanImport";
 import type { ScanImportPayload } from "@/types/scan";
 
-type GmailSettings = {
-  gmailConnected: boolean;
+type ConnectionSettings = {
   plaidLinked: boolean;
   hasAutoScanned: boolean;
-  gmailFirstScanCompletedAt: string | null;
 };
 
 type BannerState = "idle" | "scanning" | "success" | "hidden";
 
+/** First-login flow: optional bank link prompt + Plaid-only auto-detect (no Gmail scanning). */
 export function GmailOnboarding() {
   const { data: session, status } = useSession();
-  const searchParams = useSearchParams();
   const router = useRouter();
   const qc = useQueryClient();
   const [banner, setBanner] = useState<BannerState>("idle");
@@ -42,14 +39,12 @@ export function GmailOnboarding() {
   }, [userId]);
 
   useEffect(() => {
-    if (status !== "authenticated" || !session?.user) return;
+    if (status !== "authenticated") return;
 
     let cancelled = false;
 
     async function run() {
-      const g = (await fetch("/api/settings/gmail").then((r) => r.json())) as GmailSettings & {
-        lastGmailScanAt: string | null;
-      };
+      const g = (await fetch("/api/settings/gmail").then((r) => r.json())) as ConnectionSettings;
       if (cancelled) return;
 
       if (g.hasAutoScanned) {
@@ -57,110 +52,32 @@ export function GmailOnboarding() {
         return;
       }
 
-      const provider = session?.provider ?? "credentials";
-      const fromConnect = searchParams.get("gmail_connected") === "1";
-
-      if (fromConnect) {
-        router.replace("/dashboard", { scroll: false });
-      }
-
-      const shouldOfferModal =
-        !g.gmailConnected &&
-        !g.plaidLinked &&
-        !fromConnect &&
-        (provider === "credentials" || provider === "google");
-
+      const shouldOfferModal = !g.plaidLinked;
       if (shouldOfferModal) {
         setConnectModal(true);
         return;
       }
 
-      const shouldAutoScan =
-        (g.gmailConnected || g.plaidLinked) && !scanStarted.current;
-
-      if (!shouldAutoScan) {
-        return;
-      }
+      const shouldAutoScan = g.plaidLinked && !scanStarted.current;
+      if (!shouldAutoScan) return;
 
       scanStarted.current = true;
       setBanner("scanning");
       setConnectModal(false);
 
-      const gmailPromise = g.gmailConnected
-        ? fetch("/api/subscriptions/gmail-scan", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ action: "scan", mode: "first-auto" }),
-          }).then((r) => r.json())
-        : Promise.resolve({
-            ok: false,
-            skipped: false,
-            needsGmail: false,
-            candidates: [],
-          });
-
-      const plaidPromise = g.plaidLinked
-        ? fetch("/api/plaid/detect-subscriptions", { method: "POST" }).then((r) =>
-            r.json()
-          )
-        : Promise.resolve({ ok: false, subscriptions: [] });
-
-      const [gj, pj] = await Promise.all([gmailPromise, plaidPromise]);
-
+      const pj = await fetch("/api/plaid/detect-subscriptions", { method: "POST" }).then((r) =>
+        r.json(),
+      );
       if (cancelled) return;
-
-      if (!g.plaidLinked && gj.needsGmail) {
-        setConnectModal(true);
-        setBanner("idle");
-        scanStarted.current = false;
-        return;
-      }
-
-      if (gj.skipped && !g.plaidLinked) {
-        setBanner("hidden");
-        return;
-      }
-
-      if (!g.plaidLinked && !gj.ok && !gj.needsGmail) {
-        setBanner("hidden");
-        scanStarted.current = false;
-        return;
-      }
-
-      type GmailCandidate = {
-        messageId: string;
-        name: string;
-        category: string;
-        price: number;
-        billingCycle: "monthly" | "yearly";
-        monthlyEquivalent: number;
-        logoUrl: string;
-        emailDate: string;
-        senderDomain: string;
-      };
-      const gmailRows: GmailScanRow[] = (
-        gj.ok && Array.isArray(gj.candidates) ? gj.candidates : []
-      ).map((c: GmailCandidate) => ({
-        ...c,
-        rowId: c.messageId,
-        source: "gmail" as const,
-      }));
 
       const plaidRows: GmailScanRow[] =
         pj.ok && Array.isArray(pj.subscriptions)
           ? mapPlaidDetectToScanRows(pj.subscriptions)
           : [];
 
-      let merged: GmailScanRow[] = [];
-      if (gmailRows.length && plaidRows.length) {
-        merged = mergeScanCandidates(gmailRows, plaidRows);
-      } else {
-        merged = [...gmailRows, ...plaidRows];
-      }
-
-      if (merged.length > 0) {
-        setFoundCount(merged.length);
-        setCandidates(merged);
+      if (plaidRows.length > 0) {
+        setFoundCount(plaidRows.length);
+        setCandidates(plaidRows);
         setResultsModal(true);
         setBanner("success");
         window.setTimeout(() => setBanner("hidden"), 16000);
@@ -174,11 +91,11 @@ export function GmailOnboarding() {
       }
     }
 
-    run();
+    void run();
     return () => {
       cancelled = true;
     };
-  }, [status, session?.provider, session?.user, userId, searchParams, router, qc]);
+  }, [status, userId]);
 
   const skipFirst = async () => {
     await fetch("/api/settings/gmail", {
@@ -189,14 +106,6 @@ export function GmailOnboarding() {
     setConnectModal(false);
     setBanner("hidden");
     router.refresh();
-  };
-
-  const connectGmail = () => {
-    void signIn(
-      "google",
-      { callbackUrl: "/dashboard?gmail_connected=1" },
-      { prompt: "consent", access_type: "offline" },
-    );
   };
 
   const dismissResults = async () => {
@@ -234,7 +143,7 @@ export function GmailOnboarding() {
     <>
       {banner === "scanning" && (
         <div className="mb-4 rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-text-secondary backdrop-blur-sm">
-          🔍 Finding your subscriptions...
+          🔍 Finding subscriptions from your bank…
         </div>
       )}
       {banner === "success" && (
@@ -261,26 +170,17 @@ export function GmailOnboarding() {
       {connectModal && (
         <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
           <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h3 className="text-lg font-semibold text-text-primary mb-2">
-              {(session?.provider ?? "") === "google"
-                ? "Allow Gmail scanning"
-                : "Find subscriptions automatically?"}
-            </h3>
-            <p className="text-sm text-text-secondary mb-6">
-              {(session?.provider ?? "") === "google"
-                ? "You signed in with Google. One quick consent lets Veya read subscription emails from this same account—no second login."
-                : "Want Veya to find your subscriptions automatically? Connect your Google account (Gmail) to get started."}
+            <h3 className="mb-2 text-lg font-semibold text-text-primary">Find subscriptions automatically?</h3>
+            <p className="mb-6 text-sm text-text-secondary">
+              Connect your bank on Settings (Plaid). Veya can scan transactions to suggest subscriptions to add.
             </p>
-            <div className="flex flex-col sm:flex-row gap-3">
-              <button
-                type="button"
-                onClick={connectGmail}
-                className="flex-1 rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
+            <div className="flex flex-col gap-3 sm:flex-row">
+              <Link
+                href="/settings"
+                className="flex flex-1 items-center justify-center rounded-xl bg-accent px-4 py-3 text-center text-sm font-semibold text-white hover:opacity-90"
               >
-                {(session?.provider ?? "") === "google"
-                  ? "Continue with Google"
-                  : "Connect Gmail"}
-              </button>
+                Open Settings
+              </Link>
               <button
                 type="button"
                 onClick={skipFirst}
