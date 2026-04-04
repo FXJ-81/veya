@@ -172,6 +172,7 @@ export function SubscriptionCard({
             <Button
               variant="success"
               size="sm"
+              className="max-md:px-3 max-md:text-xs"
               onClick={() => onPause(subscription.id)}
             >
               Resume
@@ -181,6 +182,7 @@ export function SubscriptionCard({
             <Button
               variant="secondary"
               size="sm"
+              className="max-md:px-3 max-md:text-xs"
               onClick={() => onPause(subscription.id)}
             >
               Pause
@@ -190,6 +192,7 @@ export function SubscriptionCard({
             <Button
               variant="danger"
               size="sm"
+              className="max-md:px-3 max-md:text-xs"
               onClick={() => onCancel(subscription.id)}
             >
               Cancel

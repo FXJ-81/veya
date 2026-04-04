@@ -15,6 +15,7 @@ import {
   type GmailScanRow,
 } from "@/components/subscriptions/GmailScanResultsModal";
 import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
+import { PlaidSecurityBadges } from "@/components/settings/PlaidSecurityBadges";
 import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
@@ -477,9 +478,7 @@ export default function SettingsPage() {
                 <Button onClick={startPlaidLink} disabled={connectingBank}>
                   {connectingBank ? "Opening…" : "Connect a bank account"}
                 </Button>
-                <p className="text-xs text-text-tertiary">
-                  Powered by Plaid — read-only access, bank-level security.
-                </p>
+                <PlaidSecurityBadges className="mt-2 max-w-lg" />
               </div>
             ) : (
               /* Accounts list */
@@ -565,12 +564,7 @@ export default function SettingsPage() {
               </ul>
             )}
 
-            {!bankLoadError && (
-              <p className="mt-4 text-xs text-text-tertiary">
-                Powered by Plaid — read-only access to transactions, bank-level security. Veya never
-                stores your credentials.
-              </p>
-            )}
+            {!bankLoadError && <PlaidSecurityBadges className="mt-4" />}
           </Card>
 
           {/* ── Notifications ── */}

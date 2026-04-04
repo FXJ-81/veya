@@ -37,6 +37,7 @@ export function AppShell({
             /* Mobile: 24px horizontal padding; clear bottom tab bar */
             "max-md:px-6 max-md:pt-[max(1.5rem,env(safe-area-inset-top,0px))]",
             "max-md:pb-[calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px)+1.5rem)]",
+            isCoach && "max-md:overflow-hidden",
             /* Tablet: 24px padding below top bar */
             "md:px-6 md:pb-6 md:pt-16",
             /* Desktop: 24px padding; offset past sidebar rail */

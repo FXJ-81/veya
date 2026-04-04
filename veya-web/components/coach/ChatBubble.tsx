@@ -31,11 +31,11 @@ export function ChatBubble({ role, content, index, createdAt, kind }: ChatBubble
       initial={{ opacity: 0, y: 8 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.03 }}
-      className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+      className={`flex min-w-0 ${isUser ? "justify-end" : "justify-start"}`}
     >
-      <div className="max-w-[85%]">
+      <div className={isUser ? "max-w-[80%] md:max-w-[85%]" : "max-w-[85%]"}>
         <div
-          className={`rounded-2xl px-4 py-3 ${
+          className={`rounded-2xl px-3 py-3 sm:px-4 ${
             isUser
               ? "bg-accent text-white rounded-br-md"
               : kind === "action"
@@ -74,7 +74,9 @@ export function ChatBubble({ role, content, index, createdAt, kind }: ChatBubble
         )}
         </div>
         {timeLabel && (
-          <div className={`mt-1 text-[11px] text-text-tertiary ${isUser ? "text-right" : "text-left"}`}>
+          <div
+            className={`mt-1 text-[10px] text-text-tertiary sm:text-[11px] ${isUser ? "text-right" : "text-left"}`}
+          >
             {timeLabel}
           </div>
         )}

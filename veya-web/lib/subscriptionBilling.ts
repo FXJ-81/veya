@@ -3,7 +3,14 @@ export const WEEKS_PER_MONTH = 4.33;
 
 export type BillingCycleKey = "monthly" | "yearly" | "weekly" | "custom";
 
-export type ScoreLabelText = "No Data" | "Needs Review" | "Good" | "Excellent";
+export type ScoreLabelText =
+  | "No Data"
+  | "Excellent 🟢"
+  | "Good 🟢"
+  | "Fair 🟡"
+  | "Needs Attention 🟡"
+  | "High Spend 🔴"
+  | "Critical 🔴";
 
 /**
  * Normalized monthly cost for a subscription (what it costs per calendar month).
@@ -62,76 +69,84 @@ export function monthlySpendInCalendarMonth(
   return pricePerMonth(sub.price, sub.billingCycle);
 }
 
+export type SubscriptionHealthScoreInput = {
+  /** Sum of normalized monthly cost for every **active** subscription. */
+  monthlyActiveSpend: number;
+  activeSubscriptionCount: number;
+  pausedSubscriptionCount: number;
+  /** Normalized $/mo per active sub (same order as count). */
+  activeSubsPricePerMonth: number[];
+  /** True only when user has at least one budget and none are over limit (spent ≤ limit). */
+  underBudgetOnAllLimits: boolean;
+};
+
 /**
- * Subscription health score (1–100) when there is at least one active subscription.
- * With no active subscriptions, the API returns 0 instead (see caller).
+ * Subscription health score when there is at least one active subscription.
+ * Returns **0** when there are no active subscriptions (caller shows “No Data”).
  *
- * Start at 100, apply deductions and bonuses, clamp to [1, 100].
+ * Start at 100, apply tiered deductions/bonuses, clamp to **[5, 100]** when active subs exist.
  */
-export function computeSubscriptionHealthScore(
-  activeSubs: { price: number; billingCycle: string; category: string }[],
-  monthlyNormalizedTotal: number
-): number {
-  if (activeSubs.length === 0) return 0;
+export function computeSubscriptionHealthScore(input: SubscriptionHealthScoreInput): number {
+  const {
+    monthlyActiveSpend,
+    activeSubscriptionCount: activeN,
+    pausedSubscriptionCount: pausedN,
+    activeSubsPricePerMonth,
+    underBudgetOnAllLimits,
+  } = input;
+
+  if (activeN === 0) return 0;
 
   let score = 100;
-  const n = activeSubs.length;
+  const m = monthlyActiveSpend;
 
-  if (n > 5) {
-    score -= 5 * (n - 5);
-  }
+  if (m > 500) score -= 70;
+  else if (m >= 301) score -= 55;
+  else if (m >= 201) score -= 40;
+  else if (m >= 151) score -= 30;
+  else if (m >= 101) score -= 20;
+  else if (m >= 51) score -= 10;
 
-  const S = monthlyNormalizedTotal;
-  if (S > 50) {
-    score -= Math.floor((S - 50) / 5);
-  }
-  if (S > 100) {
-    score -= Math.floor((S - 100) / 10) * 2;
-  }
+  if (activeN >= 11) score -= 20;
+  else if (activeN >= 7) score -= 10;
+  else if (activeN >= 4) score -= 5;
 
-  const uniqueCats = new Set(activeSubs.map((s) => s.category)).size;
-  if (uniqueCats === 1) {
-    score -= 10;
-  }
+  if (pausedN >= 3) score -= 15;
+  else if (pausedN >= 1) score -= 5;
 
-  for (const s of activeSubs) {
-    const pm = pricePerMonth(s.price, s.billingCycle);
-    if (pm > 30) {
-      score -= 5;
-    }
+  if (
+    activeSubsPricePerMonth.length > 0 &&
+    activeSubsPricePerMonth.every((p) => p < 20)
+  ) {
+    score += 5;
   }
-
-  if (uniqueCats >= 3) {
-    score += 10;
+  if (underBudgetOnAllLimits) {
+    score += 5;
   }
-
-  const allUnder20 = activeSubs.every(
-    (s) => pricePerMonth(s.price, s.billingCycle) < 20
-  );
-  if (allUnder20) {
-    score += 10;
-  }
-
-  if (n < 3) {
+  if (activeN < 5) {
     score += 5;
   }
 
   score = Math.round(score);
-  return Math.max(1, Math.min(100, score));
+  return Math.max(5, Math.min(100, score));
 }
 
 export function scoreLabel(score: number, hasActiveSubscriptions: boolean): ScoreLabelText {
   if (!hasActiveSubscriptions) return "No Data";
-  if (score <= 40) return "Needs Review";
-  if (score <= 70) return "Good";
-  return "Excellent";
+  if (score >= 85) return "Excellent 🟢";
+  if (score >= 70) return "Good 🟢";
+  if (score >= 55) return "Fair 🟡";
+  if (score >= 40) return "Needs Attention 🟡";
+  if (score >= 25) return "High Spend 🔴";
+  return "Critical 🔴";
 }
 
 export function scoreAccentColor(score: number, hasActiveSubscriptions: boolean): string {
   if (!hasActiveSubscriptions) return "#9090aa";
-  if (score <= 40) return "#f87171";
-  if (score <= 70) return "#fbbf24";
-  return "#34d399";
+  if (score >= 55) return "#34d399";
+  if (score >= 40) return "#fbbf24";
+  if (score >= 25) return "#fb923c";
+  return "#f87171";
 }
 
 /** Stable palette index for category → color alignment in charts */

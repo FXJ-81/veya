@@ -60,8 +60,10 @@ export default function AnalyticsPage() {
                   analytics?.hasActiveSubscriptions ??
                   (analytics?.categoryBreakdown?.length ?? 0) > 0
                 }
+                monthlySubscriptionSpend={analytics?.monthlySubscriptionSpend}
+                nationalAvgMonthly={analytics?.nationalAvgMonthly}
               />
-              <div className="rounded-2xl border border-border bg-card p-6">
+              <div className="rounded-2xl border border-border bg-card p-4 sm:p-6">
                 <h3 className="text-lg font-semibold text-text-primary mb-2">
                   Yearly projection
                 </h3>
@@ -76,7 +78,7 @@ export default function AnalyticsPage() {
 
             <SpendChart data={analytics?.monthlySpend ?? []} />
 
-            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <CategoryDonut data={analytics?.categoryBreakdown ?? []} />
               <div className="rounded-2xl border border-border bg-card p-4 sm:p-6">
                 <h3 className="mb-4 text-lg font-semibold text-text-primary">

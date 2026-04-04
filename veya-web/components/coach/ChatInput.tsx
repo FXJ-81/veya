@@ -27,7 +27,7 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
   }, [value]);
 
   return (
-    <div className="flex gap-2 items-end border border-border rounded-xl bg-card p-2">
+    <div className="flex min-w-0 items-end gap-2 rounded-xl border border-border bg-card p-2">
       <textarea
         ref={inputRef}
         value={value}
@@ -40,11 +40,12 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
         }}
         placeholder="Ask Veya AI..."
         rows={1}
-        className="flex-1 min-h-[44px] max-h-[120px] resize-none bg-transparent px-3 py-2 text-text-primary placeholder-text-tertiary focus:outline-none text-sm"
+        className="min-h-[48px] min-w-0 flex-1 resize-none bg-transparent px-3 py-3 text-base text-text-primary placeholder-text-tertiary focus:outline-none sm:min-h-[44px] sm:py-2 sm:text-sm"
         disabled={disabled}
       />
       <Button
         size="md"
+        className="shrink-0"
         onClick={handleSubmit}
         disabled={!value.trim() || disabled}
       >

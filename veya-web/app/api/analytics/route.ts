@@ -224,9 +224,12 @@ export async function GET(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const [subsActive, budgets] = await Promise.all([
+  const [subsActive, pausedCount, budgets] = await Promise.all([
     prisma.subscription.findMany({
       where: { userId: authUser.id, status: "active" },
+    }),
+    prisma.subscription.count({
+      where: { userId: authUser.id, status: "paused" },
     }),
     prisma.budget.findMany({
       where: { userId: authUser.id },
@@ -303,23 +306,17 @@ export async function GET(req: Request) {
       percentage: categorySum > 0 ? Math.round((c.total / categorySum) * 1000) / 10 : 0,
     }));
 
-  const currentMonthlyNormalized = round2(
-    subsActive
-      .filter((s) => hasSubscriptionStarted(s.startDate, now))
-      .reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0),
+  /** All **active** subs: normalized $/mo (matches category card & score; avoids $0 when startDate is future). */
+  const activeMonthlyTotal = round2(
+    subsActive.reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0),
   );
 
-  const yearlyProjection = round2(currentMonthlyNormalized * 12);
+  const yearlyProjection = round2(activeMonthlyTotal * 12);
 
   const hasActiveSubscriptions = subsActive.length > 0;
 
-  const score = computeSubscriptionHealthScore(
-    subsActive.map((s) => ({
-      price: s.price,
-      billingCycle: s.billingCycle,
-      category: s.category,
-    })),
-    currentMonthlyNormalized,
+  const activeSubsPricePerMonth = subsActive.map((s) =>
+    pricePerMonth(s.price, s.billingCycle),
   );
 
   const spendByCategory = new Map<string, number>();
@@ -332,12 +329,30 @@ export async function GET(req: Request) {
   }
   totalMonthlySpend = round2(totalMonthlySpend);
 
+  let underBudgetOnAllLimits = false;
+  const budgetsWithLimit = budgets.filter((b) => b.limit > 0);
+  if (budgetsWithLimit.length > 0) {
+    underBudgetOnAllLimits = budgetsWithLimit.every((b) => {
+      const spent =
+        b.category === "__total__" ? totalMonthlySpend : (spendByCategory.get(b.category) ?? 0);
+      return spent <= b.limit;
+    });
+  }
+
+  const score = computeSubscriptionHealthScore({
+    monthlyActiveSpend: activeMonthlyTotal,
+    activeSubscriptionCount: subsActive.length,
+    pausedSubscriptionCount: pausedCount,
+    activeSubsPricePerMonth,
+    underBudgetOnAllLimits,
+  });
+
   const activeStarted = subsActive
     .filter((s) => hasSubscriptionStarted(s.startDate, now))
     .map(prismaSubToType);
 
   const insightCards = buildInsightCards({
-    currentMonthlyNormalized,
+    currentMonthlyNormalized: activeMonthlyTotal,
     yearlyProjection,
     categoryBreakdown,
     activeStarted,
@@ -352,6 +367,8 @@ export async function GET(req: Request) {
     monthlySpend,
     categoryBreakdown,
     yearlyProjection,
+    monthlySubscriptionSpend: activeMonthlyTotal,
+    nationalAvgMonthly: US_AVG_MONTHLY_SUBS,
     insightCards,
   });
 }

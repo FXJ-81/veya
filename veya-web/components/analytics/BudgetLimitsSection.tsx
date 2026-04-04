@@ -51,12 +51,12 @@ function BudgetCard({
         exceeded ? "border-red-500/30 bg-red-950/20" : "border-border bg-card"
       }`}
     >
-      <div className="flex items-center justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          <span className="text-base shrink-0">{categoryIcon(bs.category)}</span>
-          <span className="text-sm font-medium text-text-primary truncate">{label}</span>
+      <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-1 items-center gap-2">
+          <span className="shrink-0 text-base">{categoryIcon(bs.category)}</span>
+          <span className="truncate text-sm font-medium text-text-primary">{label}</span>
         </div>
-        <div className="flex items-center gap-1 shrink-0">
+        <div className="flex shrink-0 items-center gap-1">
           <span
             className={`text-sm font-bold ${
               exceeded ? "text-red-400" :
@@ -69,32 +69,42 @@ function BudgetCard({
           <button
             type="button"
             onClick={() => onEdit(bs)}
-            className="ml-1 min-h-[44px] rounded border border-border px-3 py-2 text-sm text-text-secondary transition-colors hover:border-accent hover:text-accent md:min-h-0 md:px-2 md:py-0.5"
+            aria-label={`Edit budget for ${label}`}
+            className="ml-1 flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-border text-sm text-text-secondary transition-colors hover:border-accent hover:text-accent md:min-h-0 md:min-w-0 md:px-2 md:py-0.5"
           >
-            Edit
+            <span className="hidden md:inline">Edit</span>
+            <span className="text-base md:hidden" aria-hidden>
+              ✎
+            </span>
           </button>
           <button
             type="button"
             onClick={() => onDelete(bs.id)}
-            className="min-h-[44px] rounded border border-border px-3 py-2 text-sm text-text-secondary transition-colors hover:border-danger hover:text-danger md:min-h-0 md:px-2 md:py-0.5"
+            aria-label={`Delete budget for ${label}`}
+            className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-border text-sm text-text-secondary transition-colors hover:border-danger hover:text-danger md:min-h-0 md:min-w-0 md:px-2 md:py-0.5"
           >
-            Delete
+            <span className="hidden md:inline">Delete</span>
+            <span className="text-base md:hidden" aria-hidden>
+              🗑
+            </span>
           </button>
         </div>
       </div>
 
-      <ProgressBar pct={bs.percentage} />
+      <div className="min-w-0">
+        <ProgressBar pct={bs.percentage} />
+      </div>
 
-      <div className="flex justify-between mt-1.5 text-xs text-text-secondary">
-        <span>
-          <span className="text-text-primary font-medium">${bs.spent.toFixed(2)}</span>
+      <div className="mt-1.5 flex flex-col gap-1 text-xs text-text-secondary sm:flex-row sm:justify-between sm:gap-2">
+        <span className="min-w-0 break-words">
+          <span className="font-medium text-text-primary">${bs.spent.toFixed(2)}</span>
           {" "}spent of{" "}
-          <span className="text-text-primary font-medium">${bs.limit.toFixed(2)}</span> limit
+          <span className="font-medium text-text-primary">${bs.limit.toFixed(2)}</span> limit
         </span>
         {exceeded ? (
-          <span className="text-red-400">Over by ${Math.abs(bs.remaining).toFixed(2)}</span>
+          <span className="shrink-0 text-red-400">Over by ${Math.abs(bs.remaining).toFixed(2)}</span>
         ) : (
-          <span>${bs.remaining.toFixed(2)} left</span>
+          <span className="shrink-0">${bs.remaining.toFixed(2)} left</span>
         )}
       </div>
     </motion.div>
@@ -145,6 +155,7 @@ function BudgetModal({
   return (
     <Modal
       open
+      fullScreenMobile
       onClose={() => {
         if (!busy) onClose();
       }}
@@ -310,12 +321,13 @@ export function BudgetLimitsSection() {
 
   return (
     <>
-      <div className="rounded-2xl border border-border bg-card p-6">
-        <div className="flex items-center justify-between mb-5">
+      <div className="rounded-2xl border border-border bg-card p-4 sm:p-6">
+        <div className="mb-5 flex flex-col gap-3 min-[420px]:flex-row min-[420px]:items-center min-[420px]:justify-between">
           <h3 className="text-lg font-semibold text-text-primary">Budget Limits</h3>
           <button
+            type="button"
             onClick={() => setModal({ type: "add" })}
-            className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity"
+            className="min-h-[44px] w-full rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 min-[420px]:w-auto sm:min-h-0"
           >
             + Add Budget
           </button>

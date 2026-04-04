@@ -19,6 +19,7 @@ import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { GmailOnboarding } from "@/components/dashboard/GmailOnboarding";
 import { BudgetAlerts } from "@/components/dashboard/BudgetAlerts";
+import { SavingsOpportunitiesCard } from "@/components/dashboard/SavingsOpportunitiesCard";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -131,7 +132,7 @@ export default function DashboardPage() {
             <h2 className="mb-3 text-lg font-semibold text-text-primary">
               Upcoming renewals
             </h2>
-            <div className="flex min-w-0 gap-3 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
+            <div className="flex min-w-0 gap-3 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch] snap-x snap-mandatory">
               {subsLoading ? (
                 <Skeleton className="h-32 w-48 flex-shrink-0 rounded-xl" />
               ) : renewals.length === 0 ? (
@@ -148,20 +149,27 @@ export default function DashboardPage() {
 
           <AITipCard />
 
-          <div className="grid gap-4 lg:grid-cols-2">
-            <div>
-              <h2 className="mb-3 text-lg font-semibold text-text-primary">
-                Spending breakdown
-              </h2>
-              {analyticsLoading ? (
-                <Skeleton className="h-64 rounded-2xl" />
-              ) : analytics?.categoryBreakdown?.length ? (
-                <CategoryDonut data={analytics.categoryBreakdown} />
-              ) : (
-                <div className="rounded-2xl border border-border bg-card p-6 text-center text-sm text-text-secondary">
-                  Add subscriptions to see breakdown.
-                </div>
-              )}
+          <div>
+            <h2 className="mb-3 text-lg font-semibold text-text-primary">Spending breakdown</h2>
+            <div className="grid grid-cols-1 items-stretch gap-4 lg:grid-cols-[55fr_45fr]">
+              <div className="flex h-full min-h-[18rem] flex-col lg:min-h-[22rem]">
+                {analyticsLoading ? (
+                  <Skeleton className="min-h-[18rem] flex-1 rounded-2xl lg:min-h-full" />
+                ) : analytics?.categoryBreakdown?.length ? (
+                  <CategoryDonut
+                    data={analytics.categoryBreakdown}
+                    variant="split"
+                    className="min-h-0 flex-1"
+                  />
+                ) : (
+                  <div className="flex min-h-[18rem] flex-1 flex-col items-center justify-center rounded-2xl border border-border bg-card p-6 text-center text-sm text-text-secondary lg:min-h-full">
+                    Add subscriptions to see breakdown.
+                  </div>
+                )}
+              </div>
+              <div className="flex h-full min-h-[18rem] flex-col lg:min-h-[22rem]">
+                <SavingsOpportunitiesCard subs={subs} subsLoading={subsLoading} />
+              </div>
             </div>
           </div>
         </div>

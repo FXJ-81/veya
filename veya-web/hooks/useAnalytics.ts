@@ -16,6 +16,8 @@ interface AnalyticsData {
   monthlySpend: MonthlySpend[];
   categoryBreakdown: SpendingBreakdown[];
   yearlyProjection: number;
+  monthlySubscriptionSpend: number;
+  nationalAvgMonthly: number;
   insightCards: AnalyticsInsightCard[];
 }
 

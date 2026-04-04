@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
@@ -151,10 +151,12 @@ export default function CoachPage() {
     setHistoryOpen(false);
   }, [status]);
 
-  // Smooth auto-scroll to bottom when messages change.
-  useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [messages.length]);
+  useLayoutEffect(() => {
+    const id = requestAnimationFrame(() => {
+      bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+    return () => cancelAnimationFrame(id);
+  }, [messages, loading]);
 
   useEffect(() => {
     if (!historyOpen) return;
@@ -290,23 +292,23 @@ export default function CoachPage() {
 
   return (
     <AppShell variant="coach">
-      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/30 lg:rounded-3xl">
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/30 max-md:rounded-xl lg:rounded-3xl">
         <motion.header
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="shrink-0 border-b border-border/60 px-4 pb-4 pt-3 sm:px-5 lg:px-6"
+          className="shrink-0 border-b border-border/60 px-3 pb-3 pt-2 sm:px-5 sm:pb-4 sm:pt-3 lg:px-6"
         >
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between sm:gap-3">
             <div className="min-w-0">
-              <h1 className="text-xl font-bold text-text-primary sm:text-2xl">
+              <h1 className="text-lg font-bold text-text-primary md:text-xl lg:text-2xl">
                 Veya AI Coach
               </h1>
-              <p className="mt-1 text-sm text-text-secondary">
+              <p className="mt-1 hidden text-sm text-text-secondary md:block">
                 Ask anything about your subscriptions. I have full context.
               </p>
             </div>
-            <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
-              <div ref={historyRef} className="relative">
+            <div className="flex min-w-0 shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto [-webkit-overflow-scrolling:touch] sm:gap-2">
+              <div ref={historyRef} className="relative shrink-0">
                 <button
                   type="button"
                   onClick={async () => {
@@ -317,7 +319,7 @@ export default function CoachPage() {
                     }
                   }}
                   disabled={loading}
-                  className="min-h-[44px] rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-border hover:text-text-primary disabled:opacity-50 max-md:px-2"
+                  className="min-h-[44px] shrink-0 rounded-lg border border-border bg-surface px-2.5 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-border hover:text-text-primary disabled:opacity-50 sm:px-3 sm:text-sm"
                 >
                   <span className="md:hidden">History</span>
                   <span className="hidden md:inline">Chat History</span>
@@ -411,7 +413,7 @@ export default function CoachPage() {
                 type="button"
                 onClick={clearChat}
                 disabled={loading || messages.length === 0}
-                className="min-h-[44px] rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-border hover:text-text-primary disabled:opacity-50 max-md:px-2"
+                className="min-h-[44px] shrink-0 rounded-lg border border-border bg-surface px-2.5 py-2 text-xs font-medium text-text-secondary transition-colors hover:bg-border hover:text-text-primary disabled:opacity-50 sm:px-3 sm:text-sm"
               >
                 <span className="md:hidden">Clear</span>
                 <span className="hidden md:inline">Clear chat</span>
@@ -421,8 +423,8 @@ export default function CoachPage() {
         </motion.header>
 
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 lg:px-6">
-            <div className="w-full space-y-4">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 max-md:pb-[min(42vh,13rem)] sm:px-5 sm:py-4 lg:px-6">
+            <div className="w-full min-w-0 space-y-3 sm:space-y-4">
               {messages.length === 0 && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -452,7 +454,7 @@ export default function CoachPage() {
                   animate={{ opacity: 1 }}
                   className="flex justify-start"
                 >
-                  <div className="rounded-2xl rounded-bl-md border border-border bg-card/80 px-4 py-3">
+                  <div className="max-w-[85%] rounded-2xl rounded-bl-md border border-border bg-card/80 px-3 py-3 sm:px-4">
                     <span className="flex gap-1">
                       <span
                         className="h-2 w-2 animate-bounce rounded-full bg-text-tertiary"
@@ -474,8 +476,10 @@ export default function CoachPage() {
             </div>
           </div>
 
-          <div className="shrink-0 border-t border-border/80 bg-card/40 px-4 pb-3 pt-3 sm:px-5 sm:pb-4 sm:pt-4 lg:px-6">
-            <div className="w-full space-y-3">
+          <div
+            className="z-[58] shrink-0 border-t border-border/80 bg-card/95 px-3 pb-3 pt-3 backdrop-blur-xl max-md:fixed max-md:left-6 max-md:right-6 max-md:rounded-t-2xl max-md:border-x max-md:border-t max-md:border-border/80 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] max-md:shadow-lg max-md:[bottom:calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px))] sm:bg-card/40 sm:px-5 sm:pb-4 sm:pt-4 lg:px-6"
+          >
+            <div className="w-full min-w-0 space-y-2 sm:space-y-3">
               {messages.length > 0 && (
                 <QuickPrompts onSelect={sendMessage} disabled={loading} />
               )}

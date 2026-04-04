@@ -11,9 +11,18 @@ interface ModalProps {
   title?: string;
   children: React.ReactNode;
   className?: string;
+  /** Edge-to-edge panel on viewports below `md` (768px). */
+  fullScreenMobile?: boolean;
 }
 
-export function Modal({ open, onClose, title, children, className }: ModalProps) {
+export function Modal({
+  open,
+  onClose,
+  title,
+  children,
+  className,
+  fullScreenMobile = false,
+}: ModalProps) {
   const [mounted, setMounted] = useState(false);
   useEffect(() => setMounted(true), []);
 
@@ -38,9 +47,13 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       {open && (
         <motion.div
           key="modal-layer"
-          className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6"
+          className={cn(
+            "fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6",
+            fullScreenMobile && "max-md:p-0 max-md:items-stretch max-md:justify-stretch",
+          )}
           style={{
-            width: "100vw",
+            width: "100%",
+            maxWidth: "100vw",
             height: "100vh",
             minHeight: "100dvh",
             top: 0,
@@ -51,7 +64,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
           exit={{ opacity: 0 }}
         >
           <div
-            className="absolute inset-0 backdrop-blur-[4px]"
+            className="absolute inset-0 min-h-[100dvh] w-full backdrop-blur-[4px]"
             style={{ background: "rgba(0,0,0,0.7)" }}
             onClick={onClose}
             role="presentation"
@@ -66,6 +79,8 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
             transition={{ type: "spring", duration: 0.3 }}
             className={cn(
               "relative z-10 flex max-h-[min(100dvh,100vh)] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-border bg-card p-4 shadow-2xl sm:max-h-[min(90vh,800px)] sm:p-6",
+              fullScreenMobile &&
+                "max-md:mx-0 max-md:max-h-none max-md:h-full max-md:min-h-0 max-md:w-full max-md:max-w-none max-md:flex-1 max-md:rounded-none max-md:border-0 max-md:px-5 max-md:py-5 max-md:shadow-none",
               className,
             )}
             onClick={(e) => e.stopPropagation()}

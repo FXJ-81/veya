@@ -55,7 +55,7 @@ export function AddSubscriptionModal({
   };
 
   return (
-    <Modal open={open} onClose={onClose} title="Add subscription">
+    <Modal open={open} fullScreenMobile onClose={onClose} title="Add subscription">
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">

@@ -2,20 +2,29 @@
 
 import { motion } from "framer-motion";
 import { scoreAccentColor, scoreLabel } from "@/lib/subscriptionBilling";
+import { formatCurrency } from "@/lib/utils";
 
 interface ScoreGaugeProps {
   score: number;
   hasActiveSubscriptions: boolean;
+  /** Active subs: normalized monthly total (from analytics API). */
+  monthlySubscriptionSpend?: number;
+  nationalAvgMonthly?: number;
 }
 
-export function ScoreGauge({ score, hasActiveSubscriptions }: ScoreGaugeProps) {
+export function ScoreGauge({
+  score,
+  hasActiveSubscriptions,
+  monthlySubscriptionSpend,
+  nationalAvgMonthly = 219,
+}: ScoreGaugeProps) {
   const clamped = Math.min(100, Math.max(0, score));
   const label = scoreLabel(clamped, hasActiveSubscriptions);
   const color = scoreAccentColor(clamped, hasActiveSubscriptions);
 
   const helper = !hasActiveSubscriptions
     ? "Add subscriptions to get your score"
-    : "Higher score = better financial health based on your active subscriptions.";
+    : null;
 
   return (
     <motion.div
@@ -26,7 +35,7 @@ export function ScoreGauge({ score, hasActiveSubscriptions }: ScoreGaugeProps) {
       <h3 className="text-lg font-semibold text-text-primary mb-4">
         Subscription score
       </h3>
-      <div className="relative w-48 h-24">
+      <div className="relative mx-auto h-24 w-full max-w-[200px] md:mx-0 md:max-w-[12rem]">
         <svg
           viewBox="0 0 120 60"
           className="w-full h-full"
@@ -64,7 +73,14 @@ export function ScoreGauge({ score, hasActiveSubscriptions }: ScoreGaugeProps) {
       <p className="text-sm font-medium mt-2" style={{ color }}>
         {label}
       </p>
-      <p className="text-xs text-text-secondary mt-1 text-center max-w-xs">{helper}</p>
+      {hasActiveSubscriptions && monthlySubscriptionSpend != null ? (
+        <p className="mt-1 max-w-xs text-center text-xs text-text-secondary">
+          You spend {formatCurrency(monthlySubscriptionSpend)}/mo · National avg:{" "}
+          {formatCurrency(nationalAvgMonthly)}/mo
+        </p>
+      ) : helper ? (
+        <p className="mt-1 max-w-xs text-center text-xs text-text-secondary">{helper}</p>
+      ) : null}
     </motion.div>
   );
 }
