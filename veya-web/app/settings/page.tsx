@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, type FormEvent } from "react";
+import { useEffect, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
@@ -52,21 +52,51 @@ function browserSessionLabel(): string {
   return `${browser} on ${os}`;
 }
 
+function scanLabel(iso: string | null): string {
+  if (!iso) return "Never";
+  const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
+  if (d <= 0) return "Today";
+  if (d === 1) return "Yesterday";
+  if (d < 7) return `${d} days ago`;
+  if (d < 30) return `${Math.floor(d / 7)} week${Math.floor(d / 7) > 1 ? "s" : ""} ago`;
+  return `${Math.floor(d / 30)} month${Math.floor(d / 30) > 1 ? "s" : ""} ago`;
+}
+
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [plan, setPlan] = useState<"free" | "premium">("free");
+
+  // Bank accounts state — null = still loading, [] = loaded (empty), [...] = loaded
   const [plaidAccounts, setPlaidAccounts] = useState<PlaidAccountRow[] | null>(null);
+  const [bankLoadError, setBankLoadError] = useState(false);
+
+  // Per-operation busy states
+  const [connectingBank, setConnectingBank] = useState(false);
   const [resyncingId, setResyncingId] = useState<string | null>(null);
+  const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
+
+  // Inline errors (no more alert())
+  const [bankError, setBankError] = useState<string | null>(null);
+
+  // Plaid Link
+  const [plaidLinkToken, setPlaidLinkToken] = useState<string | null>(null);
+
+  // Scan results after connecting / resyncing
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
-  const [plaidBusy, setPlaidBusy] = useState(false);
-  const [plaidLinkToken, setPlaidLinkToken] = useState<string | null>(null);
+
+  // Disconnect confirmation
+  const [confirmDisconnect, setConfirmDisconnect] = useState<PlaidAccountRow | null>(null);
+
+  // Account deletion
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteToast, setDeleteToast] = useState<string | null>(null);
+
+  // Security
   const [hasPassword, setHasPassword] = useState<boolean | null>(null);
   const [currentPw, setCurrentPw] = useState("");
   const [newPw, setNewPw] = useState("");
@@ -87,85 +117,76 @@ export default function SettingsPage() {
     if (status === "unauthenticated") router.push("/sign-in");
   }, [status, router]);
 
+  // ── load bank accounts ──────────────────────────────────────────────────────
+  const loadBankAccounts = useCallback(async () => {
+    setBankLoadError(false);
+    setBankError(null);
+    try {
+      const res = await fetch("/api/plaid/banks");
+      const d = await res.json().catch(() => ({})) as Record<string, unknown>;
+      if (!res.ok) {
+        const detail = typeof d.detail === "string" ? d.detail : typeof d.error === "string" ? d.error : "";
+        const msg = res.status === 401
+          ? "Session expired — please refresh the page."
+          : detail || `Server error (${res.status})`;
+        console.error("[loadBankAccounts] non-ok response", res.status, d);
+        setBankLoadError(true);
+        setBankError(msg);
+        setPlaidAccounts([]);
+        return;
+      }
+      const rows = Array.isArray(d.accounts)
+        ? (d.accounts as { id?: unknown; bankName?: unknown; lastSync?: unknown }[])
+            .map((a) => ({
+              id: String(a.id ?? ""),
+              bankName: typeof a.bankName === "string" && a.bankName ? a.bankName : "Bank",
+              lastSync: typeof a.lastSync === "string" ? a.lastSync : null,
+            }))
+            .filter((a) => a.id)
+        : [];
+      setPlaidAccounts(rows);
+    } catch (e) {
+      console.error("[loadBankAccounts] network error:", e);
+      setPlaidAccounts([]);
+      setBankLoadError(true);
+      setBankError("Could not reach the server. Check your connection.");
+    }
+  }, []);
+
   useEffect(() => {
     if (status === "authenticated") {
       fetch("/api/billing")
         .then((r) => r.json())
         .then((d) => setPlan(d.plan ?? "free"))
         .catch(() => {});
-      fetch("/api/settings/gmail")
-        .then((r) => r.json())
-        .then((d) => {
-          const rows = Array.isArray(d.plaidAccounts)
-            ? (d.plaidAccounts as { id?: string; bankName?: string; lastSync?: string | null }[]).map(
-                (a) => ({
-                  id: String(a.id ?? ""),
-                  bankName: typeof a.bankName === "string" ? a.bankName : "Bank",
-                  lastSync: typeof a.lastSync === "string" ? a.lastSync : null,
-                }),
-              )
-            : [];
-          setPlaidAccounts(rows.filter((a) => a.id));
-        })
-        .catch(() => {});
+      void loadBankAccounts();
       fetch("/api/user/password")
         .then((r) => r.json())
         .then((d: { hasPassword?: boolean }) => setHasPassword(!!d.hasPassword))
         .catch(() => setHasPassword(false));
     }
-  }, [status]);
+  }, [status, loadBankAccounts]);
 
-  const refreshBank = () =>
-    fetch("/api/settings/gmail")
-      .then((r) => r.json())
-      .then((d) => {
-        const rows = Array.isArray(d.plaidAccounts)
-          ? (d.plaidAccounts as { id?: string; bankName?: string; lastSync?: string | null }[]).map(
-              (a) => ({
-                id: String(a.id ?? ""),
-                bankName: typeof a.bankName === "string" ? a.bankName : "Bank",
-                lastSync: typeof a.lastSync === "string" ? a.lastSync : null,
-              }),
-            )
-          : [];
-        setPlaidAccounts(rows.filter((a) => a.id));
-      });
-
-  const closeGmailResults = () => {
-    if (gmailImportBusy) return;
-    setGmailResultsOpen(false);
-  };
-
-  const importScanSelection = async (payload: ScanImportPayload) => {
-    setGmailImportBusy(true);
-    try {
-      await executeScanImport(payload);
-      setGmailResultsOpen(false);
-      await refreshBank();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Import failed");
-    } finally {
-      setGmailImportBusy(false);
-    }
-  };
-
+  // ── Plaid connect ───────────────────────────────────────────────────────────
   const startPlaidLink = async () => {
-    setPlaidBusy(true);
+    setBankError(null);
+    setConnectingBank(true);
     try {
       const res = await fetch("/api/plaid/create-link-token", { method: "POST" });
       const j = await res.json().catch(() => ({}));
       if (!res.ok || !j.link_token) throw new Error(j.error ?? "Could not start bank linking");
       setPlaidLinkToken(j.link_token as string);
     } catch (e) {
-      alert(e instanceof Error ? e.message : "Plaid error");
+      setBankError(e instanceof Error ? e.message : "Failed to open bank connection");
     } finally {
-      setPlaidBusy(false);
+      setConnectingBank(false);
     }
   };
 
   const onPlaidLinkSuccess = async (publicToken: string) => {
     setPlaidLinkToken(null);
-    setPlaidBusy(true);
+    setBankError(null);
+    setConnectingBank(true);
     try {
       const ex = await fetch("/api/plaid/exchange-token", {
         method: "POST",
@@ -175,103 +196,119 @@ export default function SettingsPage() {
       const exj = await ex.json().catch(() => ({}));
       if (!ex.ok) throw new Error(exj.error ?? "Could not link bank");
 
-      const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
-      const dj = await det.json().catch(() => ({}));
-      if (!det.ok || !dj.ok) throw new Error(dj.error ?? "Could not analyze transactions");
+      // Refresh accounts first so the new bank shows immediately
+      await loadBankAccounts();
 
-      const rows = mapPlaidDetectToScanRows(
-        Array.isArray(dj.subscriptions) ? dj.subscriptions : []
-      );
-      setGmailCandidates(rows);
-      setGmailResultsOpen(true);
-      await refreshBank();
-    } catch (e) {
-      alert(e instanceof Error ? e.message : "Bank linking failed");
-    } finally {
-      setPlaidBusy(false);
-    }
-  };
-
-  const disconnectAccount = async (id: string) => {
-    setPlaidBusy(true);
-    try {
-      const res = await fetch(`/api/plaid/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        alert((j as { error?: string }).error ?? "Disconnect failed");
-        return;
+      // Then detect subscriptions from the new bank
+      try {
+        const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
+        const dj = await det.json().catch(() => ({}));
+        if (det.ok && dj.ok) {
+          const rows = mapPlaidDetectToScanRows(
+            Array.isArray(dj.subscriptions) ? dj.subscriptions : [],
+          );
+          if (rows.length > 0) {
+            setGmailCandidates(rows);
+            setGmailResultsOpen(true);
+          }
+          // Refresh again to get updated lastSync time
+          await loadBankAccounts();
+        }
+      } catch {
+        // Subscription detection failing shouldn't break the connect flow
       }
-      await refreshBank();
+    } catch (e) {
+      setBankError(e instanceof Error ? e.message : "Bank linking failed");
     } finally {
-      setPlaidBusy(false);
+      setConnectingBank(false);
     }
   };
 
-  const resyncPlaid = async (plaidAccountId?: string) => {
-    if (!plaidAccounts?.length) return;
-    setResyncingId(plaidAccountId ?? "__all__");
-    setPlaidBusy(true);
+  // ── Resync ──────────────────────────────────────────────────────────────────
+  const resyncBank = async (acc: PlaidAccountRow) => {
+    setBankError(null);
+    setResyncingId(acc.id);
     try {
       const det = await fetch("/api/plaid/detect-subscriptions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(plaidAccountId ? { plaidAccountId } : {}),
+        body: JSON.stringify({ plaidAccountId: acc.id }),
       });
       const dj = await det.json().catch(() => ({}));
-      if (!det.ok || !dj.ok) {
-        alert(dj.error ?? "Resync failed");
-        return;
-      }
-      setGmailCandidates(
-        mapPlaidDetectToScanRows(Array.isArray(dj.subscriptions) ? dj.subscriptions : []),
+      if (!det.ok || !dj.ok) throw new Error(dj.error ?? "Resync failed");
+      const rows = mapPlaidDetectToScanRows(
+        Array.isArray(dj.subscriptions) ? dj.subscriptions : [],
       );
-      setGmailResultsOpen(true);
-      await refreshBank();
+      if (rows.length > 0) {
+        setGmailCandidates(rows);
+        setGmailResultsOpen(true);
+      }
+      await loadBankAccounts();
+    } catch (e) {
+      setBankError(e instanceof Error ? e.message : "Resync failed");
     } finally {
       setResyncingId(null);
-      setPlaidBusy(false);
     }
   };
 
-  const scanLabel = (iso: string | null) => {
-    if (!iso) return "Never";
-    const d = Math.floor((Date.now() - new Date(iso).getTime()) / 86400000);
-    if (d <= 0) return "Today";
-    if (d === 1) return "1 day ago";
-    return `${d} days ago`;
+  // ── Disconnect ──────────────────────────────────────────────────────────────
+  const confirmAndDisconnect = (acc: PlaidAccountRow) => {
+    setBankError(null);
+    setConfirmDisconnect(acc);
   };
 
+  const doDisconnect = async () => {
+    if (!confirmDisconnect) return;
+    const acc = confirmDisconnect;
+    setConfirmDisconnect(null);
+    setDisconnectingId(acc.id);
+    setBankError(null);
+    try {
+      const res = await fetch(`/api/plaid/accounts/${encodeURIComponent(acc.id)}`, {
+        method: "DELETE",
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((j as { error?: string }).error ?? "Disconnect failed");
+      await loadBankAccounts();
+    } catch (e) {
+      setBankError(e instanceof Error ? e.message : "Failed to disconnect bank");
+    } finally {
+      setDisconnectingId(null);
+    }
+  };
+
+  // ── Scan import ─────────────────────────────────────────────────────────────
+  const importScanSelection = async (payload: ScanImportPayload) => {
+    setGmailImportBusy(true);
+    try {
+      await executeScanImport(payload);
+      setGmailResultsOpen(false);
+      await loadBankAccounts();
+    } catch (e) {
+      setBankError(e instanceof Error ? e.message : "Import failed");
+    } finally {
+      setGmailImportBusy(false);
+    }
+  };
+
+  // ── Security ────────────────────────────────────────────────────────────────
   const submitPasswordChange = async (e: FormEvent) => {
     e.preventDefault();
     setPwErr(null);
     setPwMsg(null);
-    if (newPw.length < 8) {
-      setPwErr("New password must be at least 8 characters.");
-      return;
-    }
-    if (newPw !== confirmPw) {
-      setPwErr("New password and confirmation don’t match.");
-      return;
-    }
+    if (newPw.length < 8) { setPwErr("New password must be at least 8 characters."); return; }
+    if (newPw !== confirmPw) { setPwErr("New password and confirmation don't match."); return; }
     setPwBusy(true);
     try {
       const res = await fetch("/api/user/password", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          currentPassword: currentPw,
-          newPassword: newPw,
-        }),
+        body: JSON.stringify({ currentPassword: currentPw, newPassword: newPw }),
       });
       const j = await res.json().catch(() => ({}));
-      if (!res.ok) {
-        setPwErr((j as { error?: string }).error ?? "Could not update password.");
-        return;
-      }
+      if (!res.ok) { setPwErr((j as { error?: string }).error ?? "Could not update password."); return; }
       setPwMsg("Password updated successfully.");
-      setCurrentPw("");
-      setNewPw("");
-      setConfirmPw("");
+      setCurrentPw(""); setNewPw(""); setConfirmPw("");
     } finally {
       setPwBusy(false);
     }
@@ -297,10 +334,6 @@ export default function SettingsPage() {
     if (json.plan) setPlan(json.plan);
   };
 
-  if (status === "loading" || status === "unauthenticated") {
-    return <div className="min-h-screen flex items-center justify-center" />;
-  }
-
   const runDeleteAccount = async () => {
     setDeleteToast(null);
     setDeleteBusy(true);
@@ -308,7 +341,6 @@ export default function SettingsPage() {
       const res = await fetch("/api/user/account", { method: "DELETE" });
       const json = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(json.error ?? "Delete failed");
-      // Ensure client session clears too.
       await signOut({ callbackUrl: "/" });
     } catch (e) {
       setDeleteToast(e instanceof Error ? e.message : "Failed to delete account");
@@ -316,9 +348,15 @@ export default function SettingsPage() {
     }
   };
 
+  if (status === "loading" || status === "unauthenticated") {
+    return <div className="min-h-screen flex items-center justify-center" />;
+  }
+
+  const anyBankBusy = connectingBank || resyncingId !== null || disconnectingId !== null;
+
   return (
     <>
-    <AppShell>
+      <AppShell>
         <motion.h1
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
@@ -328,29 +366,26 @@ export default function SettingsPage() {
         </motion.h1>
 
         <div className="mx-auto w-full min-w-0 max-w-2xl space-y-6">
+
+          {/* ── Profile ── */}
           <Card>
-            <h2 className="mb-4 text-lg font-semibold text-text-primary">
-              Profile
-            </h2>
+            <h2 className="mb-4 text-lg font-semibold text-text-primary">Profile</h2>
             <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-              <div className="h-16 w-16 rounded-full bg-accent/20 flex items-center justify-center text-2xl font-bold text-accent">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-accent/20 text-2xl font-bold text-accent">
                 {(session?.user?.name ?? session?.user?.email ?? "?").charAt(0).toUpperCase()}
               </div>
               <div>
                 <p className="font-medium text-text-primary">
                   {session?.user?.name ?? "No name"}
                 </p>
-                <p className="text-sm text-text-secondary">
-                  {session?.user?.email}
-                </p>
+                <p className="text-sm text-text-secondary">{session?.user?.email}</p>
               </div>
             </div>
           </Card>
 
+          {/* ── Plan ── */}
           <Card>
-            <h2 className="text-lg font-semibold text-text-primary mb-4">
-              Plan
-            </h2>
+            <h2 className="mb-4 text-lg font-semibold text-text-primary">Plan</h2>
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Badge variant={plan === "premium" ? "accent" : "default"}>
                 {plan === "premium" ? "Premium" : "Free"}
@@ -361,92 +396,190 @@ export default function SettingsPage() {
                 </Button>
               )}
             </div>
-            <p className="text-sm text-text-secondary mt-2">
+            <p className="mt-2 text-sm text-text-secondary">
               {plan === "premium"
                 ? "You have full access to AI coach, full analytics, and more."
                 : "Upgrade for unlimited subscriptions, full analytics, and AI coach."}
             </p>
           </Card>
 
+          {/* ── Bank Accounts ── */}
           <Card>
-            <h2 className="mb-4 text-lg font-semibold text-text-primary">
-              Connected accounts
-            </h2>
-            {plaidAccounts === null ? (
-              <p className="text-sm text-text-secondary">Loading…</p>
-            ) : (
-              <div className="space-y-4">
-                {plaidAccounts.length === 0 ? (
-                  <div className="space-y-3">
-                    <p className="text-sm text-text-secondary">No bank connected yet.</p>
-                    <Button className="w-full sm:w-auto" onClick={startPlaidLink} disabled={plaidBusy}>
-                      {plaidBusy ? "…" : "🏦 Connect bank account"}
-                    </Button>
-                  </div>
-                ) : (
-                  <ul className="space-y-3">
-                    {plaidAccounts.map((acc) => {
-                      const syncingThis = resyncingId === acc.id;
-                      const syncingAny = resyncingId !== null || plaidBusy;
-                      return (
-                        <li
-                          key={acc.id}
-                          className="rounded-xl border border-border bg-background-secondary/20 p-4"
-                        >
-                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
-                            <div className="min-w-0">
-                              <p className="font-medium text-text-primary">{acc.bankName}</p>
-                              <p className="mt-1 text-sm text-text-secondary">
-                                Last synced: {scanLabel(acc.lastSync)}
-                              </p>
-                            </div>
-                            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                              <Button
-                                className="w-full sm:w-auto"
-                                variant="secondary"
-                                onClick={() => void resyncPlaid(acc.id)}
-                                disabled={syncingAny}
-                              >
-                                {syncingThis ? "Syncing…" : "Resync"}
-                              </Button>
-                              <Button
-                                className="w-full sm:w-auto"
-                                variant="danger"
-                                onClick={() => void disconnectAccount(acc.id)}
-                                disabled={plaidBusy || resyncingId !== null}
-                              >
-                                Disconnect
-                              </Button>
-                            </div>
-                          </div>
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-                {plaidAccounts.length > 0 && (
-                  <Button
-                    className="w-full sm:w-auto"
-                    variant="secondary"
-                    onClick={startPlaidLink}
-                    disabled={plaidBusy || resyncingId !== null}
-                  >
-                    {plaidBusy ? "…" : "Connect another bank"}
-                  </Button>
-                )}
-                <p className="text-xs text-text-tertiary">
-                  Plaid reads transactions to suggest subscriptions you can add.
+            <div className="mb-5 flex items-start justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-text-primary">Bank Accounts</h2>
+                <p className="mt-1 text-sm text-text-secondary">
+                  Connect your banks so Veya can detect subscriptions from your transactions.
                 </p>
               </div>
+              {plaidAccounts !== null && plaidAccounts.length > 0 && (
+                <Button
+                  variant="secondary"
+                  className="shrink-0"
+                  onClick={startPlaidLink}
+                  disabled={anyBankBusy}
+                >
+                  {connectingBank ? "Opening…" : "+ Add bank"}
+                </Button>
+              )}
+            </div>
+
+            {/* Error banner */}
+            {bankError && (
+              <div className="mb-4 flex items-start gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3">
+                <span className="mt-0.5 text-danger">⚠️</span>
+                <div className="min-w-0 flex-1">
+                  <p className="text-sm font-medium text-danger">Something went wrong</p>
+                  <p className="text-sm text-text-secondary">{bankError}</p>
+                </div>
+                <button
+                  onClick={() => setBankError(null)}
+                  className="shrink-0 text-text-tertiary hover:text-text-primary"
+                  aria-label="Dismiss"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
+
+            {/* Loading skeleton */}
+            {plaidAccounts === null ? (
+              <div className="space-y-3">
+                {[0, 1].map((i) => (
+                  <div
+                    key={i}
+                    className="h-20 animate-pulse rounded-xl border border-border bg-background-secondary/40"
+                  />
+                ))}
+              </div>
+            ) : bankLoadError ? (
+              <div className="rounded-xl border border-border bg-background-secondary/30 p-4 text-center">
+                <p className="mb-1 text-sm font-medium text-text-primary">Could not load bank accounts</p>
+                {bankError && (
+                  <p className="mb-3 text-xs text-text-tertiary">{bankError}</p>
+                )}
+                <Button variant="secondary" onClick={() => void loadBankAccounts()}>
+                  Retry
+                </Button>
+              </div>
+            ) : plaidAccounts.length === 0 ? (
+              /* Empty state */
+              <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-border bg-background-secondary/20 py-10 text-center">
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-3xl">
+                  🏦
+                </div>
+                <div>
+                  <p className="font-medium text-text-primary">No banks connected</p>
+                  <p className="mt-1 max-w-xs text-sm text-text-secondary">
+                    Connect a bank account and Veya will automatically find your subscriptions.
+                  </p>
+                </div>
+                <Button onClick={startPlaidLink} disabled={connectingBank}>
+                  {connectingBank ? "Opening…" : "Connect a bank account"}
+                </Button>
+                <p className="text-xs text-text-tertiary">
+                  Powered by Plaid — read-only access, bank-level security.
+                </p>
+              </div>
+            ) : (
+              /* Accounts list */
+              <ul className="space-y-3">
+                {plaidAccounts.map((acc) => {
+                  const isSyncing = resyncingId === acc.id;
+                  const isDisconnecting = disconnectingId === acc.id;
+                  const busy = isSyncing || isDisconnecting;
+
+                  return (
+                    <li
+                      key={acc.id}
+                      className={`rounded-xl border bg-background-secondary/20 p-4 transition-opacity ${
+                        isDisconnecting ? "opacity-50" : "border-border"
+                      }`}
+                    >
+                      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                        {/* Bank info */}
+                        <div className="flex min-w-0 items-center gap-3">
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-xl">
+                            🏦
+                          </div>
+                          <div className="min-w-0">
+                            <div className="flex flex-wrap items-center gap-2">
+                              <span className="font-medium text-text-primary">{acc.bankName}</span>
+                              <Badge variant="success">Connected</Badge>
+                            </div>
+                            <p className="mt-0.5 text-xs text-text-tertiary">
+                              Last synced: {scanLabel(acc.lastSync)}
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Actions */}
+                        <div className="flex flex-wrap gap-2 sm:shrink-0">
+                          <Button
+                            variant="secondary"
+                            className="flex-1 sm:flex-none"
+                            onClick={() => void resyncBank(acc)}
+                            disabled={anyBankBusy}
+                          >
+                            {isSyncing ? (
+                              <span className="flex items-center gap-1.5">
+                                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                                Syncing…
+                              </span>
+                            ) : (
+                              "Resync"
+                            )}
+                          </Button>
+                          <Button
+                            variant="danger"
+                            className="flex-1 sm:flex-none"
+                            onClick={() => confirmAndDisconnect(acc)}
+                            disabled={anyBankBusy || busy}
+                          >
+                            {isDisconnecting ? "Removing…" : "Disconnect"}
+                          </Button>
+                        </div>
+                      </div>
+                    </li>
+                  );
+                })}
+
+                {/* Add another bank */}
+                <li>
+                  <button
+                    type="button"
+                    onClick={startPlaidLink}
+                    disabled={anyBankBusy}
+                    className="flex w-full items-center justify-center gap-2 rounded-xl border border-dashed border-border bg-transparent px-4 py-3 text-sm font-medium text-text-secondary transition-colors hover:border-accent hover:text-accent disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {connectingBank ? (
+                      <>
+                        <span className="inline-block h-3.5 w-3.5 animate-spin rounded-full border-2 border-current border-t-transparent" />
+                        Opening Plaid…
+                      </>
+                    ) : (
+                      <>+ Connect another bank</>
+                    )}
+                  </button>
+                </li>
+              </ul>
+            )}
+
+            {!bankLoadError && (
+              <p className="mt-4 text-xs text-text-tertiary">
+                Powered by Plaid — read-only access to transactions, bank-level security. Veya never
+                stores your credentials.
+              </p>
             )}
           </Card>
 
+          {/* ── Notifications ── */}
           <Card>
             <h2 className="mb-4 text-lg font-semibold text-text-primary">Notifications</h2>
             <ul className="space-y-4 text-sm text-text-secondary">
               <li>
                 <p className="font-medium text-text-primary">New subscription alerts</p>
-                <p className="mt-0.5">When bank detects a new subscription.</p>
+                <p className="mt-0.5">When a bank transaction detects a new subscription.</p>
               </li>
               <li>
                 <p className="font-medium text-text-primary">Renewal reminders</p>
@@ -455,6 +588,7 @@ export default function SettingsPage() {
             </ul>
           </Card>
 
+          {/* ── Security ── */}
           <Card>
             <h2 className="mb-6 text-lg font-semibold text-text-primary">Security</h2>
             <div className="space-y-10">
@@ -462,7 +596,7 @@ export default function SettingsPage() {
                 <h3 className="mb-3 text-sm font-semibold text-text-primary">Change password</h3>
                 {hasPassword === false ? (
                   <p className="max-w-md text-sm text-text-secondary">
-                    You sign in with Google. Password change isn’t available for this account.
+                    You sign in with Google. Password change isn't available for this account.
                   </p>
                 ) : hasPassword === null ? (
                   <p className="text-sm text-text-tertiary">Loading…</p>
@@ -498,9 +632,7 @@ export default function SettingsPage() {
                         {[0, 1, 2, 3].map((i) => (
                           <div
                             key={i}
-                            className={`h-1.5 flex-1 rounded-full ${
-                              i < strength ? "bg-accent" : "bg-border"
-                            }`}
+                            className={`h-1.5 flex-1 rounded-full ${i < strength ? "bg-accent" : "bg-border"}`}
                           />
                         ))}
                       </div>
@@ -523,10 +655,7 @@ export default function SettingsPage() {
                       Update password
                     </Button>
                     <p className="pt-1">
-                      <Link
-                        href="/forgot-password"
-                        className="text-sm text-accent hover:underline"
-                      >
+                      <Link href="/forgot-password" className="text-sm text-accent hover:underline">
                         Forgot password?
                       </Link>
                     </p>
@@ -538,12 +667,8 @@ export default function SettingsPage() {
                 <h3 className="mb-3 text-sm font-semibold text-text-primary">Active sessions</h3>
                 <div className="flex max-w-md flex-col gap-3 rounded-xl border border-border bg-background-secondary/30 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
-                    <p className="text-sm text-text-primary">
-                      Current session — {sessionLabel}
-                    </p>
-                    <Badge variant="success" className="mt-2">
-                      This device
-                    </Badge>
+                    <p className="text-sm text-text-primary">Current session — {sessionLabel}</p>
+                    <Badge variant="success" className="mt-2">This device</Badge>
                   </div>
                   <Button
                     type="button"
@@ -559,21 +684,16 @@ export default function SettingsPage() {
             </div>
           </Card>
 
+          {/* ── Danger zone ── */}
           <Card className="border-danger/30">
-            <h2 className="text-lg font-semibold text-danger mb-2">
-              Danger zone
-            </h2>
-            <p className="text-sm text-text-secondary mb-4">
+            <h2 className="mb-2 text-lg font-semibold text-danger">Danger zone</h2>
+            <p className="mb-4 text-sm text-text-secondary">
               Delete your account and all data. This cannot be undone.
             </p>
             <Button
               className="w-full sm:w-auto"
               variant="danger"
-              onClick={() => {
-                setDeleteOpen(true);
-                setDeleteConfirm("");
-                setDeleteToast(null);
-              }}
+              onClick={() => { setDeleteOpen(true); setDeleteConfirm(""); setDeleteToast(null); }}
             >
               Delete account
             </Button>
@@ -589,28 +709,27 @@ export default function SettingsPage() {
             </Button>
           </div>
         </div>
-    </AppShell>
+      </AppShell>
 
+      {/* ── Delete account toast ── */}
       {deleteToast && (
-        <div className="fixed top-4 right-4 z-[60] max-w-sm rounded-xl border border-danger/30 bg-card px-4 py-3 text-sm text-text-primary shadow-lg">
-          <div className="font-medium text-danger mb-1">Error</div>
+        <div className="fixed right-4 top-4 z-[60] max-w-sm rounded-xl border border-danger/30 bg-card px-4 py-3 text-sm text-text-primary shadow-lg">
+          <div className="mb-1 font-medium text-danger">Error</div>
           <div className="text-text-secondary">{deleteToast}</div>
         </div>
       )}
 
+      {/* ── Delete account modal ── */}
       <Modal
         open={deleteOpen}
-        onClose={() => {
-          if (!deleteBusy) setDeleteOpen(false);
-        }}
+        onClose={() => { if (!deleteBusy) setDeleteOpen(false); }}
         title="Delete your account?"
         className="max-w-md"
       >
         <p className="mb-4 text-sm text-text-secondary">
-          This will permanently delete your account and all your data including subscriptions, chat
+          This will permanently delete your account and all data including subscriptions, chat
           history, and settings. This cannot be undone.
         </p>
-
         <div className="mb-4">
           <label className="mb-2 block text-sm text-text-tertiary">
             Type <span className="font-semibold text-text-primary">DELETE</span> to confirm
@@ -623,14 +742,8 @@ export default function SettingsPage() {
             className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
           />
         </div>
-
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button
-            className="w-full sm:w-auto"
-            variant="secondary"
-            onClick={() => setDeleteOpen(false)}
-            disabled={deleteBusy}
-          >
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setDeleteOpen(false)} disabled={deleteBusy}>
             Cancel
           </Button>
           <button
@@ -640,25 +753,51 @@ export default function SettingsPage() {
             className="min-h-[44px] w-full rounded-xl px-4 py-2 text-sm font-medium text-background transition-colors disabled:opacity-50 sm:min-h-0 sm:w-auto"
             style={{ background: "#f87171" }}
           >
-            {deleteBusy ? "Deleting..." : "Delete Account"}
+            {deleteBusy ? "Deleting…" : "Delete Account"}
           </button>
         </div>
       </Modal>
 
+      {/* ── Disconnect confirmation modal ── */}
+      <Modal
+        open={!!confirmDisconnect}
+        onClose={() => setConfirmDisconnect(null)}
+        title="Disconnect bank?"
+        className="max-w-sm"
+      >
+        <p className="mb-5 text-sm text-text-secondary">
+          This will remove{" "}
+          <span className="font-semibold text-text-primary">
+            {confirmDisconnect?.bankName ?? "this bank"}
+          </span>{" "}
+          from Veya. Your subscription data will not be deleted, but future syncs will stop.
+        </p>
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setConfirmDisconnect(null)}>
+            Cancel
+          </Button>
+          <Button variant="danger" className="w-full sm:w-auto" onClick={() => void doDisconnect()}>
+            Disconnect
+          </Button>
+        </div>
+      </Modal>
+
+      {/* ── Scan results modal ── */}
       <GmailScanResultsModal
         open={gmailResultsOpen}
         candidates={gmailCandidates}
-        onClose={closeGmailResults}
-        onSkip={closeGmailResults}
+        onClose={() => { if (!gmailImportBusy) setGmailResultsOpen(false); }}
+        onSkip={() => setGmailResultsOpen(false)}
         onImport={importScanSelection}
         busy={gmailImportBusy}
       />
 
+      {/* ── Plaid Link host (invisible trigger) ── */}
       {plaidLinkToken && (
         <PlaidLinkHost
           token={plaidLinkToken}
           onSuccess={onPlaidLinkSuccess}
-          onExit={() => setPlaidLinkToken(null)}
+          onExit={() => { setPlaidLinkToken(null); setConnectingBank(false); }}
         />
       )}
     </>

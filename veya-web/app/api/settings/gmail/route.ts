@@ -17,24 +17,41 @@ export async function GET(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  await ensureSettings(authUser.id);
-  const settings = await prisma.userSettings.findUnique({ where: { userId: authUser.id } });
+  try {
+    await ensureSettings(authUser.id);
+  } catch (e) {
+    console.error("[settings/gmail GET] ensureSettings failed:", e);
+    // Non-fatal — continue without UserSettings
+  }
 
-  const plaidAccounts = await prisma.plaidAccount.findMany({
-    where: { userId: authUser.id },
-    orderBy: { createdAt: "asc" },
-    select: { id: true, bankName: true, lastSync: true, itemId: true },
-  });
+  let settings = null;
+  try {
+    settings = await prisma.userSettings.findUnique({ where: { userId: authUser.id } });
+  } catch (e) {
+    console.error("[settings/gmail GET] userSettings query failed:", e);
+  }
 
-  const gmailAccount = await findAccountWithGmailAccess(authUser.id);
-  const summary = summarizeGmailConnection(gmailAccount);
-  const gmailConnected = summary.gmailConnected;
-
-  if (process.env.NODE_ENV === "development") {
-    console.log("[settings/gmail GET] Gmail connection", {
-      userId: authUser.id,
-      ...summary,
+  let plaidAccounts: { id: string; bankName: string | null; lastSync: Date | null; itemId: string }[] = [];
+  try {
+    plaidAccounts = await prisma.plaidAccount.findMany({
+      where: { userId: authUser.id },
+      orderBy: { createdAt: "asc" },
+      select: { id: true, bankName: true, lastSync: true, itemId: true },
     });
+  } catch (e) {
+    console.error("[settings/gmail GET] plaidAccount query failed:", e);
+  }
+
+  let gmailConnected = false;
+  try {
+    const gmailAccount = await findAccountWithGmailAccess(authUser.id);
+    const summary = summarizeGmailConnection(gmailAccount);
+    gmailConnected = summary.gmailConnected;
+    if (process.env.NODE_ENV === "development") {
+      console.log("[settings/gmail GET] Gmail connection", { userId: authUser.id, ...summary });
+    }
+  } catch (e) {
+    console.error("[settings/gmail GET] Gmail account check failed:", e);
   }
 
   return NextResponse.json({
