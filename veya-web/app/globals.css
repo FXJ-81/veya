@@ -15,6 +15,12 @@
   --text-primary: #f8f8ff;
   --text-secondary: #b0b0c8;
   --text-tertiary: #9090aa;
+  /* Sidebar rail width (176px); main uses padding-left = this — no extra gutter */
+  --app-sidebar-width: 11rem;
+  --app-content-offset: var(--app-sidebar-width);
+  --app-workspace-max: 80rem;
+  /* Mobile bottom tab bar content height (touch targets ≥44px including label) */
+  --app-bottom-nav-height: 3.75rem;
 }
 
 body {

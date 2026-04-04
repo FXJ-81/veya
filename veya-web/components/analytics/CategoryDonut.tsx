@@ -26,9 +26,9 @@ function DonutTooltip({ active, payload }: DonutTooltipProps) {
       <p className="text-sm font-medium text-text-primary">{row.category}</p>
       <p className="font-mono text-accent font-mono-nums">
         ${row.value.toFixed(2)}
-        <span className="text-text-secondary text-xs font-sans"> /mo</span>
+        <span className="text-sm font-sans text-text-secondary"> /mo</span>
       </p>
-      <p className="text-xs text-text-tertiary">{row.percentage.toFixed(1)}% of spend</p>
+      <p className="text-sm text-text-tertiary">{row.percentage.toFixed(1)}% of spend</p>
     </div>
   );
 }
@@ -64,9 +64,9 @@ export function CategoryDonut({ data }: CategoryDonutProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 0.3 }}
-        className="rounded-2xl border border-border bg-card p-6"
+        className="w-full min-w-0 rounded-2xl border border-border bg-card p-4 sm:p-6"
       >
-        <h3 className="text-lg font-semibold text-text-primary mb-4">Category breakdown</h3>
+        <h3 className="mb-4 text-lg font-semibold text-text-primary">Category breakdown</h3>
         <p className="text-sm text-text-secondary">No category data yet.</p>
       </motion.div>
     );
@@ -79,10 +79,10 @@ export function CategoryDonut({ data }: CategoryDonutProps) {
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       transition={{ delay: 0.3 }}
-      className="rounded-2xl border border-border bg-card p-6"
+      className="w-full min-w-0 rounded-2xl border border-border bg-card p-4 sm:p-6"
     >
-      <h3 className="text-lg font-semibold text-text-primary mb-4">Category breakdown</h3>
-      <div className="h-56 w-full min-h-[14rem]">
+      <h3 className="mb-4 text-lg font-semibold text-text-primary">Category breakdown</h3>
+      <div className="h-52 min-h-[12rem] w-full min-w-0 sm:h-56 sm:min-h-[14rem]">
         <ResponsiveContainer width="100%" height="100%">
           <PieChart margin={{ top: 4, right: 4, bottom: 4, left: 4 }}>
             <Pie

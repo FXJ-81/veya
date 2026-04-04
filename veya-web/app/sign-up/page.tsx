@@ -79,9 +79,9 @@ export default function SignUpPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background flex items-center justify-center p-6">
-      <nav className="fixed top-0 left-0 right-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
-        <div className="mx-auto flex h-16 max-w-6xl items-center justify-between px-6">
+    <div className="flex min-h-screen min-w-0 items-center justify-center bg-background p-4 sm:p-6">
+      <nav className="fixed left-0 right-0 top-0 z-50 border-b border-border bg-background/80 backdrop-blur-xl">
+        <div className="mx-auto flex h-16 max-w-6xl min-w-0 items-center justify-between px-4 sm:px-6">
           <Link href="/" className="text-xl font-bold text-text-primary">
             Veya
           </Link>
@@ -93,7 +93,7 @@ export default function SignUpPage() {
       <motion.div
         initial={{ opacity: 0, y: 12 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-md rounded-2xl border border-border bg-surface p-8 mt-16"
+        className="mt-16 w-full max-w-md rounded-2xl border border-border bg-surface p-6 sm:p-8"
       >
         <h1 className="text-2xl font-bold text-text-primary">Create account</h1>
         <p className="mt-1 text-text-secondary">Get started with Veya</p>

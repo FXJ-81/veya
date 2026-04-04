@@ -47,15 +47,15 @@ const FAQ = [
 
 export default function LandingPage() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen min-w-0 overflow-x-hidden bg-background">
       <Navbar />
-      <section className="relative overflow-hidden pt-32 pb-24 px-6">
+      <section className="relative overflow-x-hidden px-4 pb-16 pt-28 sm:px-6 sm:pb-24 sm:pt-32">
         <div className="mx-auto max-w-4xl text-center">
           <motion.h1
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5 }}
-            className="text-5xl font-bold tracking-tight text-text-primary sm:text-6xl"
+            className="text-3xl font-bold tracking-tight text-text-primary sm:text-5xl md:text-6xl"
           >
             Take control of your subscriptions
           </motion.h1>
@@ -63,7 +63,7 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.1 }}
-            className="mt-6 text-lg text-text-secondary max-w-2xl mx-auto"
+            className="mx-auto mt-6 max-w-2xl text-base text-text-secondary sm:text-lg"
           >
             Track, cancel, and save — powered by AI
           </motion.p>
@@ -71,17 +71,17 @@ export default function LandingPage() {
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
             transition={{ duration: 0.5, delay: 0.2 }}
-            className="mt-10 flex flex-wrap justify-center gap-4"
+            className="mt-8 flex w-full min-w-0 flex-col items-stretch justify-center gap-3 sm:mt-10 sm:flex-row sm:flex-wrap sm:items-center"
           >
             <Link
               href="/sign-up"
-              className="rounded-xl bg-accent px-8 py-4 text-base font-semibold text-white shadow-lg shadow-accent/25 hover:opacity-90"
+              className="flex min-h-[44px] w-full items-center justify-center rounded-xl bg-accent px-6 py-3 text-base font-semibold text-white shadow-lg shadow-accent/25 hover:opacity-90 sm:w-auto sm:px-8 sm:py-4"
             >
               Get Started Free
             </Link>
             <a
               href="#features"
-              className="rounded-xl border border-border bg-surface px-8 py-4 text-base font-semibold text-text-primary"
+              className="flex min-h-[44px] w-full items-center justify-center rounded-xl border border-border bg-surface px-6 py-3 text-base font-semibold text-text-primary sm:w-auto sm:px-8 sm:py-4"
             >
               See how it works
             </a>
@@ -90,15 +90,15 @@ export default function LandingPage() {
         <div className="absolute inset-0 -z-10 bg-gradient-to-b from-accent/5 to-transparent" />
       </section>
 
-      <section id="features" className="py-24 px-6 border-t border-border">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="text-3xl font-bold text-center text-text-primary mb-4">
+      <section id="features" className="border-t border-border px-4 py-16 sm:px-6 sm:py-24">
+        <div className="mx-auto max-w-6xl min-w-0">
+          <h2 className="mb-4 text-center text-2xl font-bold text-text-primary sm:text-3xl">
             Everything you need to take control
           </h2>
-          <p className="text-center text-text-secondary max-w-2xl mx-auto mb-16">
+          <p className="mx-auto mb-10 max-w-2xl text-center text-sm text-text-secondary sm:mb-16 sm:text-base">
             Veya brings subscriptions, spending insights, and an AI coach into one app.
           </p>
-          <div className="grid gap-8 sm:grid-cols-2 lg:grid-cols-3">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8 xl:grid-cols-3">
             {FEATURES.map((f, i) => (
               <motion.div
                 key={f.title}
@@ -119,12 +119,12 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="pricing" className="py-24 px-6 border-t border-border">
-        <div className="mx-auto max-w-4xl">
-          <h2 className="text-3xl font-bold text-center text-text-primary mb-12">
+      <section id="pricing" className="border-t border-border px-4 py-16 sm:px-6 sm:py-24">
+        <div className="mx-auto max-w-4xl min-w-0">
+          <h2 className="mb-8 text-center text-2xl font-bold text-text-primary sm:mb-12 sm:text-3xl">
             Simple pricing
           </h2>
-          <div className="grid md:grid-cols-2 gap-8">
+          <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8">
             <motion.div
               initial={{ opacity: 0, x: -20 }}
               whileInView={{ opacity: 1, x: 0 }}
@@ -182,9 +182,9 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="faq" className="py-24 px-6 border-t border-border">
-        <div className="mx-auto max-w-2xl">
-          <h2 className="text-3xl font-bold text-center text-text-primary mb-12">
+      <section id="faq" className="border-t border-border px-4 py-16 sm:px-6 sm:py-24">
+        <div className="mx-auto max-w-2xl min-w-0">
+          <h2 className="mb-8 text-center text-2xl font-bold text-text-primary sm:mb-12 sm:text-3xl">
             FAQ
           </h2>
           <div className="space-y-4">
@@ -197,21 +197,21 @@ export default function LandingPage() {
                 transition={{ delay: i * 0.05 }}
                 className="rounded-xl border border-border bg-card p-4 group"
               >
-                <summary className="font-semibold text-text-primary cursor-pointer list-none flex items-center justify-between">
+                <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-2 font-semibold text-text-primary">
                   {item.q}
                   <span className="text-text-tertiary group-open:rotate-180 transition-transform">
                     ▼
                   </span>
                 </summary>
-                <p className="mt-3 text-text-secondary text-sm">{item.a}</p>
+                <p className="mt-1 text-sm text-text-secondary">{item.a}</p>
               </motion.details>
             ))}
           </div>
         </div>
       </section>
 
-      <footer className="py-12 px-6 border-t border-border">
-        <div className="mx-auto max-w-6xl flex flex-col sm:flex-row items-center justify-between gap-4">
+      <footer className="border-t border-border px-4 py-10 sm:px-6 sm:py-12">
+        <div className="mx-auto flex max-w-6xl min-w-0 flex-col items-center justify-between gap-4 sm:flex-row">
           <span className="text-text-secondary text-sm">© Veya. Your money. Your rules.</span>
           <div className="flex gap-6">
             <Link href="/sign-in" className="text-sm text-text-secondary hover:text-text-primary">

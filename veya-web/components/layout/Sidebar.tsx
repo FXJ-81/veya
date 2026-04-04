@@ -17,26 +17,29 @@ const links = [
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [mobileOpen, setMobileOpen] = useState(false);
+  const [tabletMenuOpen, setTabletMenuOpen] = useState(false);
 
   useEffect(() => {
-    setMobileOpen(false);
+    setTabletMenuOpen(false);
   }, [pathname]);
 
   useEffect(() => {
-    document.body.style.overflow = mobileOpen ? "hidden" : "";
-    return () => { document.body.style.overflow = ""; };
-  }, [mobileOpen]);
+    document.body.style.overflow = tabletMenuOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [tabletMenuOpen]);
 
   const navContent = (
     <>
-      <div className="flex h-16 items-center justify-between px-6">
+      <div className="flex h-16 items-center justify-between px-4">
         <Link href="/dashboard" className="text-xl font-bold text-text-primary">
           Veya
         </Link>
         <button
-          onClick={() => setMobileOpen(false)}
-          className="md:hidden rounded-lg p-2 text-text-secondary hover:text-text-primary hover:bg-surface"
+          type="button"
+          onClick={() => setTabletMenuOpen(false)}
+          className="rounded-lg p-2 text-text-secondary hover:bg-surface hover:text-text-primary lg:hidden"
           aria-label="Close menu"
         >
           <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -45,16 +48,16 @@ export function Sidebar() {
           </svg>
         </button>
       </div>
-      <nav className="mt-4 space-y-1 px-3">
+      <nav className="mt-3 space-y-0.5 px-2">
         {links.map((link) => (
           <Link
             key={link.href}
             href={link.href}
             className={cn(
-              "flex items-center gap-3 rounded-xl px-4 py-3 text-sm font-medium transition-colors",
+              "flex min-h-[44px] items-center gap-2 rounded-lg px-3 py-2.5 text-sm font-medium transition-colors",
               pathname === link.href
                 ? "bg-accent/20 text-accent"
-                : "text-text-secondary hover:bg-surface hover:text-text-primary"
+                : "text-text-secondary hover:bg-surface hover:text-text-primary",
             )}
           >
             <span>{link.icon}</span>
@@ -62,10 +65,11 @@ export function Sidebar() {
           </Link>
         ))}
       </nav>
-      <div className="absolute bottom-0 left-0 right-0 border-t border-border p-3">
+      <div className="absolute bottom-0 left-0 right-0 border-t border-border p-2">
         <button
+          type="button"
           onClick={() => signOut({ callbackUrl: "/" })}
-          className="flex w-full items-center gap-3 rounded-xl px-4 py-3 text-sm text-text-secondary hover:bg-surface hover:text-danger"
+          className="flex min-h-[44px] w-full items-center gap-2 rounded-lg px-3 py-2.5 text-sm text-text-secondary hover:bg-surface hover:text-danger"
         >
           Sign out
         </button>
@@ -75,14 +79,12 @@ export function Sidebar() {
 
   return (
     <>
-      {/* ---- Mobile top bar ---- */}
-      <div className="fixed top-0 left-0 right-0 z-40 flex h-14 items-center justify-between border-b border-border bg-card/80 backdrop-blur-xl px-4 md:hidden">
-        <Link href="/dashboard" className="text-lg font-bold text-text-primary">
-          Veya
-        </Link>
+      {/* Tablet (768–1023px): top bar + hamburger; hidden on mobile & desktop */}
+      <div className="fixed left-0 right-0 top-0 z-40 hidden h-14 items-center justify-between border-b border-border bg-card/80 px-4 backdrop-blur-xl md:flex lg:hidden">
         <button
-          onClick={() => setMobileOpen(true)}
-          className="rounded-lg p-2 text-text-secondary hover:text-text-primary hover:bg-surface"
+          type="button"
+          onClick={() => setTabletMenuOpen(true)}
+          className="min-h-[44px] min-w-[44px] rounded-lg p-2 text-text-secondary hover:bg-surface hover:text-text-primary"
           aria-label="Open menu"
         >
           <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
@@ -91,24 +93,31 @@ export function Sidebar() {
             <path d="M3 18h18" />
           </svg>
         </button>
+        <Link href="/dashboard" className="text-lg font-bold text-text-primary">
+          Veya
+        </Link>
+        <span className="min-w-[44px]" aria-hidden />
       </div>
 
-      {/* ---- Desktop sidebar (always visible at md+) ---- */}
-      <aside className="fixed left-0 top-0 z-40 h-screen w-56 border-r border-border bg-card/80 backdrop-blur-xl hidden md:block">
+      {/* Desktop (1024px+): fixed rail */}
+      <aside
+        className="fixed left-0 top-0 z-40 hidden h-screen shrink-0 border-r border-border bg-card/80 backdrop-blur-xl lg:block"
+        style={{ width: "var(--app-sidebar-width)" }}
+      >
         {navContent}
       </aside>
 
-      {/* ---- Mobile drawer overlay ---- */}
+      {/* Tablet drawer overlay */}
       <AnimatePresence>
-        {mobileOpen && (
+        {tabletMenuOpen && (
           <>
             <motion.div
               key="sidebar-backdrop"
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[45] bg-black/60 backdrop-blur-sm md:hidden"
-              onClick={() => setMobileOpen(false)}
+              className="fixed inset-0 z-[45] bg-black/60 backdrop-blur-sm md:block lg:hidden"
+              onClick={() => setTabletMenuOpen(false)}
             />
             <motion.aside
               key="sidebar-drawer"
@@ -116,7 +125,7 @@ export function Sidebar() {
               animate={{ x: 0 }}
               exit={{ x: "-100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed left-0 top-0 z-50 h-screen w-64 border-r border-border bg-card backdrop-blur-xl md:hidden"
+              className="fixed left-0 top-0 z-50 h-screen w-64 max-w-[85vw] border-r border-border bg-card backdrop-blur-xl md:block lg:hidden"
             >
               {navContent}
             </motion.aside>

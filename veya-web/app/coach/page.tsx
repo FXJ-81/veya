@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { AnimatePresence, motion } from "framer-motion";
 import { useQueryClient } from "@tanstack/react-query";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { ChatBubble } from "@/components/coach/ChatBubble";
 import { ChatInput } from "@/components/coach/ChatInput";
 import { QuickPrompts } from "@/components/coach/QuickPrompts";
@@ -289,24 +289,26 @@ export default function CoachPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-4 pr-4 pt-16 pb-4 md:pl-56 md:pr-6 md:pt-8 md:pb-8 flex flex-col h-[100dvh]">
-        <motion.div
+    <AppShell variant="coach">
+      <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-border/80 bg-card/30 lg:rounded-3xl">
+        <motion.header
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mb-6"
+          className="shrink-0 border-b border-border/60 px-4 pb-4 pt-3 sm:px-5 lg:px-6"
         >
-          <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
             <div className="min-w-0">
-              <h1 className="text-xl sm:text-2xl font-bold text-text-primary">Veya AI Coach</h1>
-              <p className="text-text-secondary text-sm mt-1">
+              <h1 className="text-xl font-bold text-text-primary sm:text-2xl">
+                Veya AI Coach
+              </h1>
+              <p className="mt-1 text-sm text-text-secondary">
                 Ask anything about your subscriptions. I have full context.
               </p>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
+            <div className="flex min-w-0 shrink-0 flex-wrap items-center gap-2">
               <div ref={historyRef} className="relative">
                 <button
+                  type="button"
                   onClick={async () => {
                     const next = !historyOpen;
                     setHistoryOpen(next);
@@ -315,9 +317,10 @@ export default function CoachPage() {
                     }
                   }}
                   disabled={loading}
-                  className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary hover:bg-border hover:text-text-primary transition-colors disabled:opacity-50"
+                  className="min-h-[44px] rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-border hover:text-text-primary disabled:opacity-50 max-md:px-2"
                 >
-                  Chat History
+                  <span className="md:hidden">History</span>
+                  <span className="hidden md:inline">Chat History</span>
                 </button>
                 <AnimatePresence>
                   {historyOpen && (
@@ -333,7 +336,7 @@ export default function CoachPage() {
                         <span className="text-sm font-semibold text-text-primary">Previous Chats</span>
                         <button
                           onClick={createNewChat}
-                          className="rounded-md bg-accent px-2.5 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                          className="rounded-md bg-accent px-2.5 py-2 text-sm font-medium text-white hover:opacity-90"
                         >
                           New Chat
                         </button>
@@ -405,67 +408,82 @@ export default function CoachPage() {
                 </AnimatePresence>
               </div>
               <button
+                type="button"
                 onClick={clearChat}
                 disabled={loading || messages.length === 0}
-                className="rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary hover:bg-border hover:text-text-primary transition-colors disabled:opacity-50"
+                className="min-h-[44px] rounded-lg border border-border bg-surface px-3 py-2 text-sm text-text-secondary transition-colors hover:bg-border hover:text-text-primary disabled:opacity-50 max-md:px-2"
               >
-                Clear chat
+                <span className="md:hidden">Clear</span>
+                <span className="hidden md:inline">Clear chat</span>
               </button>
             </div>
           </div>
-        </motion.div>
+        </motion.header>
 
-        <div className="flex-1 overflow-y-auto space-y-4 pb-4">
-          {messages.length === 0 && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="space-y-4"
-            >
-              <p className="text-text-tertiary text-sm">
-                Try a quick prompt or type your own question.
-              </p>
-              <QuickPrompts onSelect={sendMessage} disabled={loading} />
-            </motion.div>
-          )}
-          {messages.map((m, i) => (
-            <ChatBubble
-              key={m.id ?? i}
-              role={m.role}
-              content={m.content}
-              createdAt={m.createdAt}
-              kind={m.kind}
-              meta={m.meta as any}
-              index={i}
-            />
-          ))}
-          {loading && (
-            <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              className="flex justify-start"
-            >
-              <div className="rounded-2xl rounded-bl-md border border-border bg-card/80 px-4 py-3">
-                <span className="flex gap-1">
-                  <span className="h-2 w-2 rounded-full bg-text-tertiary animate-bounce" style={{ animationDelay: "0ms" }} />
-                  <span className="h-2 w-2 rounded-full bg-text-tertiary animate-bounce" style={{ animationDelay: "150ms" }} />
-                  <span className="h-2 w-2 rounded-full bg-text-tertiary animate-bounce" style={{ animationDelay: "300ms" }} />
-                </span>
-              </div>
-            </motion.div>
-          )}
-          <div ref={bottomRef} />
-        </div>
-
-        <div className="border-t border-border pt-4">
-          {messages.length > 0 && (
-            <div className="mb-3">
-              <QuickPrompts onSelect={sendMessage} disabled={loading} />
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col">
+          <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-5 lg:px-6">
+            <div className="w-full space-y-4">
+              {messages.length === 0 && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="space-y-4"
+                >
+                  <p className="text-sm text-text-tertiary">
+                    Try a quick prompt or type your own question below.
+                  </p>
+                  <QuickPrompts onSelect={sendMessage} disabled={loading} />
+                </motion.div>
+              )}
+              {messages.map((m, i) => (
+                <ChatBubble
+                  key={m.id ?? i}
+                  role={m.role}
+                  content={m.content}
+                  createdAt={m.createdAt}
+                  kind={m.kind}
+                  meta={m.meta as any}
+                  index={i}
+                />
+              ))}
+              {loading && (
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="flex justify-start"
+                >
+                  <div className="rounded-2xl rounded-bl-md border border-border bg-card/80 px-4 py-3">
+                    <span className="flex gap-1">
+                      <span
+                        className="h-2 w-2 animate-bounce rounded-full bg-text-tertiary"
+                        style={{ animationDelay: "0ms" }}
+                      />
+                      <span
+                        className="h-2 w-2 animate-bounce rounded-full bg-text-tertiary"
+                        style={{ animationDelay: "150ms" }}
+                      />
+                      <span
+                        className="h-2 w-2 animate-bounce rounded-full bg-text-tertiary"
+                        style={{ animationDelay: "300ms" }}
+                      />
+                    </span>
+                  </div>
+                </motion.div>
+              )}
+              <div ref={bottomRef} />
             </div>
-          )}
-          <ChatInput onSend={sendMessage} disabled={loading} />
+          </div>
+
+          <div className="shrink-0 border-t border-border/80 bg-card/40 px-4 pb-3 pt-3 sm:px-5 sm:pb-4 sm:pt-4 lg:px-6">
+            <div className="w-full space-y-3">
+              {messages.length > 0 && (
+                <QuickPrompts onSelect={sendMessage} disabled={loading} />
+              )}
+              <ChatInput onSend={sendMessage} disabled={loading} />
+            </div>
+          </div>
         </div>
-      </main>
-    </div>
+      </div>
+    </AppShell>
   );
 }

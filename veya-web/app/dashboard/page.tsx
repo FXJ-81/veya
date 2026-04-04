@@ -5,7 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { HeroCard } from "@/components/dashboard/HeroCard";
 import { StatsRow } from "@/components/dashboard/StatsRow";
 import { RenewalCard } from "@/components/dashboard/RenewalCard";
@@ -77,9 +77,7 @@ export default function DashboardPage() {
   ];
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-4 pr-4 pt-16 pb-6 md:pl-56 md:pr-6 md:pt-8 md:pb-8">
+    <AppShell>
         <Suspense fallback={null}>
           <GmailOnboarding />
         </Suspense>
@@ -87,7 +85,7 @@ export default function DashboardPage() {
         <motion.header
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-8"
+          className="mb-5 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between"
         >
           <div>
             <h1 className="text-2xl font-bold text-text-primary">
@@ -110,14 +108,14 @@ export default function DashboardPage() {
         </motion.header>
 
         <div
-          className={`space-y-8 transition-opacity duration-200 ${
+          className={`space-y-5 transition-opacity duration-200 ${
             (subsFetching && subs != null) || (analyticsFetching && analytics != null)
               ? "opacity-[0.88]"
               : "opacity-100"
           }`}
         >
           {(subsFetching && subs != null) || (analyticsFetching && analytics != null) ? (
-            <p className="text-xs font-medium text-text-tertiary -mt-4 mb-2 animate-pulse">
+            <p className="text-xs font-medium text-text-tertiary -mt-2 mb-1 animate-pulse">
               Updating figures…
             </p>
           ) : null}
@@ -130,10 +128,10 @@ export default function DashboardPage() {
           <StatsRow stats={stats} />
 
           <div>
-            <h2 className="text-lg font-semibold text-text-primary mb-4">
+            <h2 className="mb-3 text-lg font-semibold text-text-primary">
               Upcoming renewals
             </h2>
-            <div className="flex gap-4 overflow-x-auto pb-2">
+            <div className="flex min-w-0 gap-3 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
               {subsLoading ? (
                 <Skeleton className="h-32 w-48 flex-shrink-0 rounded-xl" />
               ) : renewals.length === 0 ? (
@@ -150,9 +148,9 @@ export default function DashboardPage() {
 
           <AITipCard />
 
-          <div className="grid lg:grid-cols-2 gap-6">
+          <div className="grid gap-4 lg:grid-cols-2">
             <div>
-              <h2 className="text-lg font-semibold text-text-primary mb-4">
+              <h2 className="mb-3 text-lg font-semibold text-text-primary">
                 Spending breakdown
               </h2>
               {analyticsLoading ? (
@@ -160,14 +158,13 @@ export default function DashboardPage() {
               ) : analytics?.categoryBreakdown?.length ? (
                 <CategoryDonut data={analytics.categoryBreakdown} />
               ) : (
-                <div className="rounded-2xl border border-border bg-card p-8 text-center text-text-secondary text-sm">
+                <div className="rounded-2xl border border-border bg-card p-6 text-center text-sm text-text-secondary">
                   Add subscriptions to see breakdown.
                 </div>
               )}
             </div>
           </div>
         </div>
-      </main>
-    </div>
+    </AppShell>
   );
 }

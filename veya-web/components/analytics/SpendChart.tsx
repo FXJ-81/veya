@@ -81,11 +81,11 @@ function HoverTooltip({
       className="rounded-lg border px-3 py-1.5 shadow-lg pointer-events-none"
       style={{ background: "#111118", borderColor: "#2a2a3a" }}
     >
-      <p className="text-xs font-medium text-text-primary">
+      <p className="text-sm font-medium text-text-primary">
         {row.label} {row.year}:{" "}
         <span className="text-accent font-mono">${total.toFixed(2)}</span>
       </p>
-      <p className="text-[10px] text-text-tertiary mt-0.5">{kind} · click bar to see breakdown</p>
+      <p className="mt-0.5 text-sm text-text-tertiary">{kind} · tap bar for breakdown</p>
     </div>
   );
 }
@@ -186,7 +186,7 @@ export function SpendChart({ data }: SpendChartProps) {
             {year} — actual through today, projected for remaining months
           </p>
         </div>
-        <div className="flex flex-wrap items-center gap-5 text-xs text-text-secondary font-medium">
+        <div className="flex flex-wrap items-center gap-5 text-sm font-medium text-text-secondary">
           <span className="flex items-center gap-1.5">
             <span className="text-[#5b6ef5]" aria-hidden>■</span>
             Actual
@@ -198,7 +198,8 @@ export function SpendChart({ data }: SpendChartProps) {
         </div>
       </div>
 
-      <div className="h-72 cursor-pointer">
+      <div className="min-w-0 w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+        <div className="h-72 min-w-[280px] cursor-pointer">
         <ResponsiveContainer width="100%" height="100%">
           <BarChart
             data={rows}
@@ -209,7 +210,7 @@ export function SpendChart({ data }: SpendChartProps) {
             <XAxis
               dataKey="label"
               stroke="#9090aa"
-              fontSize={11}
+              fontSize={12}
               tickLine={false}
               interval={0}
               tick={(props) => {
@@ -224,7 +225,7 @@ export function SpendChart({ data }: SpendChartProps) {
                     y={y + 12}
                     textAnchor="middle"
                     fill={isSelected ? INDIGO_SELECTED : isCurrent ? ACCENT_TICK : "#9090aa"}
-                    fontSize={11}
+                    fontSize={12}
                     fontWeight={isSelected || isCurrent ? 600 : 400}
                   >
                     {label}
@@ -268,6 +269,7 @@ export function SpendChart({ data }: SpendChartProps) {
             </Bar>
           </BarChart>
         </ResponsiveContainer>
+        </div>
       </div>
 
       {/* breakdown panel */}

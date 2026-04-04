@@ -5,7 +5,7 @@ import { useSession, signOut, signIn } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import { motion } from "framer-motion";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
@@ -245,23 +245,22 @@ export default function SettingsPage() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-4 pr-4 pt-16 pb-6 md:pl-56 md:pr-6 md:pt-8 md:pb-8">
+    <>
+    <AppShell>
         <motion.h1
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="text-2xl font-bold text-text-primary mb-8"
+          className="mb-6 text-2xl font-bold text-text-primary sm:mb-8"
         >
           Settings
         </motion.h1>
 
-        <div className="space-y-6 max-w-2xl">
+        <div className="mx-auto w-full min-w-0 max-w-2xl space-y-6">
           <Card>
-            <h2 className="text-lg font-semibold text-text-primary mb-4">
+            <h2 className="mb-4 text-lg font-semibold text-text-primary">
               Profile
             </h2>
-            <div className="flex items-center gap-4">
+            <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
               <div className="h-16 w-16 rounded-full bg-accent/20 flex items-center justify-center text-2xl font-bold text-accent">
                 {(session?.user?.name ?? session?.user?.email ?? "?").charAt(0).toUpperCase()}
               </div>
@@ -280,12 +279,14 @@ export default function SettingsPage() {
             <h2 className="text-lg font-semibold text-text-primary mb-4">
               Plan
             </h2>
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Badge variant={plan === "premium" ? "accent" : "default"}>
                 {plan === "premium" ? "Premium" : "Free"}
               </Badge>
               {plan === "free" && (
-                <Button onClick={handleUpgrade}>Upgrade to Premium</Button>
+                <Button className="w-full sm:w-auto" onClick={handleUpgrade}>
+                  Upgrade to Premium
+                </Button>
               )}
             </div>
             <p className="text-sm text-text-secondary mt-2">
@@ -317,9 +318,9 @@ export default function SettingsPage() {
                       You&apos;re signed in with Google. Use the same account to allow Veya to scan subscription emails—one consent, no broken redirect.
                     </p>
                   )}
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     {!gmail.gmailConnected ? (
-                      <Button onClick={connectGmail} disabled={gmailLoading}>
+                      <Button className="w-full sm:w-auto" onClick={connectGmail} disabled={gmailLoading}>
                         {session?.provider === "google"
                           ? "Allow Gmail access"
                           : "Connect Gmail"}
@@ -327,6 +328,7 @@ export default function SettingsPage() {
                     ) : (
                       <>
                         <Button
+                          className="w-full sm:w-auto"
                           variant="secondary"
                           onClick={rescanGmail}
                           disabled={gmailLoading}
@@ -334,6 +336,7 @@ export default function SettingsPage() {
                           Rescan now
                         </Button>
                         <Button
+                          className="w-full sm:w-auto"
                           variant="danger"
                           onClick={disconnectGmail}
                           disabled={gmailLoading}
@@ -355,18 +358,28 @@ export default function SettingsPage() {
                   <p className="text-sm text-text-secondary">
                     Last synced: {scanLabel(gmail.lastPlaidSync)}
                   </p>
-                  <div className="flex flex-wrap gap-2">
+                  <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
                     {gmail.plaidLinked ?? false ? (
                       <>
-                        <Button variant="secondary" onClick={resyncPlaid} disabled={plaidBusy}>
+                        <Button
+                          className="w-full sm:w-auto"
+                          variant="secondary"
+                          onClick={resyncPlaid}
+                          disabled={plaidBusy}
+                        >
                           {plaidBusy ? "Syncing…" : "Resync bank"}
                         </Button>
-                        <Button variant="danger" onClick={disconnectPlaid} disabled={plaidBusy}>
+                        <Button
+                          className="w-full sm:w-auto"
+                          variant="danger"
+                          onClick={disconnectPlaid}
+                          disabled={plaidBusy}
+                        >
                           Disconnect bank
                         </Button>
                       </>
                     ) : (
-                      <Button onClick={startPlaidLink} disabled={plaidBusy}>
+                      <Button className="w-full sm:w-auto" onClick={startPlaidLink} disabled={plaidBusy}>
                         {plaidBusy ? "…" : "🏦 Connect Bank Account"}
                       </Button>
                     )}
@@ -410,13 +423,22 @@ export default function SettingsPage() {
             <p className="text-sm text-text-secondary mb-4">
               Delete your account and all data. This cannot be undone.
             </p>
-            <Button variant="danger" onClick={() => { setDeleteOpen(true); setDeleteConfirm(""); setDeleteToast(null); }}>
+            <Button
+              className="w-full sm:w-auto"
+              variant="danger"
+              onClick={() => {
+                setDeleteOpen(true);
+                setDeleteConfirm("");
+                setDeleteToast(null);
+              }}
+            >
               Delete account
             </Button>
           </Card>
 
           <div className="pt-4">
             <Button
+              className="w-full sm:w-auto"
               variant="secondary"
               onClick={() => signOut({ callbackUrl: "/" })}
             >
@@ -424,7 +446,7 @@ export default function SettingsPage() {
             </Button>
           </div>
         </div>
-      </main>
+    </AppShell>
 
       {deleteToast && (
         <div className="fixed top-4 right-4 z-[60] max-w-sm rounded-xl border border-danger/30 bg-card px-4 py-3 text-sm text-text-primary shadow-lg">
@@ -435,13 +457,13 @@ export default function SettingsPage() {
 
       {deleteOpen && (
         <div
-          className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+          className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:items-center sm:p-4"
           onMouseDown={(e) => {
             if (e.target === e.currentTarget && !deleteBusy) setDeleteOpen(false);
           }}
         >
           <div
-            className="w-full max-w-md rounded-2xl border p-5"
+            className="flex max-h-[100dvh] w-full max-w-md flex-col overflow-y-auto rounded-none border p-5 sm:max-h-[min(90vh,640px)] sm:rounded-2xl"
             style={{ background: "#111118", borderColor: "#2a2a3a" }}
             onMouseDown={(e) => e.stopPropagation()}
           >
@@ -454,8 +476,8 @@ export default function SettingsPage() {
             </p>
 
             <div className="mb-4">
-              <label className="block text-xs text-text-tertiary mb-2">
-                Type <span className="text-text-primary font-semibold">DELETE</span> to confirm
+              <label className="mb-2 block text-sm text-text-tertiary">
+                Type <span className="font-semibold text-text-primary">DELETE</span> to confirm
               </label>
               <input
                 value={deleteConfirm}
@@ -466,8 +488,9 @@ export default function SettingsPage() {
               />
             </div>
 
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
               <Button
+                className="w-full sm:w-auto"
                 variant="secondary"
                 onClick={() => setDeleteOpen(false)}
                 disabled={deleteBusy}
@@ -475,9 +498,10 @@ export default function SettingsPage() {
                 Cancel
               </Button>
               <button
+                type="button"
                 onClick={runDeleteAccount}
                 disabled={deleteBusy || deleteConfirm !== "DELETE"}
-                className="rounded-xl px-4 py-2 text-sm font-medium text-background transition-colors disabled:opacity-50"
+                className="min-h-[44px] w-full rounded-xl px-4 py-2 text-sm font-medium text-background transition-colors disabled:opacity-50 sm:min-h-0 sm:w-auto"
                 style={{ background: "#f87171" }}
               >
                 {deleteBusy ? "Deleting..." : "Delete Account"}
@@ -503,6 +527,6 @@ export default function SettingsPage() {
           onExit={() => setPlaidLinkToken(null)}
         />
       )}
-    </div>
+    </>
   );
 }

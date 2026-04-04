@@ -15,23 +15,23 @@ interface StatsRowProps {
 
 export function StatsRow({ stats }: StatsRowProps) {
   return (
-    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+    <div className="grid grid-cols-2 gap-3 md:grid-cols-2 lg:grid-cols-4">
       {stats.map((stat, i) => (
         <motion.div
           key={stat.label}
           initial={{ opacity: 0, y: 8 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ delay: 0.1 + i * 0.05 }}
-          className="rounded-xl border border-border bg-card p-4"
+          className="rounded-xl border border-border bg-card p-3"
         >
-          <p className="text-xs text-text-tertiary uppercase tracking-wider">
+          <p className="text-sm text-text-tertiary uppercase tracking-wider">
             {stat.label}
           </p>
-          <p className="mt-1 font-mono text-lg font-semibold text-text-primary font-mono-nums">
+          <p className="mt-1 font-mono text-base font-semibold text-text-primary font-mono-nums lg:text-lg">
             {stat.value}
           </p>
           {stat.sub && (
-            <p className="mt-0.5 text-xs text-text-secondary">{stat.sub}</p>
+            <p className="mt-0.5 text-sm text-text-secondary">{stat.sub}</p>
           )}
         </motion.div>
       ))}

@@ -32,7 +32,7 @@ export function RenewalCard({ subscription, index }: RenewalCardProps) {
       initial={{ opacity: 0, x: -12 }}
       animate={{ opacity: 1, x: 0 }}
       transition={{ delay: 0.15 + index * 0.05 }}
-      className="flex-shrink-0 w-48 rounded-xl border border-border bg-card p-4"
+      className="w-48 shrink-0 rounded-xl border border-border bg-card p-3"
     >
       <p className="font-medium text-text-primary truncate">{subscription.name}</p>
       <p className="font-mono text-lg font-semibold text-accent font-mono-nums mt-1">

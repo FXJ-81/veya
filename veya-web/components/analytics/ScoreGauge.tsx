@@ -21,7 +21,7 @@ export function ScoreGauge({ score, hasActiveSubscriptions }: ScoreGaugeProps) {
     <motion.div
       initial={{ opacity: 0, scale: 0.9 }}
       animate={{ opacity: 1, scale: 1 }}
-      className="rounded-2xl border border-border bg-card p-8 flex flex-col items-center"
+      className="flex w-full min-w-0 flex-col items-center rounded-2xl border border-border bg-card p-6 sm:p-8"
     >
       <h3 className="text-lg font-semibold text-text-primary mb-4">
         Subscription score

@@ -77,7 +77,7 @@ function BudgetCard({
         </div>
         <div className="flex items-center gap-1 shrink-0">
           <span
-            className={`text-xs font-bold ${
+            className={`text-sm font-bold ${
               exceeded ? "text-red-400" :
               bs.status === "warning" ? "text-yellow-400" :
               "text-emerald-400"
@@ -86,14 +86,16 @@ function BudgetCard({
             {bs.percentage.toFixed(0)}%
           </span>
           <button
+            type="button"
             onClick={() => onEdit(bs)}
-            className="ml-1 rounded px-2 py-0.5 text-xs text-text-secondary border border-border hover:border-accent hover:text-accent transition-colors"
+            className="ml-1 min-h-[44px] rounded border border-border px-3 py-2 text-sm text-text-secondary transition-colors hover:border-accent hover:text-accent md:min-h-0 md:px-2 md:py-0.5"
           >
             Edit
           </button>
           <button
+            type="button"
             onClick={() => onDelete(bs.id)}
-            className="rounded px-2 py-0.5 text-xs text-text-secondary border border-border hover:border-danger hover:text-danger transition-colors"
+            className="min-h-[44px] rounded border border-border px-3 py-2 text-sm text-text-secondary transition-colors hover:border-danger hover:text-danger md:min-h-0 md:px-2 md:py-0.5"
           >
             Delete
           </button>
@@ -161,14 +163,14 @@ function BudgetModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
         exit={{ opacity: 0, scale: 0.96 }}
-        className="w-full max-w-sm rounded-2xl border border-border p-6"
+        className="max-h-[100dvh] w-full max-w-sm overflow-y-auto rounded-none border border-border p-5 sm:max-h-[min(90vh,720px)] sm:rounded-2xl sm:p-6"
         style={{ background: "#111118" }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -178,7 +180,7 @@ function BudgetModal({
 
         <div className="space-y-4">
           <div>
-            <label className="block text-xs text-text-tertiary mb-1.5">Category</label>
+            <label className="mb-1.5 block text-sm text-text-tertiary">Category</label>
             {editing?.category === "__total__" ? (
               <p className="text-sm font-medium text-text-primary">Total subscriptions</p>
             ) : (
@@ -199,7 +201,7 @@ function BudgetModal({
           </div>
 
           <div>
-            <label className="block text-xs text-text-tertiary mb-1.5">Monthly limit ($)</label>
+            <label className="mb-1.5 block text-sm text-text-tertiary">Monthly limit ($)</label>
             <input
               type="number"
               min={0}
@@ -211,20 +213,22 @@ function BudgetModal({
             />
           </div>
 
-          {err && <p className="text-xs text-danger">{err}</p>}
+          {err && <p className="text-sm text-danger">{err}</p>}
 
-          <div className="flex justify-end gap-2 pt-1">
+          <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-end">
             <button
+              type="button"
               onClick={onClose}
               disabled={busy}
-              className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+              className="min-h-[44px] rounded-xl border border-border px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50 sm:min-h-0"
             >
               Cancel
             </button>
             <button
+              type="button"
               onClick={handleSave}
               disabled={busy}
-              className="rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+              className="min-h-[44px] rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 sm:min-h-0"
             >
               {busy ? "Saving…" : "Save"}
             </button>
@@ -248,13 +252,13 @@ function DeleteConfirm({
 }) {
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 px-4"
+      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:items-center sm:p-4"
       onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
     >
       <motion.div
         initial={{ opacity: 0, scale: 0.96 }}
         animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-sm rounded-2xl border border-border p-6"
+        className="max-h-[100dvh] w-full max-w-sm overflow-y-auto rounded-none border border-border p-5 sm:max-h-[min(90vh,480px)] sm:rounded-2xl sm:p-6"
         style={{ background: "#111118" }}
         onMouseDown={(e) => e.stopPropagation()}
       >
@@ -262,18 +266,20 @@ function DeleteConfirm({
         <p className="text-sm text-text-secondary mb-5">
           This will permanently remove this budget limit.
         </p>
-        <div className="flex justify-end gap-2">
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
           <button
+            type="button"
             onClick={onCancel}
             disabled={busy}
-            className="rounded-xl border border-border px-4 py-2 text-sm font-medium text-text-secondary hover:text-text-primary transition-colors disabled:opacity-50"
+            className="min-h-[44px] rounded-xl border border-border px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50 sm:min-h-0"
           >
             Cancel
           </button>
           <button
+            type="button"
             onClick={onConfirm}
             disabled={busy}
-            className="rounded-xl px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-50"
+            className="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-50 sm:min-h-0"
             style={{ background: "#f87171" }}
           >
             {busy ? "Deleting…" : "Delete"}

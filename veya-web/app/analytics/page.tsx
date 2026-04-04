@@ -4,7 +4,7 @@ import { useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { ScoreGauge } from "@/components/analytics/ScoreGauge";
 import { SpendChart } from "@/components/analytics/SpendChart";
 import { CategoryDonut } from "@/components/analytics/CategoryDonut";
@@ -26,9 +26,7 @@ export default function AnalyticsPage() {
   }
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-4 pr-4 pt-16 pb-6 md:pl-56 md:pr-6 md:pt-8 md:pb-8">
+    <AppShell>
         <div className="flex flex-wrap items-center gap-3 mb-8">
           <motion.h1
             initial={{ opacity: 0 }}
@@ -55,7 +53,7 @@ export default function AnalyticsPage() {
               isFetching && analytics != null ? "opacity-[0.88]" : "opacity-100"
             }`}
           >
-            <div className="grid md:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6 md:grid-cols-2">
               <ScoreGauge
                 score={analytics?.score ?? 0}
                 hasActiveSubscriptions={
@@ -78,7 +76,7 @@ export default function AnalyticsPage() {
 
             <SpendChart data={analytics?.monthlySpend ?? []} />
 
-            <div className="grid lg:grid-cols-2 gap-6">
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
               <CategoryDonut data={analytics?.categoryBreakdown ?? []} />
               <div className="rounded-2xl border border-border bg-card p-6">
                 <h3 className="text-lg font-semibold text-text-primary mb-4">
@@ -109,7 +107,6 @@ export default function AnalyticsPage() {
             <BudgetLimitsSection />
           </div>
         )}
-      </main>
-    </div>
+    </AppShell>
   );
 }

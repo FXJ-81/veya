@@ -4,7 +4,7 @@ import { Suspense, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
-import { Sidebar } from "@/components/layout/Sidebar";
+import { AppShell } from "@/components/layout/AppShell";
 import { SubscriptionCard } from "@/components/subscriptions/SubscriptionCard";
 import { AddSubscriptionModal } from "@/components/subscriptions/AddSubscriptionModal";
 import { EditSubscriptionModal } from "@/components/subscriptions/EditSubscriptionModal";
@@ -251,15 +251,14 @@ function SubscriptionsContent() {
   };
 
   return (
-    <div className="min-h-screen bg-background">
-      <Sidebar />
-      <main className="pl-4 pr-4 pt-16 pb-6 md:pl-56 md:pr-6 md:pt-8 md:pb-8">
+    <>
+    <AppShell>
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6"
+          className="mb-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between"
         >
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
             <h1 className="text-2xl font-bold text-text-primary">
               Subscriptions
             </h1>
@@ -269,7 +268,7 @@ function SubscriptionsContent() {
               </span>
             )}
           </div>
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
             {gmailConnected && (
               <div className="flex flex-wrap items-center gap-2 text-xs text-text-tertiary">
                 <button
@@ -305,26 +304,28 @@ function SubscriptionsContent() {
               </button>
             )}
             <button
+              type="button"
               onClick={() => setAddOpen(true)}
-              className="rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90"
+              className="hidden rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 md:inline-flex md:min-h-[44px] md:items-center"
             >
               + Add subscription
             </button>
           </div>
         </motion.div>
 
-        <div className="flex flex-col sm:flex-row gap-4 mb-6">
+        <div className="mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:gap-4">
           <input
             type="text"
             placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            className="flex-1 rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary placeholder-text-tertiary focus:border-accent focus:outline-none"
+            className="min-h-[44px] w-full min-w-0 flex-1 rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary placeholder-text-tertiary focus:border-accent focus:outline-none"
           />
+          <div className="flex min-w-0 flex-col gap-3 sm:flex-1 sm:flex-row sm:gap-4">
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
-            className="rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary focus:border-accent focus:outline-none"
+            className="min-h-[44px] w-full rounded-xl border border-border bg-background-secondary px-4 py-3 text-sm text-text-primary focus:border-accent focus:outline-none sm:min-w-0 sm:flex-1"
           >
             <option value="">All categories</option>
             {categories.map((c) => (
@@ -336,13 +337,23 @@ function SubscriptionsContent() {
           <select
             value={sort}
             onChange={(e) => setSort(e.target.value as typeof sort)}
-            className="rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary focus:border-accent focus:outline-none"
+            className="min-h-[44px] w-full rounded-xl border border-border bg-background-secondary px-4 py-3 text-sm text-text-primary focus:border-accent focus:outline-none sm:min-w-0 sm:flex-1"
           >
             <option value="nextRenewal">Sort by renewal</option>
             <option value="name">Sort by name</option>
             <option value="price">Sort by price</option>
           </select>
+          </div>
         </div>
+
+        <button
+          type="button"
+          onClick={() => setAddOpen(true)}
+          className="fixed bottom-[calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px)+12px)] right-4 z-[56] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-2xl font-light text-white shadow-lg md:hidden"
+          aria-label="Add subscription"
+        >
+          +
+        </button>
 
         {isLoading ? (
           <Skeleton className="h-48 rounded-2xl" />
@@ -378,7 +389,7 @@ function SubscriptionsContent() {
             ))}
           </div>
         )}
-      </main>
+    </AppShell>
 
       <AddSubscriptionModal
         open={addOpen}
@@ -408,7 +419,7 @@ function SubscriptionsContent() {
           onExit={() => setPlaidLinkToken(null)}
         />
       )}
-    </div>
+    </>
   );
 }
 

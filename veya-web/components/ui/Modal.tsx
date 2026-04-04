@@ -38,7 +38,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       {open && (
         <motion.div
           key="modal-layer"
-          className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-4"
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
@@ -57,7 +57,7 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: "spring", duration: 0.3 }}
             className={cn(
-              "relative z-10 w-full max-w-lg max-h-[min(90vh,800px)] overflow-y-auto rounded-2xl border border-border bg-card p-6 shadow-2xl",
+              "relative z-10 flex max-h-[100dvh] w-full max-w-lg flex-col overflow-y-auto rounded-none border-0 border-border bg-card p-4 shadow-2xl sm:max-h-[min(90vh,800px)] sm:rounded-2xl sm:border sm:p-6",
               className
             )}
             onClick={(e) => e.stopPropagation()}

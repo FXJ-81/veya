@@ -18,7 +18,7 @@ export function HeroCard({ monthlyTotal, trend = 0, label }: HeroCardProps) {
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: 0.1 }}
-      className="rounded-2xl border border-border bg-card/80 backdrop-blur-xl p-8"
+      className="w-full min-w-0 rounded-2xl border border-border bg-card/80 p-6 backdrop-blur-xl"
     >
       {label && (
         <p className="text-sm text-text-secondary mb-2">{label}</p>

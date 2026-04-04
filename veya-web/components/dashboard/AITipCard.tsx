@@ -36,7 +36,7 @@ export function AITipCard() {
         )}
         <Link
           href="/coach"
-          className="mt-4 inline-flex items-center gap-2 rounded-xl bg-accent/20 px-4 py-2 text-sm font-medium text-accent hover:bg-accent/30 transition-colors"
+          className="mt-4 inline-flex min-h-[44px] items-center gap-2 rounded-xl bg-accent/20 px-4 py-2 text-sm font-medium text-accent transition-colors hover:bg-accent/30"
         >
           Chat with Veya AI
         </Link>

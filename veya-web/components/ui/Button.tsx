@@ -20,9 +20,9 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
       success: "bg-success text-white hover:opacity-90",
     };
     const sizes = {
-      sm: "px-3 py-1.5 text-sm",
-      md: "px-5 py-2.5 text-sm",
-      lg: "px-8 py-4 text-base",
+      sm: "px-3 py-1.5 text-sm max-md:min-h-[44px] max-md:py-2.5",
+      md: "px-5 py-2.5 text-sm max-md:min-h-[44px]",
+      lg: "px-8 py-4 text-base max-md:min-h-[44px]",
     };
     return (
       <button

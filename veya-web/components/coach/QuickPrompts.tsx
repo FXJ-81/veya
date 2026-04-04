@@ -20,20 +20,23 @@ interface QuickPromptsProps {
 
 export function QuickPrompts({ onSelect, disabled }: QuickPromptsProps) {
   return (
-    <div className="flex flex-wrap gap-2">
-      {PROMPTS.map((prompt, i) => (
-        <motion.button
-          key={prompt}
-          initial={{ opacity: 0, y: 4 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 0.1 + i * 0.05 }}
-          onClick={() => onSelect(prompt)}
-          disabled={disabled}
-          className="rounded-full border border-border bg-surface px-4 py-2 text-sm text-text-secondary hover:bg-border hover:text-text-primary transition-colors disabled:opacity-50"
-        >
-          {prompt}
-        </motion.button>
-      ))}
+    <div className="min-w-0">
+      <div className="-mx-1 flex gap-2 overflow-x-auto overflow-y-visible pb-1 [-webkit-overflow-scrolling:touch] max-md:flex-nowrap max-md:px-1 md:flex-wrap">
+        {PROMPTS.map((prompt, i) => (
+          <motion.button
+            key={prompt}
+            initial={{ opacity: 0, y: 4 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ delay: 0.1 + i * 0.05 }}
+            type="button"
+            onClick={() => onSelect(prompt)}
+            disabled={disabled}
+            className="shrink-0 rounded-full border border-border bg-surface px-4 py-2.5 text-left text-sm text-text-secondary transition-colors hover:bg-border hover:text-text-primary disabled:opacity-50 max-md:min-h-[44px] md:py-2"
+          >
+            {prompt}
+          </motion.button>
+        ))}
+      </div>
     </div>
   );
 }

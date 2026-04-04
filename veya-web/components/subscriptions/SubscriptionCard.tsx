@@ -96,7 +96,7 @@ export function SubscriptionCard({
       initial={{ opacity: 0, y: 12 }}
       animate={{ opacity: 1, y: 0 }}
       transition={{ delay: index * 0.05 }}
-      className="rounded-2xl border border-border bg-card p-6"
+      className="w-full min-w-0 rounded-2xl border border-border bg-card p-4 sm:p-6"
     >
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-start gap-4 min-w-0 flex-1">
@@ -129,7 +129,7 @@ export function SubscriptionCard({
                 <button
                   type="button"
                   onClick={() => onEdit(subscription)}
-                  className="rounded-lg p-1.5 text-text-tertiary hover:text-accent hover:bg-background-secondary transition-colors"
+                  className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded-lg p-1.5 text-text-tertiary transition-colors hover:bg-background-secondary hover:text-accent md:min-h-0 md:min-w-0"
                   aria-label={`Edit ${subscription.name}`}
                 >
                   <PencilIcon className="h-4 w-4" />
@@ -167,7 +167,7 @@ export function SubscriptionCard({
             </p>
           </div>
         </div>
-        <div className="flex flex-wrap gap-2 shrink-0">
+        <div className="flex w-full min-w-0 flex-wrap gap-2 sm:w-auto sm:shrink-0">
           {subscription.status === "paused" && onPause && (
             <Button
               variant="success"
