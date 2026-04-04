@@ -1,0 +1,58 @@
+/**
+ * Canonical subscription / budget categories — use everywhere (modals, budgets, Plaid AI hints).
+ */
+export const SUBSCRIPTION_CATEGORIES = [
+  "Streaming",
+  "Music",
+  "Productivity",
+  "Storage",
+  "Gaming",
+  "Education",
+  "News",
+  "Health",
+  "Food & Dining",
+  "AI",
+  "Transport",
+  "Travel",
+  "Finance",
+  "Utilities",
+  "Shopping",
+  "Entertainment",
+  "Other",
+] as const;
+
+export type SubscriptionCategory = (typeof SUBSCRIPTION_CATEGORIES)[number];
+
+/** For budget UI: total row + pickable categories */
+export const BUDGET_CATEGORY_OPTIONS = ["__total__", ...SUBSCRIPTION_CATEGORIES] as const;
+
+/** Emoji map for budget cards and selects (includes synthetic total key). */
+export const CATEGORY_ICONS: Record<string, string> = {
+  __total__: "💰",
+  Streaming: "📺",
+  Music: "🎵",
+  Productivity: "💼",
+  Storage: "☁️",
+  Gaming: "🎮",
+  Education: "📚",
+  News: "📰",
+  Health: "🏃",
+  "Food & Dining": "🍔",
+  AI: "🤖",
+  Transport: "🚗",
+  Travel: "✈️",
+  Finance: "💳",
+  Utilities: "🔌",
+  Shopping: "🛍️",
+  Entertainment: "🎭",
+  Other: "📦",
+};
+
+export function categoryIcon(category: string): string {
+  return CATEGORY_ICONS[category] ?? "📦";
+}
+
+/** Text for `<option>` labels; keep `value` as the plain category string for DB/API. */
+export function categorySelectLabel(category: string): string {
+  return `${categoryIcon(category)} ${category}`;
+}

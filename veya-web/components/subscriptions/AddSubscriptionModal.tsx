@@ -4,6 +4,7 @@ import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
 import { Modal } from "@/components/ui/Modal";
+import { SUBSCRIPTION_CATEGORIES, categorySelectLabel } from "@/lib/categories";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 
@@ -74,12 +75,11 @@ export function AddSubscriptionModal({
             className="w-full rounded-xl border border-border bg-background-secondary px-4 py-3 text-text-primary focus:border-accent focus:outline-none"
           >
             <option value="">Select...</option>
-            <option value="Streaming">Streaming</option>
-            <option value="Software">Software</option>
-            <option value="Fitness">Fitness</option>
-            <option value="Cloud">Cloud</option>
-            <option value="Gaming">Gaming</option>
-            <option value="Other">Other</option>
+            {SUBSCRIPTION_CATEGORIES.map((c) => (
+              <option key={c} value={c}>
+                {categorySelectLabel(c)}
+              </option>
+            ))}
           </select>
           {errors.category && (
             <p className="mt-1 text-sm text-danger">{errors.category.message}</p>

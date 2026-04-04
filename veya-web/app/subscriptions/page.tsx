@@ -21,6 +21,9 @@ import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
+import { categorySelectLabel } from "@/lib/categories";
+
+type PlaidAccountRow = { id: string; bankName: string; lastSync: string | null };
 
 function SubscriptionsContent() {
   const { status } = useSession();
@@ -34,8 +37,7 @@ function SubscriptionsContent() {
   const { update, remove, create } = useSubscriptionMutations();
   const qc = useQueryClient();
   const isMutating = create.isPending || update.isPending || remove.isPending;
-  const [plaidLinked, setPlaidLinked] = useState(false);
-  const [lastPlaidSync, setLastPlaidSync] = useState<string | null>(null);
+  const [plaidAccounts, setPlaidAccounts] = useState<PlaidAccountRow[] | null>(null);
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
@@ -46,8 +48,16 @@ function SubscriptionsContent() {
     fetch("/api/settings/gmail")
       .then((r) => r.json())
       .then((d) => {
-        setPlaidLinked(!!d.plaidLinked);
-        setLastPlaidSync(d.lastPlaidSync ?? null);
+        const rows = Array.isArray(d.plaidAccounts)
+          ? (d.plaidAccounts as { id?: string; bankName?: string; lastSync?: string | null }[]).map(
+              (a) => ({
+                id: String(a.id ?? ""),
+                bankName: typeof a.bankName === "string" ? a.bankName : "Bank",
+                lastSync: typeof a.lastSync === "string" ? a.lastSync : null,
+              }),
+            )
+          : [];
+        setPlaidAccounts(rows.filter((a) => a.id));
       })
       .catch(() => {});
 
@@ -120,11 +130,17 @@ function SubscriptionsContent() {
     }
   };
 
+  const plaidLinked = (plaidAccounts?.length ?? 0) > 0;
+
   const resyncPlaid = async () => {
     if (!plaidLinked || plaidBusy) return;
     setPlaidBusy(true);
     try {
-      const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
+      const det = await fetch("/api/plaid/detect-subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
       const dj = await det.json().catch(() => ({}));
       if (!det.ok || !dj.ok) {
         alert(dj.error ?? "Resync failed");
@@ -227,14 +243,20 @@ function SubscriptionsContent() {
             )}
           </div>
           <div className="flex min-w-0 flex-col gap-3 sm:flex-row sm:flex-wrap sm:items-center">
-            {plaidLinked ? (
+            {plaidAccounts === null ? (
+              <span className="text-sm text-text-tertiary">…</span>
+            ) : plaidLinked ? (
               <button
                 type="button"
                 onClick={resyncPlaid}
                 disabled={plaidBusy}
                 className="rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm font-medium text-text-primary hover:border-accent disabled:opacity-50"
               >
-                {plaidBusy ? "Syncing…" : "✅ Bank Connected · Resync"}
+                {plaidBusy
+                  ? "Syncing…"
+                  : plaidAccounts.length > 1
+                    ? `✅ ${plaidAccounts.length} banks · Resync all`
+                    : "✅ Bank connected · Resync"}
               </button>
             ) : (
               <button
@@ -243,7 +265,7 @@ function SubscriptionsContent() {
                 disabled={plaidBusy}
                 className="rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm font-medium text-text-primary hover:border-accent disabled:opacity-50"
               >
-                {plaidBusy ? "…" : "🏦 Connect Bank Account"}
+                {plaidBusy ? "…" : "🏦 Connect bank account"}
               </button>
             )}
             <button
@@ -273,7 +295,7 @@ function SubscriptionsContent() {
             <option value="">All categories</option>
             {categories.map((c) => (
               <option key={c} value={c}>
-                {c}
+                {categorySelectLabel(c)}
               </option>
             ))}
           </select>

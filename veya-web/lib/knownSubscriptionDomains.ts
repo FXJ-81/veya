@@ -30,7 +30,7 @@ export interface DomainCatalogEntry {
 }
 
 export const DOMAIN_CATALOG: Record<string, DomainCatalogEntry> = {
-  "openai.com": { defaultName: "ChatGPT Plus", category: "Productivity", priceHint: 20 },
+  "openai.com": { defaultName: "ChatGPT Plus", category: "AI", priceHint: 20 },
   "apple.com": { defaultName: "iCloud+", category: "Storage" },
   "netflix.com": { defaultName: "Netflix", category: "Streaming" },
   "spotify.com": { defaultName: "Spotify", category: "Music" },
@@ -46,8 +46,8 @@ export const DOMAIN_CATALOG: Record<string, DomainCatalogEntry> = {
   "linkedin.com": { defaultName: "LinkedIn Premium", category: "Productivity" },
   "duolingo.com": { defaultName: "Duolingo", category: "Education" },
   "nytimes.com": { defaultName: "NYT", category: "News" },
-  "claude.ai": { defaultName: "Claude", category: "Productivity" },
-  "anthropic.com": { defaultName: "Claude", category: "Productivity" },
+  "claude.ai": { defaultName: "Claude", category: "AI" },
+  "anthropic.com": { defaultName: "Claude", category: "AI" },
 };
 
 /** Map subdomains / variants to catalog root domain. */

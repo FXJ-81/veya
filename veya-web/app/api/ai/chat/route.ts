@@ -4,6 +4,7 @@ import { Prisma } from "@prisma/client";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { pricePerMonth, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
+import { SUBSCRIPTION_CATEGORIES } from "@/lib/categories";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -124,6 +125,7 @@ Destructive actions (MUST ask for confirmation first — include JSON so it's st
 {"action":"bulkCancel","data":{"ids":[]}}
 
 RULES:
+- Valid subscription and budget category names (use exactly): ${SUBSCRIPTION_CATEGORIES.join(", ")}
 - Always use the EXACT ids from the data above, never make up ids
 - Be proactive: when answering a question, also suggest an action
 - Be specific: use real names and real dollar amounts

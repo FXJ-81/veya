@@ -1,5 +1,6 @@
 import type { Transaction } from "plaid";
 import OpenAI from "openai";
+import { SUBSCRIPTION_CATEGORIES } from "@/lib/categories";
 import { WEEKS_PER_MONTH } from "@/lib/subscriptionBilling";
 
 export type PlaidDetectedSubscription = {
@@ -13,11 +14,8 @@ export type PlaidDetectedSubscription = {
 
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 
-const VALID_CATEGORIES = new Set([
-  "Streaming", "Music", "Productivity", "Storage", "Gaming",
-  "Education", "News", "Health", "Food", "Shopping", "Transport",
-  "Travel", "Finance", "Utilities", "Entertainment", "AI", "Other",
-]);
+const VALID_CATEGORIES = new Set<string>(SUBSCRIPTION_CATEGORIES);
+const CATEGORY_PROMPT_LIST = SUBSCRIPTION_CATEGORIES.join(", ");
 
 // In-memory cache — avoids duplicate OpenAI calls within the same process
 const categoryCache = new Map<string, string>();
@@ -36,14 +34,13 @@ async function categoryForMerchantAI(name: string): Promise<string> {
           content:
             `What category does this subscription/merchant belong to? ` +
             `Merchant name: ${name}. ` +
-            `Reply with ONLY one of these exact words: ` +
-            `Streaming, Music, Productivity, Storage, Gaming, Education, ` +
-            `News, Health, Food, Shopping, Transport, Travel, Finance, ` +
-            `Utilities, Entertainment, AI, Other`,
+            `Reply with ONLY one of these exact labels (match spelling): ` +
+            CATEGORY_PROMPT_LIST,
         },
       ],
     });
-    const raw = res.choices[0]?.message?.content?.trim() ?? "";
+    let raw = res.choices[0]?.message?.content?.trim() ?? "";
+    if (raw === "Food") raw = "Food & Dining";
     const category = VALID_CATEGORIES.has(raw) ? raw : "Other";
     categoryCache.set(key, category);
     return category;

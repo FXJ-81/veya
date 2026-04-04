@@ -9,6 +9,7 @@ import { AppShell } from "@/components/layout/AppShell";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
+import { Modal } from "@/components/ui/Modal";
 import {
   GmailScanResultsModal,
   type GmailScanRow,
@@ -18,9 +19,10 @@ import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
 
-type BankConnectionInfo = {
-  plaidLinked: boolean;
-  lastPlaidSync: string | null;
+type PlaidAccountRow = {
+  id: string;
+  bankName: string;
+  lastSync: string | null;
 };
 
 function strengthScore(pw: string): number {
@@ -54,7 +56,8 @@ export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [plan, setPlan] = useState<"free" | "premium">("free");
-  const [bank, setBank] = useState<BankConnectionInfo | null>(null);
+  const [plaidAccounts, setPlaidAccounts] = useState<PlaidAccountRow[] | null>(null);
+  const [resyncingId, setResyncingId] = useState<string | null>(null);
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
@@ -92,12 +95,18 @@ export default function SettingsPage() {
         .catch(() => {});
       fetch("/api/settings/gmail")
         .then((r) => r.json())
-        .then((d) =>
-          setBank({
-            plaidLinked: !!d.plaidLinked,
-            lastPlaidSync: d.lastPlaidSync ?? null,
-          }),
-        )
+        .then((d) => {
+          const rows = Array.isArray(d.plaidAccounts)
+            ? (d.plaidAccounts as { id?: string; bankName?: string; lastSync?: string | null }[]).map(
+                (a) => ({
+                  id: String(a.id ?? ""),
+                  bankName: typeof a.bankName === "string" ? a.bankName : "Bank",
+                  lastSync: typeof a.lastSync === "string" ? a.lastSync : null,
+                }),
+              )
+            : [];
+          setPlaidAccounts(rows.filter((a) => a.id));
+        })
         .catch(() => {});
       fetch("/api/user/password")
         .then((r) => r.json())
@@ -109,12 +118,18 @@ export default function SettingsPage() {
   const refreshBank = () =>
     fetch("/api/settings/gmail")
       .then((r) => r.json())
-      .then((d) =>
-        setBank({
-          plaidLinked: !!d.plaidLinked,
-          lastPlaidSync: d.lastPlaidSync ?? null,
-        }),
-      );
+      .then((d) => {
+        const rows = Array.isArray(d.plaidAccounts)
+          ? (d.plaidAccounts as { id?: string; bankName?: string; lastSync?: string | null }[]).map(
+              (a) => ({
+                id: String(a.id ?? ""),
+                bankName: typeof a.bankName === "string" ? a.bankName : "Bank",
+                lastSync: typeof a.lastSync === "string" ? a.lastSync : null,
+              }),
+            )
+          : [];
+        setPlaidAccounts(rows.filter((a) => a.id));
+      });
 
   const closeGmailResults = () => {
     if (gmailImportBusy) return;
@@ -177,36 +192,43 @@ export default function SettingsPage() {
     }
   };
 
-  const disconnectPlaid = async () => {
+  const disconnectAccount = async (id: string) => {
     setPlaidBusy(true);
     try {
-      await fetch("/api/settings/gmail", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ disconnectPlaid: true }),
-      });
+      const res = await fetch(`/api/plaid/accounts/${encodeURIComponent(id)}`, { method: "DELETE" });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert((j as { error?: string }).error ?? "Disconnect failed");
+        return;
+      }
       await refreshBank();
     } finally {
       setPlaidBusy(false);
     }
   };
 
-  const resyncPlaid = async () => {
-    if (!bank?.plaidLinked) return;
+  const resyncPlaid = async (plaidAccountId?: string) => {
+    if (!plaidAccounts?.length) return;
+    setResyncingId(plaidAccountId ?? "__all__");
     setPlaidBusy(true);
     try {
-      const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
+      const det = await fetch("/api/plaid/detect-subscriptions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(plaidAccountId ? { plaidAccountId } : {}),
+      });
       const dj = await det.json().catch(() => ({}));
       if (!det.ok || !dj.ok) {
         alert(dj.error ?? "Resync failed");
         return;
       }
       setGmailCandidates(
-        mapPlaidDetectToScanRows(Array.isArray(dj.subscriptions) ? dj.subscriptions : [])
+        mapPlaidDetectToScanRows(Array.isArray(dj.subscriptions) ? dj.subscriptions : []),
       );
       setGmailResultsOpen(true);
       await refreshBank();
     } finally {
+      setResyncingId(null);
       setPlaidBusy(false);
     }
   };
@@ -350,49 +372,72 @@ export default function SettingsPage() {
             <h2 className="mb-4 text-lg font-semibold text-text-primary">
               Connected accounts
             </h2>
-            {bank ? (
-              <div className="space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-sm text-text-secondary">Bank account:</span>
-                  <Badge variant={bank.plaidLinked ? "success" : "default"}>
-                    {bank.plaidLinked ? "Connected ✓" : "Not connected"}
-                  </Badge>
-                </div>
-                <p className="text-sm text-text-secondary">
-                  Last synced: {scanLabel(bank.lastPlaidSync)}
-                </p>
-                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
-                  {bank.plaidLinked ? (
-                    <>
-                      <Button
-                        className="w-full sm:w-auto"
-                        variant="secondary"
-                        onClick={resyncPlaid}
-                        disabled={plaidBusy}
-                      >
-                        {plaidBusy ? "Syncing…" : "Resync bank"}
-                      </Button>
-                      <Button
-                        className="w-full sm:w-auto"
-                        variant="danger"
-                        onClick={disconnectPlaid}
-                        disabled={plaidBusy}
-                      >
-                        Disconnect bank
-                      </Button>
-                    </>
-                  ) : (
+            {plaidAccounts === null ? (
+              <p className="text-sm text-text-secondary">Loading…</p>
+            ) : (
+              <div className="space-y-4">
+                {plaidAccounts.length === 0 ? (
+                  <div className="space-y-3">
+                    <p className="text-sm text-text-secondary">No bank connected yet.</p>
                     <Button className="w-full sm:w-auto" onClick={startPlaidLink} disabled={plaidBusy}>
-                      {plaidBusy ? "…" : "🏦 Connect Bank Account"}
+                      {plaidBusy ? "…" : "🏦 Connect bank account"}
                     </Button>
-                  )}
-                </div>
+                  </div>
+                ) : (
+                  <ul className="space-y-3">
+                    {plaidAccounts.map((acc) => {
+                      const syncingThis = resyncingId === acc.id;
+                      const syncingAny = resyncingId !== null || plaidBusy;
+                      return (
+                        <li
+                          key={acc.id}
+                          className="rounded-xl border border-border bg-background-secondary/20 p-4"
+                        >
+                          <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                            <div className="min-w-0">
+                              <p className="font-medium text-text-primary">{acc.bankName}</p>
+                              <p className="mt-1 text-sm text-text-secondary">
+                                Last synced: {scanLabel(acc.lastSync)}
+                              </p>
+                            </div>
+                            <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap">
+                              <Button
+                                className="w-full sm:w-auto"
+                                variant="secondary"
+                                onClick={() => void resyncPlaid(acc.id)}
+                                disabled={syncingAny}
+                              >
+                                {syncingThis ? "Syncing…" : "Resync"}
+                              </Button>
+                              <Button
+                                className="w-full sm:w-auto"
+                                variant="danger"
+                                onClick={() => void disconnectAccount(acc.id)}
+                                disabled={plaidBusy || resyncingId !== null}
+                              >
+                                Disconnect
+                              </Button>
+                            </div>
+                          </div>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {plaidAccounts.length > 0 && (
+                  <Button
+                    className="w-full sm:w-auto"
+                    variant="secondary"
+                    onClick={startPlaidLink}
+                    disabled={plaidBusy || resyncingId !== null}
+                  >
+                    {plaidBusy ? "…" : "Connect another bank"}
+                  </Button>
+                )}
                 <p className="text-xs text-text-tertiary">
                   Plaid reads transactions to suggest subscriptions you can add.
                 </p>
               </div>
-            ) : (
-              <p className="text-sm text-text-secondary">Loading…</p>
             )}
           </Card>
 
@@ -482,7 +527,7 @@ export default function SettingsPage() {
                         href="/forgot-password"
                         className="text-sm text-accent hover:underline"
                       >
-                        Forgot password? Send reset link
+                        Forgot password?
                       </Link>
                     </p>
                   </form>
@@ -553,61 +598,52 @@ export default function SettingsPage() {
         </div>
       )}
 
-      {deleteOpen && (
-        <div
-          className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:items-center sm:p-4"
-          onMouseDown={(e) => {
-            if (e.target === e.currentTarget && !deleteBusy) setDeleteOpen(false);
-          }}
-        >
-          <div
-            className="flex max-h-[100dvh] w-full max-w-md flex-col overflow-y-auto rounded-none border p-5 sm:max-h-[min(90vh,640px)] sm:rounded-2xl"
-            style={{ background: "#111118", borderColor: "#2a2a3a" }}
-            onMouseDown={(e) => e.stopPropagation()}
-          >
-            <h3 className="text-lg font-semibold text-text-primary mb-2">
-              Delete your account?
-            </h3>
-            <p className="text-sm text-text-secondary mb-4">
-              This will permanently delete your account and all your data including subscriptions,
-              chat history, and settings. This cannot be undone.
-            </p>
+      <Modal
+        open={deleteOpen}
+        onClose={() => {
+          if (!deleteBusy) setDeleteOpen(false);
+        }}
+        title="Delete your account?"
+        className="max-w-md"
+      >
+        <p className="mb-4 text-sm text-text-secondary">
+          This will permanently delete your account and all your data including subscriptions, chat
+          history, and settings. This cannot be undone.
+        </p>
 
-            <div className="mb-4">
-              <label className="mb-2 block text-sm text-text-tertiary">
-                Type <span className="font-semibold text-text-primary">DELETE</span> to confirm
-              </label>
-              <input
-                value={deleteConfirm}
-                onChange={(e) => setDeleteConfirm(e.target.value)}
-                placeholder="DELETE"
-                disabled={deleteBusy}
-                className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
-              />
-            </div>
-
-            <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-              <Button
-                className="w-full sm:w-auto"
-                variant="secondary"
-                onClick={() => setDeleteOpen(false)}
-                disabled={deleteBusy}
-              >
-                Cancel
-              </Button>
-              <button
-                type="button"
-                onClick={runDeleteAccount}
-                disabled={deleteBusy || deleteConfirm !== "DELETE"}
-                className="min-h-[44px] w-full rounded-xl px-4 py-2 text-sm font-medium text-background transition-colors disabled:opacity-50 sm:min-h-0 sm:w-auto"
-                style={{ background: "#f87171" }}
-              >
-                {deleteBusy ? "Deleting..." : "Delete Account"}
-              </button>
-            </div>
-          </div>
+        <div className="mb-4">
+          <label className="mb-2 block text-sm text-text-tertiary">
+            Type <span className="font-semibold text-text-primary">DELETE</span> to confirm
+          </label>
+          <input
+            value={deleteConfirm}
+            onChange={(e) => setDeleteConfirm(e.target.value)}
+            placeholder="DELETE"
+            disabled={deleteBusy}
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
+          />
         </div>
-      )}
+
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button
+            className="w-full sm:w-auto"
+            variant="secondary"
+            onClick={() => setDeleteOpen(false)}
+            disabled={deleteBusy}
+          >
+            Cancel
+          </Button>
+          <button
+            type="button"
+            onClick={runDeleteAccount}
+            disabled={deleteBusy || deleteConfirm !== "DELETE"}
+            className="min-h-[44px] w-full rounded-xl px-4 py-2 text-sm font-medium text-background transition-colors disabled:opacity-50 sm:min-h-0 sm:w-auto"
+            style={{ background: "#f87171" }}
+          >
+            {deleteBusy ? "Deleting..." : "Delete Account"}
+          </button>
+        </div>
+      </Modal>
 
       <GmailScanResultsModal
         open={gmailResultsOpen}

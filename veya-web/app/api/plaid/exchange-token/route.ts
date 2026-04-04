@@ -25,14 +25,39 @@ export async function POST(req: Request) {
     const access_token = res.data.access_token;
     const item_id = res.data.item_id;
 
-    await prisma.user.update({
-      where: { id: authUser.id },
-      data: {
-        plaidAccessToken: access_token,
-        plaidItemId: item_id,
-        plaidLinked: true,
-      },
+    let bankName: string | null = null;
+    try {
+      const itemRes = await plaid.itemGet({ access_token });
+      bankName =
+        itemRes.data.item.institution_name ??
+        itemRes.data.item.institution_id ??
+        null;
+    } catch {
+      /* optional enrichment */
+    }
+
+    const existing = await prisma.plaidAccount.findUnique({
+      where: { itemId: item_id },
     });
+    if (existing && existing.userId !== authUser.id) {
+      return NextResponse.json({ error: "This bank is linked to another account" }, { status: 409 });
+    }
+
+    if (existing) {
+      await prisma.plaidAccount.update({
+        where: { id: existing.id },
+        data: { accessToken: access_token, bankName: bankName ?? existing.bankName },
+      });
+    } else {
+      await prisma.plaidAccount.create({
+        data: {
+          userId: authUser.id,
+          accessToken: access_token,
+          itemId: item_id,
+          bankName,
+        },
+      });
+    }
 
     console.log("[POST /api/plaid/exchange-token] linked item", item_id, "user", authUser.id);
     return NextResponse.json({ ok: true });

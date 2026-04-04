@@ -5,6 +5,7 @@ import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
+import { Modal } from "@/components/ui/Modal";
 import {
   GmailScanResultsModal,
   type GmailScanRow,
@@ -167,31 +168,31 @@ export function GmailOnboarding() {
         busy={importBusy}
       />
 
-      {connectModal && (
-        <div className="fixed inset-0 z-[150] flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm">
-          <div className="w-full max-w-md rounded-2xl border border-border bg-card p-6 shadow-2xl">
-            <h3 className="mb-2 text-lg font-semibold text-text-primary">Find subscriptions automatically?</h3>
-            <p className="mb-6 text-sm text-text-secondary">
-              Connect your bank on Settings (Plaid). Veya can scan transactions to suggest subscriptions to add.
-            </p>
-            <div className="flex flex-col gap-3 sm:flex-row">
-              <Link
-                href="/settings"
-                className="flex flex-1 items-center justify-center rounded-xl bg-accent px-4 py-3 text-center text-sm font-semibold text-white hover:opacity-90"
-              >
-                Open Settings
-              </Link>
-              <button
-                type="button"
-                onClick={skipFirst}
-                className="flex-1 rounded-xl border border-border bg-background-secondary px-4 py-3 text-sm font-medium text-text-primary hover:bg-background"
-              >
-                Skip for now
-              </button>
-            </div>
-          </div>
+      <Modal
+        open={connectModal}
+        onClose={() => void skipFirst()}
+        title="Find subscriptions automatically?"
+        className="max-w-md"
+      >
+        <p className="mb-6 text-sm text-text-secondary">
+          Connect your bank on Settings (Plaid). Veya can scan transactions to suggest subscriptions to add.
+        </p>
+        <div className="flex flex-col gap-3 sm:flex-row">
+          <Link
+            href="/settings"
+            className="flex flex-1 items-center justify-center rounded-xl bg-accent px-4 py-3 text-center text-sm font-semibold text-white hover:opacity-90"
+          >
+            Open Settings
+          </Link>
+          <button
+            type="button"
+            onClick={skipFirst}
+            className="flex-1 rounded-xl border border-border bg-background-secondary px-4 py-3 text-sm font-medium text-text-primary hover:bg-background"
+          >
+            Skip for now
+          </button>
         </div>
-      )}
+      </Modal>
     </>
   );
 }

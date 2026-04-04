@@ -5,56 +5,82 @@ import { prisma } from "@/lib/prisma";
 import { getPlaidClient } from "@/lib/plaidServer";
 import { detectSubscriptionsFromPlaidTransactions } from "@/lib/plaidSubscriptionDetect";
 
+async function fetchAllTransactions(
+  plaid: ReturnType<typeof getPlaidClient>,
+  accessToken: string,
+): Promise<Transaction[]> {
+  const transactions: Transaction[] = [];
+  let cursor: string | undefined;
+  for (;;) {
+    const res = await plaid.transactionsSync({
+      access_token: accessToken,
+      cursor,
+      count: 500,
+      options: {
+        include_personal_finance_category: true,
+      },
+    });
+    const data = res.data;
+    transactions.push(...data.added);
+    cursor = data.next_cursor;
+    if (!data.has_more) break;
+  }
+  const cutoff = new Date();
+  cutoff.setMonth(cutoff.getMonth() - 24);
+  return transactions.filter((t) => new Date(t.date) >= cutoff);
+}
+
 export async function POST(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
-  const user = await prisma.user.findUnique({
-    where: { id: authUser.id },
-    select: { plaidAccessToken: true, plaidLinked: true },
+  let plaidAccountId: string | undefined;
+  try {
+    const j = await req.json().catch(() => ({}));
+    if (j && typeof j.plaidAccountId === "string" && j.plaidAccountId.trim()) {
+      plaidAccountId = j.plaidAccountId.trim();
+    }
+  } catch {
+    /* optional body */
+  }
+
+  let accounts = await prisma.plaidAccount.findMany({
+    where: { userId: authUser.id },
+    orderBy: { createdAt: "asc" },
   });
-  if (!user?.plaidAccessToken || !user.plaidLinked) {
+
+  if (plaidAccountId) {
+    accounts = accounts.filter((a) => a.id === plaidAccountId);
+  }
+
+  if (accounts.length === 0) {
     return NextResponse.json({ error: "Bank not connected" }, { status: 400 });
   }
 
   try {
     const plaid = getPlaidClient();
-    const transactions: Transaction[] = [];
-    let cursor: string | undefined;
-
-    for (;;) {
-      const res = await plaid.transactionsSync({
-        access_token: user.plaidAccessToken,
-        cursor,
-        count: 500,
-        options: {
-          include_personal_finance_category: true,
-        },
-      });
-      const data = res.data;
-      transactions.push(...data.added);
-      cursor = data.next_cursor;
-      if (!data.has_more) break;
+    const allTx: Transaction[] = [];
+    for (const acc of accounts) {
+      const batch = await fetchAllTransactions(plaid, acc.accessToken);
+      allTx.push(...batch);
     }
 
-    const cutoff = new Date();
-    cutoff.setMonth(cutoff.getMonth() - 24);
-    const filtered = transactions.filter((t) => new Date(t.date) >= cutoff);
-
-    const subscriptions = await detectSubscriptionsFromPlaidTransactions(filtered);
-
-    await prisma.user.update({
-      where: { id: authUser.id },
-      data: { lastPlaidSync: new Date() },
+    const subscriptions = await detectSubscriptionsFromPlaidTransactions(allTx);
+    const now = new Date();
+    await prisma.plaidAccount.updateMany({
+      where: { id: { in: accounts.map((a) => a.id) } },
+      data: { lastSync: now },
     });
 
     console.log(
       "[POST /api/plaid/detect-subscriptions] user",
       authUser.id,
+      "banks",
+      accounts.length,
       "tx",
-      filtered.length,
+      allTx.length,
       "detected",
-      subscriptions.length
+      subscriptions.length,
     );
 
     return NextResponse.json({ ok: true, subscriptions });

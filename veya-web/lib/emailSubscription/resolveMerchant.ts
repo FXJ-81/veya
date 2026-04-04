@@ -18,10 +18,10 @@ export function resolveServiceNameAndCategory(
       if (s.includes("apple tv")) return { name: "Apple TV+", category: "Streaming" };
       return null;
     case "openai.com":
-      return { name: "ChatGPT Plus", category: "Productivity" };
+      return { name: "ChatGPT Plus", category: "AI" };
     case "anthropic.com":
     case "claude.ai":
-      return { name: "Claude Pro", category: "Productivity" }; // claude.ai receipts
+      return { name: "Claude Pro", category: "AI" }; // claude.ai receipts
     case "netflix.com":
       return { name: "Netflix", category: "Streaming" };
     case "spotify.com":

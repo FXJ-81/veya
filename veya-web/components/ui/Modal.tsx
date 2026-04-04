@@ -38,15 +38,23 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
       {open && (
         <motion.div
           key="modal-layer"
-          className="fixed inset-0 z-[100] flex items-center justify-center p-0 sm:p-4"
+          className="fixed inset-0 z-[300] flex items-center justify-center p-4 sm:p-6"
+          style={{
+            width: "100vw",
+            height: "100vh",
+            minHeight: "100dvh",
+            top: 0,
+            left: 0,
+          }}
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
         >
-          {/* Backdrop — separate from scaled panel so transform: scale doesn’t break centering */}
           <div
-            className="absolute inset-0 bg-black/60 backdrop-blur-sm"
+            className="absolute inset-0 backdrop-blur-[4px]"
+            style={{ background: "rgba(0,0,0,0.7)" }}
             onClick={onClose}
+            role="presentation"
             aria-hidden
           />
           <motion.div
@@ -57,13 +65,13 @@ export function Modal({ open, onClose, title, children, className }: ModalProps)
             exit={{ opacity: 0, scale: 0.95 }}
             transition={{ type: "spring", duration: 0.3 }}
             className={cn(
-              "relative z-10 flex max-h-[100dvh] w-full max-w-lg flex-col overflow-y-auto rounded-none border-0 border-border bg-card p-4 shadow-2xl sm:max-h-[min(90vh,800px)] sm:rounded-2xl sm:border sm:p-6",
-              className
+              "relative z-10 flex max-h-[min(100dvh,100vh)] w-full max-w-lg flex-col overflow-y-auto rounded-2xl border border-border bg-card p-4 shadow-2xl sm:max-h-[min(90vh,800px)] sm:p-6",
+              className,
             )}
             onClick={(e) => e.stopPropagation()}
           >
             {title && (
-              <h2 className="text-xl font-bold text-text-primary mb-4">{title}</h2>
+              <h2 className="mb-4 text-xl font-bold text-text-primary">{title}</h2>
             )}
             {children}
           </motion.div>

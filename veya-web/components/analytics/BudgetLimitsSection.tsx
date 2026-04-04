@@ -3,27 +3,8 @@
 import { useCallback, useEffect, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import type { BudgetStatus } from "@/app/api/budgets/status/route";
-
-// ─── helpers ─────────────────────────────────────────────────────────────────
-
-const KNOWN_CATEGORIES = [
-  "Streaming", "Music", "Productivity", "Storage", "Gaming",
-  "Education", "News", "Health", "Food & Dining", "AI",
-  "Entertainment", "Finance", "Transport", "Travel",
-  "Utilities", "Shopping", "Other",
-];
-
-const CATEGORY_ICONS: Record<string, string> = {
-  __total__: "💰", Streaming: "📺", Music: "🎵", Productivity: "💼",
-  Storage: "☁️", Gaming: "🎮", Education: "📚", News: "📰",
-  Health: "🏃", "Food & Dining": "🍔", AI: "🤖", Other: "📦",
-  Entertainment: "🎭", Finance: "💳", Transport: "🚗",
-  Travel: "✈️", Utilities: "🔌", Shopping: "🛍️",
-};
-
-function catIcon(c: string) {
-  return CATEGORY_ICONS[c] ?? "📦";
-}
+import { Modal } from "@/components/ui/Modal";
+import { SUBSCRIPTION_CATEGORIES, categoryIcon, categorySelectLabel } from "@/lib/categories";
 
 // ─── progress bar ─────────────────────────────────────────────────────────────
 
@@ -72,7 +53,7 @@ function BudgetCard({
     >
       <div className="flex items-center justify-between gap-2 mb-2">
         <div className="flex items-center gap-2 min-w-0">
-          <span className="text-base shrink-0">{catIcon(bs.category)}</span>
+          <span className="text-base shrink-0">{categoryIcon(bs.category)}</span>
           <span className="text-sm font-medium text-text-primary truncate">{label}</span>
         </div>
         <div className="flex items-center gap-1 shrink-0">
@@ -142,8 +123,8 @@ function BudgetModal({
   const [err, setErr] = useState("");
 
   const used = new Set(existingCategories);
-  const available = ["__total__", ...KNOWN_CATEGORIES].filter(
-    (c) => !used.has(c) || c === editing?.category
+  const available = ["__total__", ...SUBSCRIPTION_CATEGORIES].filter(
+    (c) => !used.has(c) || c === editing?.category,
   );
 
   const handleSave = async () => {
@@ -162,84 +143,73 @@ function BudgetModal({
   };
 
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:items-center sm:p-4"
-      onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onClose(); }}
+    <Modal
+      open
+      onClose={() => {
+        if (!busy) onClose();
+      }}
+      title={editing ? "Edit budget" : "Add budget"}
+      className="max-w-sm"
     >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        exit={{ opacity: 0, scale: 0.96 }}
-        className="max-h-[100dvh] w-full max-w-sm overflow-y-auto rounded-none border border-border p-5 sm:max-h-[min(90vh,720px)] sm:rounded-2xl sm:p-6"
-        style={{ background: "#111118" }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold text-text-primary mb-4">
-          {editing ? "Edit budget" : "Add budget"}
-        </h3>
-
-        <div className="space-y-4">
-          <div>
-            <label className="mb-1.5 block text-sm text-text-tertiary">Category</label>
-            {editing?.category === "__total__" ? (
-              <p className="text-sm font-medium text-text-primary">Total subscriptions</p>
-            ) : (
-              <select
-                value={category}
-                onChange={(e) => setCategory(e.target.value)}
-                disabled={!!editing}
-                className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:opacity-60"
-              >
-                <option value="">Select category…</option>
-                {available.map((c) => (
-                  <option key={c} value={c}>
-                    {c === "__total__" ? "💰 Total subscriptions" : `${catIcon(c)} ${c}`}
-                  </option>
-                ))}
-              </select>
-            )}
-          </div>
-
-          <div>
-            <label className="mb-1.5 block text-sm text-text-tertiary">Monthly limit ($)</label>
-            <input
-              type="number"
-              min={0}
-              step={0.01}
-              value={limitStr}
-              onChange={(e) => setLimitStr(e.target.value)}
-              placeholder="e.g. 50"
-              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
-            />
-          </div>
-
-          {err && <p className="text-sm text-danger">{err}</p>}
-
-          <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-end">
-            <button
-              type="button"
-              onClick={onClose}
-              disabled={busy}
-              className="min-h-[44px] rounded-xl border border-border px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50 sm:min-h-0"
+      <div className="space-y-4">
+        <div>
+          <label className="mb-1.5 block text-sm text-text-tertiary">Category</label>
+          {editing?.category === "__total__" ? (
+            <p className="text-sm font-medium text-text-primary">Total subscriptions</p>
+          ) : (
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              disabled={!!editing}
+              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/40 disabled:opacity-60"
             >
-              Cancel
-            </button>
-            <button
-              type="button"
-              onClick={handleSave}
-              disabled={busy}
-              className="min-h-[44px] rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 sm:min-h-0"
-            >
-              {busy ? "Saving…" : "Save"}
-            </button>
-          </div>
+              <option value="">Select category…</option>
+              {available.map((c) => (
+                <option key={c} value={c}>
+                  {c === "__total__" ? "💰 Total subscriptions" : categorySelectLabel(c)}
+                </option>
+              ))}
+            </select>
+          )}
         </div>
-      </motion.div>
-    </div>
+
+        <div>
+          <label className="mb-1.5 block text-sm text-text-tertiary">Monthly limit ($)</label>
+          <input
+            type="number"
+            min={0}
+            step={0.01}
+            value={limitStr}
+            onChange={(e) => setLimitStr(e.target.value)}
+            placeholder="e.g. 50"
+            className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
+          />
+        </div>
+
+        {err && <p className="text-sm text-danger">{err}</p>}
+
+        <div className="flex flex-col gap-2 pt-1 sm:flex-row sm:justify-end">
+          <button
+            type="button"
+            onClick={onClose}
+            disabled={busy}
+            className="min-h-[44px] rounded-xl border border-border px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50 sm:min-h-0"
+          >
+            Cancel
+          </button>
+          <button
+            type="button"
+            onClick={handleSave}
+            disabled={busy}
+            className="min-h-[44px] rounded-xl bg-accent px-4 py-2 text-sm font-semibold text-white transition-opacity hover:opacity-90 disabled:opacity-50 sm:min-h-0"
+          >
+            {busy ? "Saving…" : "Save"}
+          </button>
+        </div>
+      </div>
+    </Modal>
   );
 }
-
-// ─── delete confirm ───────────────────────────────────────────────────────────
 
 function DeleteConfirm({
   onConfirm,
@@ -251,42 +221,37 @@ function DeleteConfirm({
   busy: boolean;
 }) {
   return (
-    <div
-      className="fixed inset-0 z-50 flex items-stretch justify-center bg-black/60 p-0 sm:items-center sm:p-4"
-      onMouseDown={(e) => { if (e.target === e.currentTarget && !busy) onCancel(); }}
+    <Modal
+      open
+      onClose={() => {
+        if (!busy) onCancel();
+      }}
+      title="Delete budget?"
+      className="max-w-sm"
     >
-      <motion.div
-        initial={{ opacity: 0, scale: 0.96 }}
-        animate={{ opacity: 1, scale: 1 }}
-        className="max-h-[100dvh] w-full max-w-sm overflow-y-auto rounded-none border border-border p-5 sm:max-h-[min(90vh,480px)] sm:rounded-2xl sm:p-6"
-        style={{ background: "#111118" }}
-        onMouseDown={(e) => e.stopPropagation()}
-      >
-        <h3 className="text-lg font-semibold text-text-primary mb-2">Delete budget?</h3>
-        <p className="text-sm text-text-secondary mb-5">
-          This will permanently remove this budget limit.
-        </p>
-        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <button
-            type="button"
-            onClick={onCancel}
-            disabled={busy}
-            className="min-h-[44px] rounded-xl border border-border px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50 sm:min-h-0"
-          >
-            Cancel
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            disabled={busy}
-            className="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-50 sm:min-h-0"
-            style={{ background: "#f87171" }}
-          >
-            {busy ? "Deleting…" : "Delete"}
-          </button>
-        </div>
-      </motion.div>
-    </div>
+      <p className="text-sm text-text-secondary mb-5">
+        This will permanently remove this budget limit.
+      </p>
+      <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+        <button
+          type="button"
+          onClick={onCancel}
+          disabled={busy}
+          className="min-h-[44px] rounded-xl border border-border px-4 py-2 text-sm font-medium text-text-secondary transition-colors hover:text-text-primary disabled:opacity-50 sm:min-h-0"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          onClick={onConfirm}
+          disabled={busy}
+          className="min-h-[44px] rounded-xl px-4 py-2 text-sm font-semibold text-white transition-opacity disabled:opacity-50 sm:min-h-0"
+          style={{ background: "#f87171" }}
+        >
+          {busy ? "Deleting…" : "Delete"}
+        </button>
+      </div>
+    </Modal>
   );
 }
 
@@ -386,25 +351,23 @@ export function BudgetLimitsSection() {
         )}
       </div>
 
-      <AnimatePresence>
-        {modal && (
-          <BudgetModal
-            key="modal"
-            mode={modal}
-            existingCategories={existingCategories}
-            onClose={() => setModal(null)}
-            onSave={handleSave}
-          />
-        )}
-        {deleteTarget && (
-          <DeleteConfirm
-            key="delete"
-            onConfirm={handleDelete}
-            onCancel={() => setDeleteTarget(null)}
-            busy={deleteBusy}
-          />
-        )}
-      </AnimatePresence>
+      {modal && (
+        <BudgetModal
+          key={modal.type === "edit" ? modal.bs.id : "add"}
+          mode={modal}
+          existingCategories={existingCategories}
+          onClose={() => setModal(null)}
+          onSave={handleSave}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteConfirm
+          key={deleteTarget}
+          onConfirm={handleDelete}
+          onCancel={() => setDeleteTarget(null)}
+          busy={deleteBusy}
+        />
+      )}
     </>
   );
 }

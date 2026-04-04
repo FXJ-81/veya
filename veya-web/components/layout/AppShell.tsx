@@ -19,35 +19,35 @@ export function AppShell({
   const isCoach = variant === "coach";
 
   return (
-    <div className="min-h-screen min-w-[320px] bg-background">
+    <div className="flex min-h-screen min-w-[320px] flex-col bg-background">
       <Sidebar />
       <BottomNav />
 
       <div
         className={cn(
-          "w-full min-w-0 max-w-[100vw]",
+          "flex min-h-0 w-full min-w-0 max-w-[100vw] flex-1 flex-col",
           isCoach &&
-            "flex min-h-[100dvh] flex-col lg:h-[100dvh] lg:max-h-screen lg:min-h-0",
+            "min-h-[100dvh] lg:h-[100dvh] lg:max-h-screen lg:min-h-0",
         )}
       >
         <main
           className={cn(
-            "flex min-w-0 flex-col",
-            isCoach && "min-h-0 flex-1",
-            /* Mobile: no top bar; clear bottom tab bar */
-            "max-md:pl-4 max-md:pr-4 max-md:pt-[max(0.75rem,env(safe-area-inset-top,0px))]",
-            "max-md:pb-[calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px)+0.5rem)]",
-            /* Tablet */
-            "md:px-5 md:pb-6 md:pt-16",
-            /* Desktop */
-            "lg:px-0 lg:pb-6 lg:pl-[var(--app-sidebar-width)] lg:pr-6 lg:pt-6 xl:pr-8",
+            "flex min-w-0 flex-1 flex-col",
+            isCoach && "min-h-0",
+            /* Mobile: 24px horizontal padding; clear bottom tab bar */
+            "max-md:px-6 max-md:pt-[max(1.5rem,env(safe-area-inset-top,0px))]",
+            "max-md:pb-[calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px)+1.5rem)]",
+            /* Tablet: 24px padding below top bar */
+            "md:px-6 md:pb-6 md:pt-16",
+            /* Desktop: 24px padding; offset past sidebar rail */
+            "lg:py-6 lg:pr-6 lg:pl-[calc(var(--app-sidebar-width)+1.5rem)] xl:pr-8",
             isCoach && "lg:overflow-hidden",
           )}
         >
           <div
             className={cn(
-              "mx-auto w-full min-w-0 max-w-[var(--app-workspace-max)] break-words",
-              isCoach && "flex min-h-0 flex-1 flex-col",
+              "mx-auto flex w-full min-w-0 max-w-[var(--app-workspace-max)] flex-1 flex-col break-words",
+              isCoach && "min-h-0",
             )}
           >
             {children}
