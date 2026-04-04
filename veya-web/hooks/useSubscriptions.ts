@@ -35,7 +35,14 @@ export function useSubscriptionMutations() {
       }
       return (await res.json()) as Subscription;
     },
-    onSuccess: async () => {
+    onSuccess: async (data) => {
+      qc.setQueryData<Subscription[]>(QUERY_KEYS.subscriptions, (old) => {
+        const list = old ?? [];
+        if (list.some((s) => s.id === data.id)) {
+          return list.map((s) => (s.id === data.id ? data : s));
+        }
+        return [...list, data];
+      });
       await invalidateAfterSubscriptionChange(qc);
     },
   });
@@ -78,6 +85,19 @@ export function useSubscriptionMutations() {
     mutationFn: async (id: string) => {
       const res = await fetch(`/api/subscriptions/${id}`, { method: "DELETE" });
       if (!res.ok) throw new Error("Failed to delete");
+    },
+    onMutate: async (id) => {
+      await qc.cancelQueries({ queryKey: QUERY_KEYS.subscriptions });
+      const previous = qc.getQueryData<Subscription[]>(QUERY_KEYS.subscriptions);
+      qc.setQueryData<Subscription[]>(QUERY_KEYS.subscriptions, (old) =>
+        (old ?? []).filter((s) => s.id !== id),
+      );
+      return { previous };
+    },
+    onError: (_err, _id, ctx) => {
+      if (ctx?.previous) {
+        qc.setQueryData(QUERY_KEYS.subscriptions, ctx.previous);
+      }
     },
     onSuccess: async () => {
       await invalidateAfterSubscriptionChange(qc);

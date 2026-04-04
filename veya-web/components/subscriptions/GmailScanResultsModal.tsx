@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { formatCurrency } from "@/lib/utils";
+import type { ScanImportResult } from "@/lib/executeScanImport";
 import type { GmailScanRow, ScanImportPayload, SubscriptionScanSource } from "@/types/scan";
 
 export type { GmailScanRow, ScanImportPayload } from "@/types/scan";
@@ -12,7 +13,9 @@ type GmailScanResultsModalProps = {
   candidates: GmailScanRow[];
   onClose: () => void;
   onSkip: () => void | Promise<void>;
-  onImport: (payload: ScanImportPayload) => void | Promise<void>;
+  onImport: (payload: ScanImportPayload) => Promise<ScanImportResult>;
+  /** Called after a successful import when the modal should close (Gmail-only, or Plaid summary "Done"). */
+  onAfterImportClose?: () => void;
   firstAutoComplete?: boolean;
   busy?: boolean;
 };
@@ -33,13 +36,21 @@ export function GmailScanResultsModal({
   onClose,
   onSkip,
   onImport,
+  onAfterImportClose,
   firstAutoComplete = false,
   busy = false,
 }: GmailScanResultsModalProps) {
   const [selected, setSelected] = useState<Record<string, boolean>>({});
+  const [plaidImportSummary, setPlaidImportSummary] = useState<{
+    added: number;
+    skipped: number;
+  } | null>(null);
 
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setPlaidImportSummary(null);
+      return;
+    }
     const next: Record<string, boolean> = {};
     candidates.forEach((c, i) => {
       next[rowKey(c, i)] = true;
@@ -89,6 +100,7 @@ export function GmailScanResultsModal({
         if (!c.lastCharged) continue;
         plaidItems.push({
           name: c.name,
+          merchantName: c.merchantName ?? c.name,
           category: c.category,
           price: c.price,
           billingCycle:
@@ -101,6 +113,7 @@ export function GmailScanResultsModal({
       else if (c.lastCharged) {
         plaidItems.push({
           name: c.name,
+          merchantName: c.merchantName ?? c.name,
           category: c.category,
           price: c.price,
           billingCycle:
@@ -112,8 +125,22 @@ export function GmailScanResultsModal({
     return { gmailMessageIds, plaidItems };
   };
 
+  const finishAfterImport = () => {
+    setPlaidImportSummary(null);
+    (onAfterImportClose ?? onClose)();
+  };
+
   const handleImport = async () => {
-    await onImport(buildPayload());
+    const payload = buildPayload();
+    const result = await onImport(payload);
+    if (payload.plaidItems.length > 0) {
+      setPlaidImportSummary({
+        added: result.plaidAdded,
+        skipped: result.plaidSkipped,
+      });
+    } else {
+      finishAfterImport();
+    }
   };
 
   const handleSkip = async () => {
@@ -123,11 +150,21 @@ export function GmailScanResultsModal({
   return (
     <Modal
       open={open}
-      onClose={busy ? () => {} : onClose}
+      onClose={busy ? () => {} : plaidImportSummary ? finishAfterImport : onClose}
       title={title}
       className="max-w-lg"
     >
-      {n > 0 && (
+      {plaidImportSummary && (
+        <div className="mb-4 rounded-xl border border-border bg-background-secondary/80 px-4 py-3 text-sm text-text-primary">
+          <p className="font-medium text-text-primary">Import complete</p>
+          <p className="mt-1 text-text-secondary">
+            {plaidImportSummary.added} new found, {plaidImportSummary.skipped} already in your list
+            (skipped)
+          </p>
+        </div>
+      )}
+
+      {n > 0 && !plaidImportSummary && (
         <ul className="space-y-3 mb-6 max-h-[min(50vh,420px)] overflow-y-auto pr-1">
           {candidates.map((c, index) => {
             const key = rowKey(c, index);
@@ -142,7 +179,7 @@ export function GmailScanResultsModal({
                     className="mt-1 rounded border-border"
                     checked={!!selected[key]}
                     onChange={() => toggle(key)}
-                    disabled={busy}
+                    disabled={busy || !!plaidImportSummary}
                   />
                   <span className="flex flex-1 min-w-0 flex-col gap-1">
                     <span className="text-[11px] text-text-tertiary">
@@ -201,24 +238,36 @@ export function GmailScanResultsModal({
       )}
 
       <div className="flex flex-col-reverse sm:flex-row gap-3 sm:justify-end">
-        <button
-          type="button"
-          disabled={busy}
-          onClick={handleSkip}
-          className="rounded-xl border border-border bg-background-secondary px-4 py-3 text-sm font-medium text-text-primary hover:bg-background disabled:opacity-50"
-        >
-          Skip
-        </button>
-        {n > 0 && (
+        {plaidImportSummary ? (
           <button
             type="button"
-            disabled={busy || selectedRows.length === 0}
-            onClick={handleImport}
-            className="rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+            onClick={finishAfterImport}
+            className="rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white hover:opacity-90"
           >
-            Add {selectedRows.length} subscription
-            {selectedRows.length === 1 ? "" : "s"}
+            Done
           </button>
+        ) : (
+          <>
+            <button
+              type="button"
+              disabled={busy}
+              onClick={handleSkip}
+              className="rounded-xl border border-border bg-background-secondary px-4 py-3 text-sm font-medium text-text-primary hover:bg-background disabled:opacity-50"
+            >
+              Skip
+            </button>
+            {n > 0 && (
+              <button
+                type="button"
+                disabled={busy || selectedRows.length === 0}
+                onClick={handleImport}
+                className="rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+              >
+                Add {selectedRows.length} subscription
+                {selectedRows.length === 1 ? "" : "s"}
+              </button>
+            )}
+          </>
         )}
       </div>
       {firstAutoComplete && n === 0 && (

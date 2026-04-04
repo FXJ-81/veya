@@ -6,6 +6,7 @@ export function mapPlaidDetectToScanRows(subs: PlaidDetectedSubscription[]): Gma
     rowId: `plaid-${i}-${s.name.replace(/[^\w]+/g, "-").slice(0, 48)}`,
     source: "plaid" as const,
     name: s.name,
+    merchantName: s.merchantName ?? s.name,
     category: s.category,
     price: s.price,
     billingCycle: s.billingCycle,

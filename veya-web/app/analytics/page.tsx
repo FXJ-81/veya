@@ -15,7 +15,7 @@ import { BudgetLimitsSection } from "@/components/analytics/BudgetLimitsSection"
 export default function AnalyticsPage() {
   const { status } = useSession();
   const router = useRouter();
-  const { data: analytics, isLoading, isFetching } = useAnalytics();
+  const { data: analytics, isLoading, isFetching, isError, refetch } = useAnalytics();
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -46,6 +46,20 @@ export default function AnalyticsPage() {
           <div className="space-y-6">
             <Skeleton className="h-48 rounded-2xl" />
             <Skeleton className="h-64 rounded-2xl" />
+          </div>
+        ) : isError ? (
+          <div className="rounded-2xl border border-border bg-card p-8 text-center">
+            <p className="font-medium text-text-primary">Could not load analytics</p>
+            <p className="mt-2 text-sm text-text-secondary">
+              Check your connection and try again.
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="mt-6 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+            >
+              Retry
+            </button>
           </div>
         ) : (
           <div

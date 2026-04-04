@@ -5,6 +5,8 @@ import { WEEKS_PER_MONTH } from "@/lib/subscriptionBilling";
 
 export type PlaidDetectedSubscription = {
   name: string;
+  /** Original Plaid merchant string (same as grouping key; for import dedup) */
+  merchantName: string;
   price: number;
   billingCycle: "monthly" | "yearly" | "weekly" | "custom";
   category: string;
@@ -147,6 +149,7 @@ export async function detectSubscriptionsFromPlaidTransactions(
 
       out.push({
         name: merchant,
+        merchantName: merchant,
         price: monthlyPrice,
         billingCycle: cycle === "custom" ? "monthly" : cycle,
         category: "Other", // filled in below
@@ -159,6 +162,7 @@ export async function detectSubscriptionsFromPlaidTransactions(
     if (known && sorted.length === 1) {
       out.push({
         name: merchant,
+        merchantName: merchant,
         price: Number(Math.abs(Number(last.amount)).toFixed(2)),
         billingCycle: "monthly",
         category: "Other", // filled in below

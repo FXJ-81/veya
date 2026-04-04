@@ -1,10 +1,13 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useState } from "react";
+import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import type { BudgetStatus } from "@/app/api/budgets/status/route";
 import { Modal } from "@/components/ui/Modal";
 import { SUBSCRIPTION_CATEGORIES, categoryIcon, categorySelectLabel } from "@/lib/categories";
+import { useBudgetStatuses } from "@/hooks/useBudgetStatus";
+import { invalidateAfterBudgetChange } from "@/lib/invalidateSubscriptionQueries";
 
 // ─── progress bar ─────────────────────────────────────────────────────────────
 
@@ -269,21 +272,17 @@ function DeleteConfirm({
 // ─── main exported section ────────────────────────────────────────────────────
 
 export function BudgetLimitsSection() {
-  const [statuses, setStatuses] = useState<BudgetStatus[]>([]);
-  const [loading, setLoading] = useState(true);
+  const qc = useQueryClient();
+  const {
+    data: statuses = [],
+    isLoading: loading,
+    isError,
+    error,
+    refetch,
+  } = useBudgetStatuses();
   const [modal, setModal] = useState<ModalMode | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
-
-  const reload = useCallback(async () => {
-    const res = await fetch("/api/budgets/status");
-    if (!res.ok) return;
-    const j = await res.json();
-    setStatuses(j.statuses ?? []);
-    setLoading(false);
-  }, []);
-
-  useEffect(() => { reload(); }, [reload]);
 
   const handleSave = async (data: { category: string; limit: number }) => {
     if (modal?.type === "edit") {
@@ -302,7 +301,7 @@ export function BudgetLimitsSection() {
       if (!res.ok) throw new Error((await res.json().catch(() => ({}))).error ?? "Create failed");
     }
     setModal(null);
-    await reload();
+    await invalidateAfterBudgetChange(qc);
   };
 
   const handleDelete = async () => {
@@ -311,7 +310,7 @@ export function BudgetLimitsSection() {
     try {
       await fetch(`/api/budgets/${deleteTarget}`, { method: "DELETE" });
       setDeleteTarget(null);
-      await reload();
+      await invalidateAfterBudgetChange(qc);
     } finally {
       setDeleteBusy(false);
     }
@@ -333,7 +332,20 @@ export function BudgetLimitsSection() {
           </button>
         </div>
 
-        {loading ? (
+        {isError ? (
+          <div className="rounded-xl border border-danger/30 bg-danger/10 px-4 py-3 text-sm">
+            <p className="font-medium text-danger">
+              {error instanceof Error ? error.message : "Could not load budgets"}
+            </p>
+            <button
+              type="button"
+              onClick={() => void refetch()}
+              className="mt-2 rounded-lg border border-border px-3 py-1.5 text-xs font-medium text-text-primary hover:bg-surface"
+            >
+              Retry
+            </button>
+          </div>
+        ) : loading ? (
           <div className="space-y-3">
             {[1, 2].map((i) => (
               <div key={i} className="h-20 rounded-xl bg-surface animate-pulse" />

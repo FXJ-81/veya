@@ -3,6 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, type FormEvent } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
+import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/layout/AppShell";
@@ -17,6 +18,7 @@ import {
 import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
 import { PlaidSecurityBadges } from "@/components/settings/PlaidSecurityBadges";
 import { executeScanImport } from "@/lib/executeScanImport";
+import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
 
@@ -66,6 +68,7 @@ function scanLabel(iso: string | null): string {
 export default function SettingsPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
+  const qc = useQueryClient();
   const [plan, setPlan] = useState<"free" | "premium">("free");
 
   // Bank accounts state — null = still loading, [] = loaded (empty), [...] = loaded
@@ -282,11 +285,13 @@ export default function SettingsPage() {
   const importScanSelection = async (payload: ScanImportPayload) => {
     setGmailImportBusy(true);
     try {
-      await executeScanImport(payload);
-      setGmailResultsOpen(false);
+      const result = await executeScanImport(payload);
+      await invalidateAfterSubscriptionChange(qc);
       await loadBankAccounts();
+      return result;
     } catch (e) {
       setBankError(e instanceof Error ? e.message : "Import failed");
+      throw e;
     } finally {
       setGmailImportBusy(false);
     }
@@ -783,6 +788,7 @@ export default function SettingsPage() {
         onClose={() => { if (!gmailImportBusy) setGmailResultsOpen(false); }}
         onSkip={() => setGmailResultsOpen(false)}
         onImport={importScanSelection}
+        onAfterImportClose={() => setGmailResultsOpen(false)}
         busy={gmailImportBusy}
       />
 

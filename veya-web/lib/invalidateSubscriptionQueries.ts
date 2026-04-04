@@ -16,7 +16,17 @@ export async function invalidateAfterSubscriptionChange(qc: QueryClient): Promis
     qc.invalidateQueries({ queryKey: QUERY_KEYS.analytics.categories }),
     qc.invalidateQueries({ queryKey: QUERY_KEYS.analytics.score }),
     qc.invalidateQueries({ queryKey: QUERY_KEYS.analytics.insights }),
+    // Budget progress uses live subscription spend
+    qc.invalidateQueries({ queryKey: QUERY_KEYS.budgets.status }),
     // Dashboard AI tip uses subscription data
     qc.invalidateQueries({ queryKey: QUERY_KEYS.dailyTip }),
+  ]);
+}
+
+/** After creating/updating/deleting a budget limit (not subscription list). */
+export async function invalidateAfterBudgetChange(qc: QueryClient): Promise<void> {
+  await Promise.all([
+    qc.invalidateQueries({ queryKey: QUERY_KEYS.budgets.status }),
+    qc.invalidateQueries({ queryKey: QUERY_KEYS.analytics.all }),
   ]);
 }

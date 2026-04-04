@@ -21,4 +21,8 @@ export const QUERY_KEYS = {
   },
 
   dailyTip: ["daily-tip"] as const,
+
+  budgets: {
+    status: ["budgets", "status"] as const,
+  },
 } as const;

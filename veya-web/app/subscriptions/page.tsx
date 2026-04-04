@@ -15,6 +15,7 @@ import {
 import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
 import { useSubscriptions, useSubscriptionMutations } from "@/hooks/useSubscriptions";
 import { useQueryClient } from "@tanstack/react-query";
+import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
 import type { Subscription } from "@/types";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
@@ -33,7 +34,13 @@ function SubscriptionsContent() {
   const [search, setSearch] = useState("");
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState<"name" | "price" | "nextRenewal">("nextRenewal");
-  const { data: subs, isLoading, isFetching } = useSubscriptions();
+  const {
+    data: subs,
+    isLoading,
+    isFetching,
+    isError: subsError,
+    refetch: refetchSubs,
+  } = useSubscriptions();
   const { update, remove, create } = useSubscriptionMutations();
   const qc = useQueryClient();
   const isMutating = create.isPending || update.isPending || remove.isPending;
@@ -73,13 +80,13 @@ function SubscriptionsContent() {
   const importScanSelection = async (payload: ScanImportPayload) => {
     setGmailImportBusy(true);
     try {
-      await executeScanImport(payload);
-      setGmailResultsOpen(false);
-      await qc.invalidateQueries({ queryKey: ["subscriptions"] });
-      await qc.invalidateQueries({ queryKey: ["analytics"] });
+      const result = await executeScanImport(payload);
+      await invalidateAfterSubscriptionChange(qc);
       await refreshConnectionSettings();
+      return result;
     } catch (e) {
       alert(e instanceof Error ? e.message : "Import failed");
+      throw e;
     } finally {
       setGmailImportBusy(false);
     }
@@ -163,6 +170,26 @@ function SubscriptionsContent() {
 
   if (status === "loading" || status === "unauthenticated") {
     return <div className="min-h-screen flex items-center justify-center" />;
+  }
+
+  if (subsError) {
+    return (
+      <AppShell>
+        <div className="rounded-2xl border border-border bg-card p-8 text-center">
+          <p className="text-text-primary font-medium">Could not load subscriptions</p>
+          <p className="mt-2 text-sm text-text-secondary">
+            Check your connection and try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refetchSubs()}
+            className="mt-6 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+          >
+            Retry
+          </button>
+        </div>
+      </AppShell>
+    );
   }
 
   const filtered =
@@ -374,6 +401,7 @@ function SubscriptionsContent() {
         onClose={closeGmailResults}
         onSkip={closeGmailResults}
         onImport={importScanSelection}
+        onAfterImportClose={() => setGmailResultsOpen(false)}
         busy={gmailImportBusy}
       />
 
@@ -390,11 +418,14 @@ function SubscriptionsContent() {
 
 export default function SubscriptionsPage() {
   return (
-    <Suspense fallback={
-      <div className="min-h-screen bg-background flex items-center justify-center">
-        <div className="text-text-secondary">Loading...</div>
-      </div>
-    }>
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-background px-4 py-8">
+          <Skeleton className="mx-auto mb-6 h-10 max-w-md rounded-xl" />
+          <Skeleton className="mx-auto h-48 max-w-3xl rounded-2xl" />
+        </div>
+      }
+    >
       <SubscriptionsContent />
     </Suspense>
   );

@@ -204,11 +204,11 @@ export default function CoachPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed");
+      if (json.actionPerformed) {
+        await invalidateAfterSubscriptionChange(qc);
+      }
       if (Array.isArray(json.messages)) {
         setMessages(cleanMessages(json.messages));
-        if (json.actionPerformed) {
-          await invalidateAfterSubscriptionChange(qc);
-        }
         // Keep dropdown in sync after messages are saved.
         await refreshConversations();
       } else {

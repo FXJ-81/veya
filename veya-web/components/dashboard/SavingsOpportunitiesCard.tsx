@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import type { BudgetStatus } from "@/app/api/budgets/status/route";
 import type { Subscription } from "@/types";
 import { formatCurrency } from "@/lib/utils";
 import { hasSubscriptionStarted, pricePerMonth } from "@/lib/subscriptionBilling";
+import { useBudgetStatuses } from "@/hooks/useBudgetStatus";
 
 type Suggestion = {
   id: string;
@@ -31,14 +32,7 @@ export function SavingsOpportunitiesCard({
   subs: Subscription[] | undefined;
   subsLoading: boolean;
 }) {
-  const [budgetStatuses, setBudgetStatuses] = useState<BudgetStatus[]>([]);
-
-  useEffect(() => {
-    fetch("/api/budgets/status")
-      .then((r) => r.json())
-      .then((j) => setBudgetStatuses(Array.isArray(j.statuses) ? j.statuses : []))
-      .catch(() => setBudgetStatuses([]));
-  }, []);
+  const { data: budgetStatuses = [] } = useBudgetStatuses();
 
   const suggestions = useMemo((): Suggestion[] => {
     if (!subs?.length) return [];

@@ -5,6 +5,8 @@ export type GmailScanRow = {
   messageId?: string;
   source?: SubscriptionScanSource;
   name: string;
+  /** Plaid: raw merchant / transaction label for dedup vs existing subs */
+  merchantName?: string;
   category: string;
   price: number;
   billingCycle: "monthly" | "yearly" | "weekly" | "custom";
@@ -18,6 +20,8 @@ export type GmailScanRow = {
 
 export type PlaidImportItem = {
   name: string;
+  /** Bank merchant name (normalized dedup vs subscription names) */
+  merchantName?: string;
   category: string;
   price: number;
   billingCycle: "monthly" | "yearly" | "weekly" | "custom";

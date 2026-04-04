@@ -12,6 +12,7 @@ import {
 } from "@/components/subscriptions/GmailScanResultsModal";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import { executeScanImport } from "@/lib/executeScanImport";
+import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
 import type { ScanImportPayload } from "@/types/scan";
 
 type ConnectionSettings = {
@@ -119,7 +120,7 @@ export function GmailOnboarding() {
       });
       setResultsModal(false);
       setBanner("hidden");
-      await qc.invalidateQueries({ queryKey: ["subscriptions"] });
+      await invalidateAfterSubscriptionChange(qc);
       router.refresh();
     } finally {
       setImportBusy(false);
@@ -129,12 +130,10 @@ export function GmailOnboarding() {
   const importSelected = async (payload: ScanImportPayload) => {
     setImportBusy(true);
     try {
-      await executeScanImport(payload, { firstAutoComplete: true });
-      setResultsModal(false);
-      setBanner("hidden");
-      await qc.invalidateQueries({ queryKey: ["subscriptions"] });
-      await qc.invalidateQueries({ queryKey: ["analytics"] });
+      const result = await executeScanImport(payload, { firstAutoComplete: true });
+      await invalidateAfterSubscriptionChange(qc);
       router.refresh();
+      return result;
     } finally {
       setImportBusy(false);
     }
@@ -164,6 +163,10 @@ export function GmailOnboarding() {
         onClose={importBusy ? () => {} : dismissResults}
         onSkip={dismissResults}
         onImport={importSelected}
+        onAfterImportClose={() => {
+          setResultsModal(false);
+          setBanner("hidden");
+        }}
         firstAutoComplete
         busy={importBusy}
       />

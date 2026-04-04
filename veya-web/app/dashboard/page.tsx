@@ -24,11 +24,19 @@ import { SavingsOpportunitiesCard } from "@/components/dashboard/SavingsOpportun
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
-  const { data: subs, isLoading: subsLoading, isFetching: subsFetching } = useSubscriptions();
+  const {
+    data: subs,
+    isLoading: subsLoading,
+    isFetching: subsFetching,
+    isError: subsError,
+    refetch: refetchSubs,
+  } = useSubscriptions();
   const {
     data: analytics,
     isLoading: analyticsLoading,
     isFetching: analyticsFetching,
+    isError: analyticsError,
+    refetch: refetchAnalytics,
   } = useAnalytics();
 
   useEffect(() => {
@@ -42,6 +50,26 @@ export default function DashboardPage() {
       <div className="min-h-screen flex items-center justify-center">
         <Skeleton className="h-12 w-48" />
       </div>
+    );
+  }
+
+  if (subsError) {
+    return (
+      <AppShell>
+        <div className="rounded-2xl border border-border bg-card p-8 text-center">
+          <p className="font-medium text-text-primary">Could not load dashboard data</p>
+          <p className="mt-2 text-sm text-text-secondary">
+            Subscriptions could not be loaded. Check your connection and try again.
+          </p>
+          <button
+            type="button"
+            onClick={() => void refetchSubs()}
+            className="mt-6 rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+          >
+            Retry
+          </button>
+        </div>
+      </AppShell>
     );
   }
 
@@ -155,6 +183,17 @@ export default function DashboardPage() {
               <div className="flex h-full min-h-[18rem] flex-col lg:min-h-[22rem]">
                 {analyticsLoading ? (
                   <Skeleton className="min-h-[18rem] flex-1 rounded-2xl lg:min-h-full" />
+                ) : analyticsError ? (
+                  <div className="flex min-h-[18rem] flex-1 flex-col items-center justify-center rounded-2xl border border-border bg-card p-6 text-center lg:min-h-full">
+                    <p className="text-sm text-text-secondary">Could not load spending breakdown.</p>
+                    <button
+                      type="button"
+                      onClick={() => void refetchAnalytics()}
+                      className="mt-4 rounded-lg border border-border px-4 py-2 text-sm font-medium text-text-primary hover:bg-background-secondary"
+                    >
+                      Retry
+                    </button>
+                  </div>
                 ) : analytics?.categoryBreakdown?.length ? (
                   <CategoryDonut
                     data={analytics.categoryBreakdown}
