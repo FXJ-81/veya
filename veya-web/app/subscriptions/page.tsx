@@ -277,13 +277,28 @@ function SubscriptionsContent() {
                 type="button"
                 onClick={resyncPlaid}
                 disabled={plaidBusy}
-                className="rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm font-medium text-text-primary hover:border-accent disabled:opacity-50"
+                className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-background-secondary px-3 py-2 text-sm font-medium text-text-primary hover:border-accent disabled:opacity-50"
               >
-                {plaidBusy
-                  ? "Syncing…"
-                  : plaidAccounts.length > 1
-                    ? `✅ ${plaidAccounts.length} banks · Resync all`
-                    : "✅ Bank connected · Resync"}
+                <span className="min-w-0 truncate">
+                  🟢{" "}
+                  {plaidAccounts.length === 1
+                    ? plaidAccounts[0].bankName
+                    : `${plaidAccounts.length} banks`}{" "}
+                  · Connected
+                </span>
+                <span className="shrink-0 text-text-tertiary" aria-hidden>
+                  |
+                </span>
+                <span className="flex shrink-0 items-center gap-1">
+                  {plaidBusy ? (
+                    "Loading..."
+                  ) : (
+                    <>
+                      <span aria-hidden>🔄</span>
+                      Transactions
+                    </>
+                  )}
+                </span>
               </button>
             ) : (
               <button
