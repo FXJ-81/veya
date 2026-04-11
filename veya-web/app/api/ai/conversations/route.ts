@@ -23,18 +23,16 @@ export async function GET(req: Request) {
 
   const rows = await prisma.aIConversation.findMany({
     where: { userId: authUser.id },
-    orderBy: { createdAt: "desc" },
-    select: { id: true, messages: true, createdAt: true },
+    orderBy: { updatedAt: "desc" },
+    select: { id: true, messages: true, createdAt: true, updatedAt: true },
   });
 
   const conversations = rows.map((row) => ({
     id: row.id,
     title: deriveTitle(row.messages),
     createdAt: row.createdAt.toISOString(),
-    updatedAt: row.createdAt.toISOString(),
+    updatedAt: row.updatedAt.toISOString(),
   }));
-
-  console.log("[GET /api/ai/conversations] userId:", authUser.id, "count:", conversations.length);
 
   return NextResponse.json({ conversations });
 }
@@ -45,17 +43,15 @@ export async function POST(req: Request) {
 
   const row = await prisma.aIConversation.create({
     data: { userId: authUser.id, messages: [] },
-    select: { id: true, createdAt: true },
+    select: { id: true, createdAt: true, updatedAt: true },
   });
-
-  console.log("[POST /api/ai/conversations] created:", row.id);
 
   return NextResponse.json({
     conversation: {
       id: row.id,
       title: null,
       createdAt: row.createdAt.toISOString(),
-      updatedAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
     },
   });
 }

@@ -81,13 +81,19 @@ export default function CoachPage() {
   const { status } = useSession();
   const router = useRouter();
   const qc = useQueryClient();
+
   const [messages, setMessages] = useState<AIMessage[]>([]);
   const [conversations, setConversations] = useState<ConversationListItem[]>([]);
   const [activeConversationId, setActiveConversationId] = useState<string | null>(null);
   const [historyOpen, setHistoryOpen] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const [historyError, setHistoryError] = useState(false);
+
   const historyRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
+  // Track in-flight refresh to avoid stacking concurrent fetches
+  const refreshingRef = useRef(false);
 
   const groupedConversations = useMemo(() => {
     const groups: Record<"Today" | "Yesterday" | "This week" | "Older", ConversationListItem[]> = {
@@ -102,48 +108,61 @@ export default function CoachPage() {
     return groups;
   }, [conversations]);
 
+  // Fetch and replace the conversation list.
+  // silent=true: update list in background without showing loading/error UI.
+  // silent=false: show loading spinner and error state in the history panel.
+  const refreshConversations = async (silent = true) => {
+    if (!silent) {
+      setHistoryLoading(true);
+      setHistoryError(false);
+    }
+    // Prevent stacking concurrent fetches in the background path
+    if (silent && refreshingRef.current) return [] as ConversationListItem[];
+    refreshingRef.current = true;
+    try {
+      const listRes = await fetch("/api/ai/conversations");
+      if (!listRes.ok) {
+        if (!silent) setHistoryError(true);
+        return [] as ConversationListItem[];
+      }
+      const listJson = await listRes.json().catch(() => null);
+      const list = (listJson?.conversations as ConversationListItem[]) ?? [];
+      setConversations(list);
+      return list;
+    } catch {
+      if (!silent) setHistoryError(true);
+      return [] as ConversationListItem[];
+    } finally {
+      refreshingRef.current = false;
+      if (!silent) setHistoryLoading(false);
+    }
+  };
+
+  // Load a specific conversation's messages into the chat window.
   const loadConversation = async (conversationId: string) => {
-    const res = await fetch(`/api/ai/conversations/${conversationId}`);
-    if (!res.ok) return false;
-    const json = await res.json().catch(() => null);
-    const convo = json?.conversation;
-    if (!convo) return false;
-    setActiveConversationId(conversationId);
-    setMessages(cleanMessages(Array.isArray(convo.messages) ? convo.messages : []));
-    return true;
-  };
-
-  const enrichConversationTitles = async (items: ConversationListItem[]) => {
-    const withTitles = await Promise.all(
-      items.map(async (item) => {
-        if (item.title?.trim()) return item;
-        const res = await fetch(`/api/ai/conversations/${item.id}`);
-        if (!res.ok) return item;
-        const json = await res.json().catch(() => null);
-        const msgs = (json?.conversation?.messages as AIMessage[] | undefined) ?? [];
-        const firstUser = msgs.find((m) => m.role === "user" && m.content?.trim());
-        return { ...item, title: firstUser?.content?.trim() ?? "New chat" };
-      })
-    );
-    setConversations(withTitles);
-    return withTitles;
-  };
-
-  const refreshConversations = async () => {
-    const listRes = await fetch("/api/ai/conversations");
-    if (!listRes.ok) return [] as ConversationListItem[];
-    const listJson = await listRes.json().catch(() => null);
-    const list = ((listJson?.conversations as ConversationListItem[]) ?? []).sort(
-      (a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime()
-    );
-    return enrichConversationTitles(list);
+    setLoading(true);
+    setMessages([]); // Clear stale messages immediately
+    try {
+      const res = await fetch(`/api/ai/conversations/${conversationId}`);
+      if (!res.ok) return false;
+      const json = await res.json().catch(() => null);
+      const convo = json?.conversation;
+      if (!convo) return false;
+      setActiveConversationId(conversationId);
+      setMessages(cleanMessages(Array.isArray(convo.messages) ? convo.messages : []));
+      return true;
+    } catch {
+      return false;
+    } finally {
+      setLoading(false);
+    }
   };
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
   }, [status, router]);
 
-  // Every visit to /coach starts a brand-new empty (unsaved) chat.
+  // Every fresh visit to /coach starts a new empty (unsaved) chat.
   useEffect(() => {
     if (status !== "authenticated") return;
     setMessages([]);
@@ -151,6 +170,7 @@ export default function CoachPage() {
     setHistoryOpen(false);
   }, [status]);
 
+  // Auto-scroll to bottom on new messages or when loading state changes.
   useLayoutEffect(() => {
     const id = requestAnimationFrame(() => {
       bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
@@ -158,6 +178,7 @@ export default function CoachPage() {
     return () => cancelAnimationFrame(id);
   }, [messages, loading]);
 
+  // Close history panel on outside click.
   useEffect(() => {
     if (!historyOpen) return;
     const onPointerDown = (event: MouseEvent) => {
@@ -171,10 +192,10 @@ export default function CoachPage() {
     return () => document.removeEventListener("mousedown", onPointerDown);
   }, [historyOpen]);
 
-  // Do NOT load old messages on page load. History is accessible via dropdown only.
-
   const sendMessage = async (content: string) => {
     let conversationId = activeConversationId;
+
+    // Create a new DB conversation on the first message if none is active
     if (!conversationId) {
       const createRes = await fetch("/api/ai/conversations", { method: "POST" }).catch(() => null);
       const createJson = await createRes?.json().catch(() => null);
@@ -182,7 +203,6 @@ export default function CoachPage() {
       if (created?.id) {
         conversationId = created.id;
         setActiveConversationId(created.id);
-        setConversations((prev) => [created, ...prev]);
       }
     }
 
@@ -193,6 +213,7 @@ export default function CoachPage() {
     };
     setMessages((prev) => [...prev, optimistic]);
     setLoading(true);
+
     try {
       const payload: { message: string; conversationId?: string } = { message: content };
       if (conversationId) payload.conversationId = conversationId;
@@ -204,13 +225,18 @@ export default function CoachPage() {
       });
       const json = await res.json();
       if (!res.ok) throw new Error(json.error ?? "Failed");
+
+      // Sync conversation ID from server in case the server created one as fallback
+      if (json.conversationId && !activeConversationId) {
+        setActiveConversationId(json.conversationId as string);
+      }
+
       if (json.actionPerformed) {
         await invalidateAfterSubscriptionChange(qc);
       }
+
       if (Array.isArray(json.messages)) {
         setMessages(cleanMessages(json.messages));
-        // Keep dropdown in sync after messages are saved.
-        await refreshConversations();
       } else {
         setMessages((prev) => [
           ...prev,
@@ -221,6 +247,9 @@ export default function CoachPage() {
           },
         ]);
       }
+
+      // Silently refresh history in the background to keep the list fresh
+      void refreshConversations(true);
     } catch (e) {
       setMessages((prev) => [
         ...prev,
@@ -246,43 +275,37 @@ export default function CoachPage() {
       const res = await fetch(`/api/ai/conversations/${activeConversationId}/clear`, { method: "POST" });
       if (res.ok) {
         setMessages([]);
-        await refreshConversations();
+        void refreshConversations(true);
       }
     } finally {
       setLoading(false);
     }
   };
 
-  const createNewChat = async () => {
-    // New Chat should start a fresh empty chat without creating a DB row until first message.
+  const createNewChat = () => {
     setActiveConversationId(null);
     setMessages([]);
     setHistoryOpen(false);
   };
 
-  const deleteConversation = async (conversationId: string) => {
-    setLoading(true);
+  const deleteConversation = async (conversationId: string, event: React.MouseEvent) => {
+    event.preventDefault();
+    event.stopPropagation();
+
+    // Optimistically remove from the visible list immediately
+    setConversations((prev) => prev.filter((c) => c.id !== conversationId));
+
+    // If this was the active conversation, reset to fresh
+    if (conversationId === activeConversationId) {
+      setActiveConversationId(null);
+      setMessages([]);
+    }
+
     try {
-      const res = await fetch(`/api/ai/conversations/${conversationId}`, { method: "DELETE" });
-      if (!res.ok) return;
-      const list = await refreshConversations();
-      if (conversationId === activeConversationId) {
-        const next = list.find((c) => c.id !== conversationId);
-        if (next) {
-          await loadConversation(next.id);
-        } else {
-          const createdRes = await fetch("/api/ai/conversations", { method: "POST" });
-          const createdJson = await createdRes.json().catch(() => null);
-          const created = createdJson?.conversation as ConversationListItem | undefined;
-          if (created?.id) {
-            setConversations([created]);
-            setActiveConversationId(created.id);
-            setMessages([]);
-          }
-        }
-      }
+      await fetch(`/api/ai/conversations/${conversationId}`, { method: "DELETE" });
     } finally {
-      setLoading(false);
+      // Reconcile with server state (in case delete failed)
+      void refreshConversations(true);
     }
   };
 
@@ -307,7 +330,8 @@ export default function CoachPage() {
                 Ask anything about your subscriptions. I have full context.
               </p>
             </div>
-            <div className="flex min-w-0 shrink-0 flex-nowrap items-center gap-1.5 overflow-x-auto [-webkit-overflow-scrolling:touch] sm:gap-2">
+            <div className="flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2">
+              {/* History dropdown */}
               <div ref={historyRef} className="relative shrink-0">
                 <button
                   type="button"
@@ -315,7 +339,7 @@ export default function CoachPage() {
                     const next = !historyOpen;
                     setHistoryOpen(next);
                     if (next) {
-                      await refreshConversations();
+                      await refreshConversations(false);
                     }
                   }}
                   disabled={loading}
@@ -324,6 +348,7 @@ export default function CoachPage() {
                   <span className="md:hidden">History</span>
                   <span className="hidden md:inline">Chat History</span>
                 </button>
+
                 <AnimatePresence>
                   {historyOpen && (
                     <motion.div
@@ -334,7 +359,10 @@ export default function CoachPage() {
                       className="absolute right-0 mt-2 w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border z-50"
                       style={{ background: "#111118", borderColor: "#2a2a3a" }}
                     >
-                      <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "#2a2a3a" }}>
+                      <div
+                        className="flex items-center justify-between border-b px-4 py-3"
+                        style={{ borderColor: "#2a2a3a" }}
+                      >
                         <span className="text-sm font-semibold text-text-primary">Previous Chats</span>
                         <button
                           onClick={createNewChat}
@@ -343,9 +371,41 @@ export default function CoachPage() {
                           New Chat
                         </button>
                       </div>
+
                       <div className="max-h-[400px] overflow-y-auto p-2">
-                        {conversations.length === 0 ? (
-                          <div className="px-3 py-8 text-center text-sm text-text-tertiary">No previous chats.</div>
+                        {historyLoading ? (
+                          <div className="flex items-center justify-center py-8">
+                            <span className="flex gap-1">
+                              <span
+                                className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-tertiary"
+                                style={{ animationDelay: "0ms" }}
+                              />
+                              <span
+                                className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-tertiary"
+                                style={{ animationDelay: "150ms" }}
+                              />
+                              <span
+                                className="h-1.5 w-1.5 animate-bounce rounded-full bg-text-tertiary"
+                                style={{ animationDelay: "300ms" }}
+                              />
+                            </span>
+                          </div>
+                        ) : historyError ? (
+                          <div className="px-3 py-8 text-center">
+                            <p className="mb-3 text-sm text-text-tertiary">
+                              Failed to load history.
+                            </p>
+                            <button
+                              onClick={() => void refreshConversations(false)}
+                              className="rounded-md border border-border bg-surface px-3 py-1.5 text-xs text-text-secondary transition-colors hover:bg-border hover:text-text-primary"
+                            >
+                              Retry
+                            </button>
+                          </div>
+                        ) : conversations.length === 0 ? (
+                          <div className="px-3 py-8 text-center text-sm text-text-tertiary">
+                            No previous chats.
+                          </div>
                         ) : (
                           (["Today", "Yesterday", "This week", "Older"] as const).map((group) => {
                             const items = groupedConversations[group];
@@ -373,17 +433,13 @@ export default function CoachPage() {
                                         <span className="truncate text-sm text-text-primary">
                                           {truncateTitle(convo.title || "New chat", 35)}
                                         </span>
-                                        <div className="flex items-center gap-2 shrink-0">
+                                        <div className="flex shrink-0 items-center gap-2">
                                           <span className="text-[11px] text-text-tertiary">
                                             {formatDateLabel(convo.updatedAt || convo.createdAt)}
                                           </span>
                                           <span
                                             className="opacity-0 group-hover:opacity-100 text-text-tertiary hover:text-danger transition-opacity"
-                                            onClick={(event) => {
-                                              event.preventDefault();
-                                              event.stopPropagation();
-                                              void deleteConversation(convo.id);
-                                            }}
+                                            onClick={(e) => void deleteConversation(convo.id, e)}
                                             title="Delete conversation"
                                             role="button"
                                           >
@@ -409,6 +465,7 @@ export default function CoachPage() {
                   )}
                 </AnimatePresence>
               </div>
+
               <button
                 type="button"
                 onClick={clearChat}
@@ -425,7 +482,8 @@ export default function CoachPage() {
         <div className="flex min-h-0 min-w-0 flex-1 flex-col">
           <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-3 py-3 max-md:pb-[min(42vh,13rem)] sm:px-5 sm:py-4 lg:px-6">
             <div className="w-full min-w-0 space-y-3 sm:space-y-4">
-              {messages.length === 0 && (
+              {/* Empty / welcome state — only show when not loading */}
+              {messages.length === 0 && !loading && (
                 <motion.div
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
@@ -437,6 +495,7 @@ export default function CoachPage() {
                   <QuickPrompts onSelect={sendMessage} disabled={loading} />
                 </motion.div>
               )}
+
               {messages.map((m, i) => (
                 <ChatBubble
                   key={m.id ?? i}
@@ -444,10 +503,13 @@ export default function CoachPage() {
                   content={m.content}
                   createdAt={m.createdAt}
                   kind={m.kind}
+                  // eslint-disable-next-line @typescript-eslint/no-explicit-any
                   meta={m.meta as any}
                   index={i}
                 />
               ))}
+
+              {/* AI typing indicator */}
               {loading && (
                 <motion.div
                   initial={{ opacity: 0 }}
@@ -472,13 +534,12 @@ export default function CoachPage() {
                   </div>
                 </motion.div>
               )}
+
               <div ref={bottomRef} />
             </div>
           </div>
 
-          <div
-            className="z-[58] shrink-0 border-t border-border/80 bg-card/95 px-3 pb-3 pt-3 backdrop-blur-xl max-md:fixed max-md:left-6 max-md:right-6 max-md:rounded-t-2xl max-md:border-x max-md:border-t max-md:border-border/80 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] max-md:shadow-lg max-md:[bottom:calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px))] sm:bg-card/40 sm:px-5 sm:pb-4 sm:pt-4 lg:px-6"
-          >
+          <div className="z-[58] shrink-0 border-t border-border/80 bg-card/95 px-3 pb-3 pt-3 backdrop-blur-xl max-md:fixed max-md:left-6 max-md:right-6 max-md:rounded-t-2xl max-md:border-x max-md:border-t max-md:border-border/80 max-md:pb-[max(0.75rem,env(safe-area-inset-bottom,0px))] max-md:shadow-lg max-md:[bottom:calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px))] sm:bg-card/40 sm:px-5 sm:pb-4 sm:pt-4 lg:px-6">
             <div className="w-full min-w-0 space-y-2 sm:space-y-3">
               {messages.length > 0 && (
                 <QuickPrompts onSelect={sendMessage} disabled={loading} />

@@ -12,7 +12,7 @@ export async function GET(
   const { id } = await params;
   const row = await prisma.aIConversation.findFirst({
     where: { id, userId: authUser.id },
-    select: { id: true, messages: true, createdAt: true },
+    select: { id: true, messages: true, createdAt: true, updatedAt: true },
   });
   if (!row) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
@@ -21,6 +21,7 @@ export async function GET(
       id: row.id,
       messages: row.messages ?? [],
       createdAt: row.createdAt.toISOString(),
+      updatedAt: row.updatedAt.toISOString(),
     },
   });
 }

@@ -295,7 +295,7 @@ export async function POST(req: Request) {
         where: { id: convo.id },
         data: { messages: toConversationJson(final) },
       });
-      return NextResponse.json({ reply: rawReply, messages: final });
+      return NextResponse.json({ reply: rawReply, messages: final, conversationId: convo.id });
     }
 
     return await executeAction(action, replyText, user.id, withUser, convo.id, subs, budgets);
@@ -327,7 +327,7 @@ async function executePendingAction(
         where: { id: convoId },
         data: { messages: toConversationJson(final) },
       });
-      return NextResponse.json({ reply: msg.content, messages: final });
+      return NextResponse.json({ reply: msg.content, messages: final, conversationId: convoId });
     }
     await prisma.subscription.delete({ where: { id: target.id } });
     const confirm = chatMsg(`${target.name} has been cancelled ✅`);
@@ -340,7 +340,7 @@ async function executePendingAction(
       where: { id: convoId },
       data: { messages: toConversationJson(final) },
     });
-    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
+    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true, conversationId: convoId });
   }
 
   // ── deleteBudget ──
@@ -355,7 +355,7 @@ async function executePendingAction(
         where: { id: convoId },
         data: { messages: toConversationJson(final) },
       });
-      return NextResponse.json({ reply: msg.content, messages: final });
+      return NextResponse.json({ reply: msg.content, messages: final, conversationId: convoId });
     }
     await prisma.budget.delete({ where: { id: target.id } });
     const confirm = chatMsg(`Budget for **${target.category}** deleted ✅`);
@@ -368,7 +368,7 @@ async function executePendingAction(
       where: { id: convoId },
       data: { messages: toConversationJson(final) },
     });
-    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
+    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true, conversationId: convoId });
   }
 
   // ── bulkPause ──
@@ -385,7 +385,7 @@ async function executePendingAction(
         where: { id: convoId },
         data: { messages: toConversationJson(final) },
       });
-      return NextResponse.json({ reply: msg.content, messages: final });
+      return NextResponse.json({ reply: msg.content, messages: final, conversationId: convoId });
     }
     await Promise.all(
       targets.map((t) => prisma.subscription.update({ where: { id: t.id }, data: { status: "paused" } }))
@@ -401,7 +401,7 @@ async function executePendingAction(
       where: { id: convoId },
       data: { messages: toConversationJson(final) },
     });
-    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
+    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true, conversationId: convoId });
   }
 
   // ── bulkCancel ──
@@ -416,7 +416,7 @@ async function executePendingAction(
         where: { id: convoId },
         data: { messages: toConversationJson(final) },
       });
-      return NextResponse.json({ reply: msg.content, messages: final });
+      return NextResponse.json({ reply: msg.content, messages: final, conversationId: convoId });
     }
     await prisma.subscription.deleteMany({ where: { id: { in: targets.map((t) => t.id) } } });
     const names = targets.map((t) => t.name).join(", ");
@@ -433,7 +433,7 @@ async function executePendingAction(
       where: { id: convoId },
       data: { messages: toConversationJson(final) },
     });
-    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true });
+    return NextResponse.json({ reply: confirm.content, messages: final, actionPerformed: true, conversationId: convoId });
   }
 
   return null;
@@ -458,7 +458,7 @@ async function executeAction(
       data: { messages: toConversationJson(msgs) },
     });
     const lastMsg = msgs[msgs.length - 1] as ChatMessage;
-    return NextResponse.json({ reply: lastMsg.content, messages: msgs, actionPerformed });
+    return NextResponse.json({ reply: lastMsg.content, messages: msgs, actionPerformed, conversationId: convoId });
   };
 
   // ── Destructive: needs confirmation ──────────────────────────────────────────
@@ -656,5 +656,5 @@ async function executeAction(
     where: { id: convoId },
     data: { messages: toConversationJson(final) },
   });
-  return NextResponse.json({ reply: replyText, messages: final });
+  return NextResponse.json({ reply: replyText, messages: final, conversationId: convoId });
 }
