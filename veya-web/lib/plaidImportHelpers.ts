@@ -17,7 +17,7 @@ export function buildSubscriptionCreateFromPlaid(item: PlaidImportItem): {
   nextRenewal: string;
   status: "active";
   isShared: boolean;
-  source: "manual";
+  source: "plaid";
 } {
   const last = new Date(item.lastCharged);
   const start = new Date(last);
@@ -42,6 +42,6 @@ export function buildSubscriptionCreateFromPlaid(item: PlaidImportItem): {
     nextRenewal: next.toISOString().slice(0, 10),
     status: "active",
     isShared: false,
-    source: "manual",
+    source: "plaid",
   };
 }

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useMemo, useCallback, type FormEvent } from "react";
+import { useEffect, useState, useMemo, useCallback, useRef, type FormEvent } from "react";
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useQueryClient } from "@tanstack/react-query";
@@ -21,6 +21,8 @@ import { executeScanImport } from "@/lib/executeScanImport";
 import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
+import { cn } from "@/lib/utils";
+import type { NotificationPrefKey } from "@/lib/notificationPrefs";
 
 type PlaidAccountRow = {
   id: string;
@@ -54,6 +56,38 @@ function browserSessionLabel(): string {
   else if (ua.includes("iPhone") || ua.includes("iPad")) os = "iOS";
   return `${browser} on ${os}`;
 }
+
+const NOTIFICATION_SETTING_ROWS: {
+  key: NotificationPrefKey;
+  label: string;
+  description: string;
+}[] = [
+  {
+    key: "renewalReminders",
+    label: "Renewal reminders",
+    description: "Get notified 7 days before a subscription renews",
+  },
+  {
+    key: "budgetAlerts",
+    label: "Budget alerts",
+    description: "Alert when you exceed a budget limit",
+  },
+  {
+    key: "newSubscriptionDetected",
+    label: "New subscription detected",
+    description: "When bank scan finds a new subscription",
+  },
+  {
+    key: "weeklySpendingSummary",
+    label: "Weekly spending summary",
+    description: "Every Monday: your weekly subscription recap",
+  },
+  {
+    key: "priceIncreaseAlerts",
+    label: "Price increase alerts",
+    description: "When a subscription price changes",
+  },
+];
 
 function scanLabel(iso: string | null): string {
   if (!iso) return "Never";
@@ -110,6 +144,11 @@ export default function SettingsPage() {
   const [pwErr, setPwErr] = useState<string | null>(null);
   const [sessionLabel, setSessionLabel] = useState("this device");
   const [signOutAllBusy, setSignOutAllBusy] = useState(false);
+
+  const [notifPrefs, setNotifPrefs] = useState<Record<NotificationPrefKey, boolean> | null>(null);
+  const [notifPrefsLoading, setNotifPrefsLoading] = useState(true);
+  const notifPrefsRef = useRef(notifPrefs);
+  notifPrefsRef.current = notifPrefs;
 
   const strength = useMemo(() => strengthScore(newPw), [newPw]);
 
@@ -170,6 +209,43 @@ export default function SettingsPage() {
         .catch(() => setHasPassword(false));
     }
   }, [status, loadBankAccounts]);
+
+  useEffect(() => {
+    if (status !== "authenticated") {
+      if (status === "unauthenticated") {
+        setNotifPrefs(null);
+        setNotifPrefsLoading(false);
+      }
+      return;
+    }
+    setNotifPrefsLoading(true);
+    fetch("/api/settings/notifications")
+      .then((r) => (r.ok ? r.json() : Promise.reject()))
+      .then((d: { prefs: Record<NotificationPrefKey, boolean> }) => {
+        setNotifPrefs(d.prefs);
+      })
+      .catch(() => setNotifPrefs(null))
+      .finally(() => setNotifPrefsLoading(false));
+  }, [status]);
+
+  const toggleNotifPref = useCallback(async (key: NotificationPrefKey) => {
+    const snap = notifPrefsRef.current;
+    if (!snap) return;
+    const nextVal = !snap[key];
+    setNotifPrefs({ ...snap, [key]: nextVal });
+    try {
+      const res = await fetch("/api/settings/notifications", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ [key]: nextVal }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      const d = (await res.json()) as { prefs: Record<NotificationPrefKey, boolean> };
+      setNotifPrefs(d.prefs);
+    } catch {
+      setNotifPrefs(snap);
+    }
+  }, []);
 
   // ── Plaid connect ───────────────────────────────────────────────────────────
   const startPlaidLink = async () => {
@@ -575,16 +651,42 @@ export default function SettingsPage() {
           {/* ── Notifications ── */}
           <Card>
             <h2 className="mb-4 text-lg font-semibold text-text-primary">Notifications</h2>
-            <ul className="space-y-4 text-sm text-text-secondary">
-              <li>
-                <p className="font-medium text-text-primary">New subscription alerts</p>
-                <p className="mt-0.5">When a bank transaction detects a new subscription.</p>
-              </li>
-              <li>
-                <p className="font-medium text-text-primary">Renewal reminders</p>
-                <p className="mt-0.5">Heads-up before subscription renewals.</p>
-              </li>
-            </ul>
+            {notifPrefsLoading ? (
+              <p className="text-sm text-text-tertiary">Loading…</p>
+            ) : !notifPrefs ? (
+              <p className="text-sm text-text-secondary">Could not load notification settings.</p>
+            ) : (
+              <ul className="divide-y divide-border">
+                {NOTIFICATION_SETTING_ROWS.map((row) => (
+                  <li
+                    key={row.key}
+                    className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
+                  >
+                    <div className="min-w-0 flex-1 pr-2">
+                      <p className="font-medium text-text-primary">{row.label}</p>
+                      <p className="mt-0.5 text-sm text-text-tertiary">{row.description}</p>
+                    </div>
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={notifPrefs[row.key]}
+                      onClick={() => void toggleNotifPref(row.key)}
+                      className={cn(
+                        "relative inline-flex h-8 w-[3.25rem] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background",
+                        notifPrefs[row.key] ? "bg-accent" : "bg-border",
+                      )}
+                    >
+                      <span
+                        className={cn(
+                          "pointer-events-none mt-0.5 inline-block h-6 w-6 rounded-full bg-white shadow transition duration-200 ease-out",
+                          notifPrefs[row.key] ? "translate-x-[1.35rem]" : "translate-x-0.5",
+                        )}
+                      />
+                    </button>
+                  </li>
+                ))}
+              </ul>
+            )}
           </Card>
 
           {/* ── Security ── */}

@@ -3,7 +3,6 @@
 import { Suspense, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
-import Link from "next/link";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/layout/AppShell";
 import { HeroCard } from "@/components/dashboard/HeroCard";
@@ -20,6 +19,7 @@ import { Skeleton } from "@/components/ui/Skeleton";
 import { GmailOnboarding } from "@/components/dashboard/GmailOnboarding";
 import { BudgetAlerts } from "@/components/dashboard/BudgetAlerts";
 import { SavingsOpportunitiesCard } from "@/components/dashboard/SavingsOpportunitiesCard";
+import { NotificationBell } from "@/components/dashboard/NotificationBell";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -128,12 +128,7 @@ export default function DashboardPage() {
               })}
             </p>
           </div>
-          <Link
-            href="/settings"
-            className="rounded-full h-10 w-10 border border-border bg-card flex items-center justify-center text-text-secondary hover:text-text-primary"
-          >
-            🔔
-          </Link>
+          <NotificationBell />
         </motion.header>
 
         <div
