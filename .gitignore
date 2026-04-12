@@ -1,4 +1,6 @@
 # Root-level ignores (avoid committing build artifacts / old structure)
+# Single lockfile at repo root (npm workspaces); nested lock drift breaks Vercel `npm ci`.
+veya-web/package-lock.json
 node_modules
 .next
 apps/
