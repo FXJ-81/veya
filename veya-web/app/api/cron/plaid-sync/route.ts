@@ -5,7 +5,7 @@ import { runPlaidSubscriptionSyncForUser } from "@/lib/runPlaidSubscriptionSync"
 export const dynamic = "force-dynamic";
 
 /**
- * Vercel Cron (see `vercel.json`): runs about every 5 minutes.
+ * Vercel Cron (see `vercel.json`). Hobby: at most once per day; Pro+ can use tighter schedules.
  *
  * Secured with `Authorization: Bearer <CRON_SECRET>` so random clients cannot trigger syncs.
  * Iterates every user with at least one Plaid account and runs `silent_auto` (append new subs).
