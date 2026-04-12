@@ -1,8 +1,9 @@
 import { buildSubscriptionCreateFromPlaid } from "@/lib/plaidImportHelpers";
 import {
-  normalizeSubscriptionNameKey,
-  subscriptionNameKeySet,
-} from "@/lib/subscriptionDedup";
+  keysForPlaidMerchant,
+  isPlaidMerchantDuplicateOfExisting,
+} from "@/lib/plaidSyncCore";
+import { subscriptionNameKeySet } from "@/lib/subscriptionDedup";
 import type { ScanImportPayload } from "@/types/scan";
 
 export type ScanImportResult = {
@@ -12,28 +13,13 @@ export type ScanImportResult = {
   plaidSkipped: number;
 };
 
-function keysForPlaidItem(item: {
-  name: string;
-  merchantName?: string;
-}): string[] {
-  const keys = new Set<string>();
-  const n = normalizeSubscriptionNameKey(item.name);
-  if (n) keys.add(n);
-  const m = item.merchantName ? normalizeSubscriptionNameKey(item.merchantName) : "";
-  if (m && m !== n) keys.add(m);
-  return [...keys];
-}
-
-function isPlaidDuplicate(
-  item: { name: string; merchantName?: string },
-  existing: Set<string>,
-  batchSeen: Set<string>,
-): boolean {
-  const keys = keysForPlaidItem(item);
-  for (const k of keys) {
-    if (existing.has(k) || batchSeen.has(k)) return true;
-  }
-  return false;
+async function removePlaidKeysFromDeclinedList(removeKeys: string[]): Promise<void> {
+  if (removeKeys.length === 0) return;
+  await fetch("/api/settings/plaid-declined", {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ removeKeys }),
+  });
 }
 
 export async function executeScanImport(
@@ -66,9 +52,10 @@ export async function executeScanImport(
     const existingList = subsRes.ok ? ((await subsRes.json()) as { name: string }[]) : [];
     const existingKeys = subscriptionNameKeySet(existingList);
     const batchSeen = new Set<string>();
+    const importedKeys: string[] = [];
 
     for (const item of payload.plaidItems) {
-      if (isPlaidDuplicate(item, existingKeys, batchSeen)) {
+      if (isPlaidMerchantDuplicateOfExisting(item, existingKeys, batchSeen)) {
         plaidSkipped++;
         continue;
       }
@@ -85,11 +72,14 @@ export async function executeScanImport(
       }
 
       plaidAdded++;
-      for (const k of keysForPlaidItem(item)) {
+      for (const k of keysForPlaidMerchant(item)) {
         batchSeen.add(k);
         existingKeys.add(k);
+        importedKeys.push(k);
       }
     }
+
+    await removePlaidKeysFromDeclinedList(importedKeys);
   }
 
   if (options?.firstAutoComplete && !firstFlowMarkedViaGmail) {

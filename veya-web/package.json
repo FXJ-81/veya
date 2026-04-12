@@ -10,6 +10,8 @@
     "start": "next start",
     "lint": "next lint",
     "test:email-score": "npx tsx lib/emailSubscription/run-score-tests.ts",
+    "test:renewal-reminders": "npx tsx lib/run-renewal-reminder-tests.ts",
+    "test:plaid-sync-dedup": "npx tsx lib/run-plaid-sync-dedup-tests.ts",
     "db:generate": "prisma generate",
     "db:push": "prisma db push",
     "db:studio": "prisma studio"

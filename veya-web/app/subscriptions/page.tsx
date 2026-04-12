@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useCallback, useEffect, useState } from "react";
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { motion } from "framer-motion";
@@ -77,6 +77,15 @@ function SubscriptionsContent() {
     setGmailResultsOpen(false);
   };
 
+  const persistPlaidDeclinedMerchants = useCallback(async (keys: string[]) => {
+    if (!keys.length) return;
+    await fetch("/api/settings/plaid-declined", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addKeys: keys }),
+    });
+  }, []);
+
   const importScanSelection = async (payload: ScanImportPayload) => {
     setGmailImportBusy(true);
     try {
@@ -150,7 +159,7 @@ function SubscriptionsContent() {
       });
       const dj = await det.json().catch(() => ({}));
       if (!det.ok || !dj.ok) {
-        alert(dj.error ?? "Resync failed");
+        alert(dj.error ?? "Could not sync bank data");
         return;
       }
       const rows = mapPlaidDetectToScanRows(
@@ -417,6 +426,7 @@ function SubscriptionsContent() {
         onSkip={closeGmailResults}
         onImport={importScanSelection}
         onAfterImportClose={() => setGmailResultsOpen(false)}
+        persistPlaidDeclinedMerchants={persistPlaidDeclinedMerchants}
         busy={gmailImportBusy}
       />
 

@@ -162,6 +162,8 @@ model UserSettings {
   id                 String   @id @default(cuid())
   userId             String   @unique
   notificationPrefs  Json?
+  /// Normalized merchant keys the user declined from Plaid scan (do not auto-add or pre-select).
+  plaidDeclinedMerchantKeys String[] @default([])
   budgetLimit        Float?
   /// Set after first-login Gmail flow finished (scan, skip, or connect attempt)
   gmailFirstScanCompletedAt DateTime?

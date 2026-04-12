@@ -2,11 +2,7 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
-import { mergeNotificationPrefs } from "@/lib/notificationPrefs";
-import { formatCurrency } from "@/lib/utils";
-import { pricePerMonth } from "@/lib/subscriptionBilling";
-import { hasDuplicateNotificationToday } from "@/lib/notificationDedupe";
-import { sendNewSubscriptionEmail } from "@/lib/notificationEmails";
+import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -54,56 +50,19 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
   const data = parsed.data;
-  const source = data.source ?? "manual";
-  const sub = await prisma.subscription.create({
-    data: {
-      userId: authUser.id,
-      name: data.name,
-      category: data.category,
-      price: data.price,
-      billingCycle: data.billingCycle,
-      startDate: new Date(data.startDate),
-      nextRenewal: new Date(data.nextRenewal),
-      status: data.status ?? "active",
-      notes: data.notes,
-      isShared: data.isShared ?? false,
-      color: data.color,
-      source,
-    },
+  const sub = await createSubscriptionForUser(authUser.id, {
+    name: data.name,
+    category: data.category,
+    price: data.price,
+    billingCycle: data.billingCycle,
+    startDate: new Date(data.startDate),
+    nextRenewal: new Date(data.nextRenewal),
+    status: data.status ?? "active",
+    notes: data.notes,
+    isShared: data.isShared ?? false,
+    color: data.color,
+    source: data.source ?? "manual",
   });
-
-  if (source === "plaid") {
-    const settings = await prisma.userSettings.findUnique({ where: { userId: authUser.id } });
-    const prefs = mergeNotificationPrefs(settings?.notificationPrefs);
-    if (prefs.newSubscriptionDetected) {
-      const typeKey = `new_subscription:${sub.id}`;
-      const monthly = pricePerMonth(sub.price, sub.billingCycle);
-      const title = `New subscription detected: ${sub.name} (${formatCurrency(monthly)}/mo)`;
-      if (!(await hasDuplicateNotificationToday(authUser.id, typeKey, title))) {
-        await prisma.notification.create({
-          data: {
-            userId: authUser.id,
-            type: typeKey,
-            title,
-            body: "Added from your bank transactions.",
-            read: false,
-          },
-        });
-        const user = await prisma.user.findUnique({
-          where: { id: authUser.id },
-          select: { email: true, name: true },
-        });
-        if (user?.email) {
-          await sendNewSubscriptionEmail({
-            to: user.email,
-            recipientName: user.name,
-            subName: sub.name,
-            monthlyAmount: monthly,
-          });
-        }
-      }
-    }
-  }
 
   return NextResponse.json({
     ...sub,

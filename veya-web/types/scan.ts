@@ -4,6 +4,8 @@ export type GmailScanRow = {
   rowId?: string;
   messageId?: string;
   source?: SubscriptionScanSource;
+  /** When false, checkbox starts unchecked (e.g. previously declined Plaid merchant). */
+  defaultSelected?: boolean;
   name: string;
   /** Plaid: raw merchant / transaction label for dedup vs existing subs */
   merchantName?: string;

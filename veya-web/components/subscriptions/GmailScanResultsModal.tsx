@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Modal } from "@/components/ui/Modal";
 import { formatCurrency } from "@/lib/utils";
+import { keysForPlaidMerchant } from "@/lib/plaidSyncCore";
 import type { ScanImportResult } from "@/lib/executeScanImport";
 import type { GmailScanRow, ScanImportPayload, SubscriptionScanSource } from "@/types/scan";
 
@@ -16,6 +17,8 @@ type GmailScanResultsModalProps = {
   onImport: (payload: ScanImportPayload) => Promise<ScanImportResult>;
   /** Called after a successful import when the modal should close (Gmail-only, or Plaid summary "Done"). */
   onAfterImportClose?: () => void;
+  /** Persist unchecked bank-sourced rows as declined merchants (Settings / Subscriptions). */
+  persistPlaidDeclinedMerchants?: (keys: string[]) => Promise<void>;
   firstAutoComplete?: boolean;
   busy?: boolean;
 };
@@ -30,6 +33,29 @@ function sourceLabel(source?: SubscriptionScanSource): string {
   return "📧 Found in Gmail";
 }
 
+function isPlaidLikeScanRow(c: GmailScanRow): boolean {
+  if (c.source === "plaid") return true;
+  if (c.source === "confirmed" && !c.messageId && c.lastCharged) return true;
+  return false;
+}
+
+/** Unchecked bank-sourced rows → normalized merchant keys to remember as declined. */
+function collectDeclinedPlaidMerchantKeys(
+  rows: GmailScanRow[],
+  selected: Record<string, boolean>,
+): string[] {
+  const keys = new Set<string>();
+  rows.forEach((c, i) => {
+    if (!isPlaidLikeScanRow(c)) return;
+    const rk = rowKey(c, i);
+    if (selected[rk]) return;
+    for (const dk of keysForPlaidMerchant({ name: c.name, merchantName: c.merchantName })) {
+      keys.add(dk);
+    }
+  });
+  return [...keys];
+}
+
 export function GmailScanResultsModal({
   open,
   candidates,
@@ -37,6 +63,7 @@ export function GmailScanResultsModal({
   onSkip,
   onImport,
   onAfterImportClose,
+  persistPlaidDeclinedMerchants,
   firstAutoComplete = false,
   busy = false,
 }: GmailScanResultsModalProps) {
@@ -53,7 +80,7 @@ export function GmailScanResultsModal({
     }
     const next: Record<string, boolean> = {};
     candidates.forEach((c, i) => {
-      next[rowKey(c, i)] = true;
+      next[rowKey(c, i)] = c.defaultSelected !== false;
     });
     setSelected(next);
   }, [open, candidates]);
@@ -131,8 +158,12 @@ export function GmailScanResultsModal({
   };
 
   const handleImport = async () => {
+    const declinedKeys = collectDeclinedPlaidMerchantKeys(candidates, selected);
     const payload = buildPayload();
     const result = await onImport(payload);
+    if (declinedKeys.length && persistPlaidDeclinedMerchants) {
+      await persistPlaidDeclinedMerchants(declinedKeys);
+    }
     if (payload.plaidItems.length > 0) {
       setPlaidImportSummary({
         added: result.plaidAdded,
@@ -144,6 +175,10 @@ export function GmailScanResultsModal({
   };
 
   const handleSkip = async () => {
+    const declinedKeys = collectDeclinedPlaidMerchantKeys(candidates, selected);
+    if (declinedKeys.length && persistPlaidDeclinedMerchants) {
+      await persistPlaidDeclinedMerchants(declinedKeys);
+    }
     await onSkip();
   };
 

@@ -17,6 +17,7 @@ import {
 } from "@/components/subscriptions/GmailScanResultsModal";
 import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
 import { PlaidSecurityBadges } from "@/components/settings/PlaidSecurityBadges";
+import { SupportFeedbackForm } from "@/components/settings/SupportFeedbackForm";
 import { executeScanImport } from "@/lib/executeScanImport";
 import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
@@ -128,6 +129,11 @@ export default function SettingsPage() {
   // Disconnect confirmation
   const [confirmDisconnect, setConfirmDisconnect] = useState<PlaidAccountRow | null>(null);
 
+  // Clear all subscriptions
+  const [clearSubsOpen, setClearSubsOpen] = useState(false);
+  const [clearSubsAck, setClearSubsAck] = useState(false);
+  const [clearSubsBusy, setClearSubsBusy] = useState(false);
+
   // Account deletion
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
@@ -161,6 +167,18 @@ export default function SettingsPage() {
   }, [status, router]);
 
   // ── load bank accounts ──────────────────────────────────────────────────────
+  const persistPlaidDeclinedMerchants = useCallback(async (keys: string[]) => {
+    if (!keys.length) return;
+    const res = await fetch("/api/settings/plaid-declined", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ addKeys: keys }),
+    });
+    if (!res.ok) {
+      console.warn("[settings] failed to save declined Plaid merchants");
+    }
+  }, []);
+
   const loadBankAccounts = useCallback(async () => {
     setBankLoadError(false);
     setBankError(null);
@@ -304,7 +322,7 @@ export default function SettingsPage() {
     }
   };
 
-  // ── Resync ──────────────────────────────────────────────────────────────────
+  // ── Manual bank sync (same pipeline as background job; opens review when new candidates exist) ──
   const resyncBank = async (acc: PlaidAccountRow) => {
     setBankError(null);
     setResyncingId(acc.id);
@@ -315,7 +333,7 @@ export default function SettingsPage() {
         body: JSON.stringify({ plaidAccountId: acc.id }),
       });
       const dj = await det.json().catch(() => ({}));
-      if (!det.ok || !dj.ok) throw new Error(dj.error ?? "Resync failed");
+      if (!det.ok || !dj.ok) throw new Error(dj.error ?? "Could not sync bank data");
       const rows = mapPlaidDetectToScanRows(
         Array.isArray(dj.subscriptions) ? dj.subscriptions : [],
       );
@@ -325,9 +343,31 @@ export default function SettingsPage() {
       }
       await loadBankAccounts();
     } catch (e) {
-      setBankError(e instanceof Error ? e.message : "Resync failed");
+      setBankError(e instanceof Error ? e.message : "Could not sync bank data");
     } finally {
       setResyncingId(null);
+    }
+  };
+
+  const runClearAllSubscriptions = async () => {
+    if (!clearSubsAck) return;
+    setClearSubsBusy(true);
+    setBankError(null);
+    try {
+      const res = await fetch("/api/subscriptions/clear-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: "CLEAR_ALL_SUBSCRIPTIONS" }),
+      });
+      const j = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error((j as { error?: string }).error ?? "Could not clear subscriptions");
+      await invalidateAfterSubscriptionChange(qc);
+      setClearSubsOpen(false);
+      setClearSubsAck(false);
+    } catch (e) {
+      setBankError(e instanceof Error ? e.message : "Could not clear subscriptions");
+    } finally {
+      setClearSubsBusy(false);
     }
   };
 
@@ -607,7 +647,7 @@ export default function SettingsPage() {
                                 Syncing…
                               </span>
                             ) : (
-                              "Resync"
+                              "Sync from bank"
                             )}
                           </Button>
                           <Button
@@ -646,6 +686,18 @@ export default function SettingsPage() {
             )}
 
             {!bankLoadError && <PlaidSecurityBadges className="mt-4" />}
+          </Card>
+
+          {/* ── Subscription data ── */}
+          <Card>
+            <h2 className="mb-2 text-lg font-semibold text-text-primary">Subscriptions</h2>
+            <p className="mb-4 text-sm text-text-secondary">
+              Remove every subscription you track in Veya. Bank connections and your declined bank
+              detections are kept so sync behavior stays predictable.
+            </p>
+            <Button variant="danger" onClick={() => { setClearSubsAck(false); setClearSubsOpen(true); }}>
+              Clear all subscriptions
+            </Button>
           </Card>
 
           {/* ── Notifications ── */}
@@ -687,6 +739,17 @@ export default function SettingsPage() {
                 ))}
               </ul>
             )}
+          </Card>
+
+          {/* ── Support & Feedback ── */}
+          <Card>
+            <h2 className="mb-2 text-lg font-semibold text-text-primary">Support &amp; Feedback</h2>
+            <p className="mb-5 text-sm text-text-secondary">
+              Have a question, found a bug, or need help with Veya? Send us a message below.
+            </p>
+            <div className="rounded-xl border border-border bg-background-secondary/30 p-4 sm:p-5">
+              <SupportFeedbackForm />
+            </div>
           </Card>
 
           {/* ── Security ── */}
@@ -891,8 +954,49 @@ export default function SettingsPage() {
         onSkip={() => setGmailResultsOpen(false)}
         onImport={importScanSelection}
         onAfterImportClose={() => setGmailResultsOpen(false)}
+        persistPlaidDeclinedMerchants={persistPlaidDeclinedMerchants}
         busy={gmailImportBusy}
       />
+
+      <Modal
+        open={clearSubsOpen}
+        onClose={() => { if (!clearSubsBusy) { setClearSubsOpen(false); setClearSubsAck(false); } }}
+        title="Clear all subscriptions?"
+        className="max-w-md"
+      >
+        <p className="mb-4 text-sm text-text-secondary">
+          This removes all subscriptions from your Veya account. Dashboard totals, renewals, and
+          analytics will update after you confirm. This does not cancel charges with your providers.
+        </p>
+        <label className="mb-6 flex cursor-pointer items-start gap-3 text-sm text-text-primary">
+          <input
+            type="checkbox"
+            className="mt-1 rounded border-border"
+            checked={clearSubsAck}
+            onChange={(e) => setClearSubsAck(e.target.checked)}
+            disabled={clearSubsBusy}
+          />
+          <span>I understand that all tracked subscriptions will be permanently removed from Veya.</span>
+        </label>
+        <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
+          <Button
+            variant="secondary"
+            className="w-full sm:w-auto"
+            onClick={() => { setClearSubsOpen(false); setClearSubsAck(false); }}
+            disabled={clearSubsBusy}
+          >
+            Cancel
+          </Button>
+          <Button
+            variant="danger"
+            className="w-full sm:w-auto"
+            onClick={() => void runClearAllSubscriptions()}
+            disabled={clearSubsBusy || !clearSubsAck}
+          >
+            {clearSubsBusy ? "Removing…" : "Clear all subscriptions"}
+          </Button>
+        </div>
+      </Modal>
 
       {/* ── Plaid Link host (invisible trigger) ── */}
       {plaidLinkToken && (

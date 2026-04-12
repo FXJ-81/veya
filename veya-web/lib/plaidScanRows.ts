@@ -1,10 +1,16 @@
+import type { PlaidSyncCandidate } from "@/lib/plaidSyncCore";
 import type { PlaidDetectedSubscription } from "@/lib/plaidSubscriptionDetect";
 import type { GmailScanRow } from "@/types/scan";
 
-export function mapPlaidDetectToScanRows(subs: PlaidDetectedSubscription[]): GmailScanRow[] {
+type PlaidRowInput = (PlaidDetectedSubscription | PlaidSyncCandidate) & {
+  defaultSelected?: boolean;
+};
+
+export function mapPlaidDetectToScanRows(subs: PlaidRowInput[]): GmailScanRow[] {
   return subs.map((s, i) => ({
     rowId: `plaid-${i}-${s.name.replace(/[^\w]+/g, "-").slice(0, 48)}`,
     source: "plaid" as const,
+    defaultSelected: s.defaultSelected !== false,
     name: s.name,
     merchantName: s.merchantName ?? s.name,
     category: s.category,

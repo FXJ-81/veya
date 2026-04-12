@@ -33,6 +33,44 @@ export function startOfLocalDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
 }
 
+/**
+ * UTC calendar date as YYYY-MM-DD. Matches API date strings parsed with
+ * `new Date("YYYY-MM-DD")` (midnight UTC) so server jobs are consistent across timezones.
+ */
+export function utcCalendarDateKey(d: Date): string {
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Whole UTC calendar days from `asOf` until the renewal calendar day (renewal minus asOf).
+ * Same calendar day → 0; one day before renewal → 1; exactly one week before → 7.
+ */
+export function utcCalendarDaysUntilRenewal(renewal: Date, asOf: Date = new Date()): number {
+  if (Number.isNaN(renewal.getTime()) || Number.isNaN(asOf.getTime())) return NaN;
+  const a = utcCalendarDateKey(asOf);
+  const b = utcCalendarDateKey(renewal);
+  const [ya, ma, da] = a.split("-").map(Number);
+  const [yb, mb, db] = b.split("-").map(Number);
+  const A = Date.UTC(ya, ma - 1, da);
+  const B = Date.UTC(yb, mb - 1, db);
+  return Math.round((B - A) / 86400000);
+}
+
+/** Long renewal label for emails/notifications, tied to the stored UTC calendar day. */
+export function formatRenewalDateDisplayUtc(renewal: Date): string {
+  const key = utcCalendarDateKey(renewal);
+  if (!key || key.length < 10) return "";
+  const [y, m, d] = key.split("-").map(Number);
+  const noonUtc = new Date(Date.UTC(y, m - 1, d, 12, 0, 0));
+  return new Intl.DateTimeFormat("en-US", {
+    month: "long",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(noonUtc);
+}
+
 /** Last instant of calendar month (local) */
 export function endOfLocalMonth(year: number, monthIndex: number): Date {
   return new Date(year, monthIndex + 1, 0, 23, 59, 59, 999);

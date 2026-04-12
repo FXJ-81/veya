@@ -162,6 +162,14 @@ export function GmailOnboarding() {
         candidates={candidates}
         onClose={importBusy ? () => {} : dismissResults}
         onSkip={dismissResults}
+        persistPlaidDeclinedMerchants={async (keys) => {
+          if (!keys.length) return;
+          await fetch("/api/settings/plaid-declined", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ addKeys: keys }),
+          });
+        }}
         onImport={importSelected}
         onAfterImportClose={() => {
           setResultsModal(false);

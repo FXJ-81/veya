@@ -5,6 +5,9 @@ import {
   hasSubscriptionStarted,
   pricePerMonth,
   startOfLocalDay,
+  utcCalendarDateKey,
+  utcCalendarDaysUntilRenewal,
+  formatRenewalDateDisplayUtc,
 } from "@/lib/subscriptionBilling";
 import { hasDuplicateNotificationToday } from "@/lib/notificationDedupe";
 import {
@@ -25,6 +28,11 @@ function calendarDaysUntilRenewal(nextRenewal: Date, from: Date = new Date()): n
   const a = startOfLocalDay(from).getTime();
   const b = startOfLocalDay(nextRenewal).getTime();
   return Math.round((b - a) / 86400000);
+}
+
+/** One 7-day renewal reminder per subscription per renewal UTC date (idempotency key). */
+function renewalReminderTypeKey(subscriptionId: string, renewalUtcDateKey: string): string {
+  return `renewal_reminder:${subscriptionId}:${renewalUtcDateKey}`;
 }
 
 /** Local Monday date of the week containing `d` (0 = Sunday … 6 = Saturday). */
@@ -72,41 +80,51 @@ export async function generateNotificationsForUser(userId: string): Promise<void
   }
 
   if (prefs.renewalReminders) {
-    const todayKey = localDateKey(new Date());
     const subs = await prisma.subscription.findMany({
       where: { userId, status: "active" },
     });
+    const asOf = new Date();
     for (const sub of subs) {
       const next = new Date(sub.nextRenewal);
-      const days = calendarDaysUntilRenewal(next);
-      if (days < 0 || days > 7) continue;
+      if (Number.isNaN(next.getTime())) continue;
 
-      const typeKey = `renewal:${sub.id}:${todayKey}`;
+      const days = utcCalendarDaysUntilRenewal(next, asOf);
+      if (days !== 7) continue;
+
+      const renewalKey = utcCalendarDateKey(next);
+      if (!renewalKey) continue;
+
+      const typeKey = renewalReminderTypeKey(sub.id, renewalKey);
+      const renewalLabel = formatRenewalDateDisplayUtc(next);
+      if (!renewalLabel) continue;
+
       const monthly = pricePerMonth(sub.price, sub.billingCycle);
       const priceLabel = formatCurrency(monthly);
-      const dayPhrase =
-        days === 0 ? "today" : days === 1 ? "tomorrow" : `in ${days} days`;
-      const title = `${sub.name} renews ${dayPhrase} (${priceLabel})`;
+      const title = `Upcoming renewal: ${sub.name} on ${renewalLabel}`;
 
-      if (await hasDuplicateNotificationToday(userId, typeKey, title)) continue;
+      const alreadySent = await prisma.notification.findFirst({
+        where: { userId, type: typeKey },
+        select: { id: true },
+      });
+      if (alreadySent) continue;
+
+      await sendRenewalReminderEmail({
+        to: user.email,
+        recipientName: user.name,
+        subName: sub.name,
+        renewalDate: next,
+        renewalLabel,
+        monthlyAmount: monthly,
+      });
 
       await prisma.notification.create({
         data: {
           userId,
           type: typeKey,
           title,
-          body: "Renewal reminder",
+          body: `Renews on ${renewalLabel} (${priceLabel}/mo est.).`,
           read: false,
         },
-      });
-
-      await sendRenewalReminderEmail({
-        to: user.email,
-        recipientName: user.name,
-        subName: sub.name,
-        days,
-        renewalDate: next,
-        monthlyAmount: monthly,
       });
     }
   }
