@@ -1,3 +1,7 @@
+/**
+ * Client-side helper: runs Gmail import API and/or creates Plaid-backed subscriptions via REST,
+ * using the same dedupe keys as the server. Clears declined-merchant keys after successful Plaid adds.
+ */
 import { buildSubscriptionCreateFromPlaid } from "@/lib/plaidImportHelpers";
 import {
   keysForPlaidMerchant,

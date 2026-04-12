@@ -75,7 +75,7 @@ export function Navbar() {
               href="/dashboard"
               className="rounded-full bg-accent px-4 py-2 text-sm font-semibold text-white hover:opacity-90"
             >
-              App
+              Dashboard
             </Link>
           )}
           <button

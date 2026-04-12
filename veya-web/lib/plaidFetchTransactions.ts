@@ -1,3 +1,4 @@
+/** Paginates Plaid `transactionsSync` until `has_more` is false, then filters to last 24 months. */
 import type { Transaction } from "plaid";
 import { getPlaidClient } from "@/lib/plaidServer";
 

@@ -1,3 +1,7 @@
+/**
+ * Central place to create a `Subscription` row and fire optional “new Plaid subscription” email.
+ * Shared by `POST /api/subscriptions` and background Plaid import so behavior stays identical.
+ */
 import { prisma } from "@/lib/prisma";
 import { mergeNotificationPrefs } from "@/lib/notificationPrefs";
 import { formatCurrency } from "@/lib/utils";

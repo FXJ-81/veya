@@ -1,3 +1,7 @@
+/**
+ * Persists normalized merchant keys the user **declined** from Plaid scan suggestions.
+ * Used by the scan modal + Settings so auto-sync never re-adds those merchants without consent.
+ */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthUser } from "@/lib/getAuthUser";

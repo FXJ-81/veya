@@ -1,5 +1,12 @@
 "use client";
 
+/**
+ * Native Support & Feedback form (Settings page).
+ *
+ * - Posts to `/api/support/feedback` (server validates and forwards to Google Apps Script).
+ * - Client: HTML5 constraints + loading / success / error UI + short cooldown between attempts.
+ * - Backup link opens the legacy Google Form in a new tab if the user prefers.
+ */
 import { useCallback, useEffect, useRef, useState, type FormEvent } from "react";
 import { useSession } from "next-auth/react";
 import { Input } from "@/components/ui/Input";
@@ -27,8 +34,10 @@ export function SupportFeedbackForm() {
   const [submitState, setSubmitState] = useState<SubmitState>("idle");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [errorDetails, setErrorDetails] = useState<string | null>(null);
+  /** Timestamp of last finished submit attempt; used to ignore double-clicks / rapid resends. */
   const lastClientSubmitRef = useRef(0);
 
+  // Prefill from session once signed in, without overwriting if the user already typed something.
   useEffect(() => {
     if (status !== "authenticated") return;
     setEmail((prev) => (prev.trim() ? prev : session?.user?.email ?? ""));
@@ -78,6 +87,7 @@ export function SupportFeedbackForm() {
         setErrorDetails(null);
         setSubmitState("error");
       } finally {
+        // Cooldown is measured from completion so slow networks don’t block retries unfairly.
         lastClientSubmitRef.current = Date.now();
       }
     },

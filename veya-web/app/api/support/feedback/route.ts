@@ -1,3 +1,13 @@
+/**
+ * Support & Feedback (Settings page)
+ *
+ * Accepts JSON from the native form, validates it, rate-limits by user, then POSTs the payload
+ * to a Google Apps Script Web App (`SUPPORT_FEEDBACK_WEBAPP_URL`). The script appends a row
+ * to Google Sheets. Secrets stay on the server; the browser never sees the webhook URL.
+ *
+ * Env: SUPPORT_FEEDBACK_WEBAPP_URL (required), optional SUPPORT_FEEDBACK_WEBAPP_SECRET,
+ *      or GOOGLE_APPS_SCRIPT_SUPPORT_URL as an alias for the web app URL.
+ */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthUser } from "@/lib/getAuthUser";
@@ -6,6 +16,7 @@ import {
   resolveSupportFeedbackWebappUrl,
 } from "@/lib/supportFeedbackIngest";
 
+/** Fields the Settings form sends; stricter rules are enforced here than in HTML5 alone. */
 const bodySchema = z.object({
   email: z.string().trim().email("Enter a valid email address."),
   name: z.string().trim().min(1, "Name is required.").max(200),
@@ -13,18 +24,21 @@ const bodySchema = z.object({
   message: z.string().trim().min(10, "Please enter at least 10 characters.").max(8000),
 });
 
+/** Written to the Sheet so you can filter rows that came from this UI vs other channels. */
 const SOURCE_LABEL = "settings_support_form";
 
-/** In-memory cooldown per user (best-effort on a warm instance). */
+/** In-memory cooldown per user (best-effort on a warm serverless instance). */
 const lastSubmitByUser = new Map<string, number>();
 const COOLDOWN_MS = 5000;
 
 export async function POST(req: Request) {
+  // --- Auth: feedback is only for signed-in users (matches Settings visibility). ---
   const authUser = await getAuthUser(req);
   if (!authUser) {
     return NextResponse.json({ error: "You must be signed in to send feedback." }, { status: 401 });
   }
 
+  // --- Server-side anti-spam: short cooldown per account. ---
   const now = Date.now();
   const prev = lastSubmitByUser.get(authUser.id) ?? 0;
   if (now - prev < COOLDOWN_MS) {
@@ -34,6 +48,7 @@ export async function POST(req: Request) {
     );
   }
 
+  // --- Parse and validate body (Zod returns user-facing strings on failure). ---
   let json: unknown;
   try {
     json = await req.json();
@@ -49,6 +64,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: msg }, { status: 400 });
   }
 
+  // --- Ingest URL must be configured on the server (never rely on the client for this). ---
   const webappUrl = resolveSupportFeedbackWebappUrl();
   if (!webappUrl) {
     console.error(
@@ -65,6 +81,7 @@ export async function POST(req: Request) {
     );
   }
 
+  // --- Build payload: timestamp is authoritative from the server clock. ---
   const submittedAt = new Date().toISOString();
   const secret = process.env.SUPPORT_FEEDBACK_WEBAPP_SECRET?.trim();
   const payload = {
@@ -78,6 +95,7 @@ export async function POST(req: Request) {
     ...(secret ? { ingestSecret: secret } : {}),
   };
 
+  // --- Forward to Google Apps Script; success requires HTTP 200 + JSON { ok: true }. ---
   const ingest = await forwardSupportFeedbackToIngest(webappUrl, payload);
   if (!ingest.ok) {
     console.error("[support/feedback] ingest failed", ingest);
@@ -94,6 +112,7 @@ export async function POST(req: Request) {
     );
   }
 
+  // Only record cooldown after a successful ingest (failed attempts can retry sooner).
   lastSubmitByUser.set(authUser.id, now);
   console.log("[support/feedback] saved", { userId: authUser.id, topic: parsed.data.topic });
   return NextResponse.json({ ok: true });

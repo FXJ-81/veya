@@ -1,3 +1,8 @@
+/**
+ * Manual Plaid “sync” from the app: pulls transactions, runs detection, returns **candidates**
+ * for the scan modal (`return_only`). Does not auto-add subscriptions here—that path is cron
+ * `silent_auto` or user confirms in the modal → import API.
+ */
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { runPlaidSubscriptionSyncForUser } from "@/lib/runPlaidSubscriptionSync";

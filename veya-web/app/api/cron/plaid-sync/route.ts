@@ -5,7 +5,10 @@ import { runPlaidSubscriptionSyncForUser } from "@/lib/runPlaidSubscriptionSync"
 export const dynamic = "force-dynamic";
 
 /**
- * Vercel Cron: every 5 minutes. Requires CRON_SECRET and Authorization: Bearer <CRON_SECRET>.
+ * Vercel Cron (see `vercel.json`): runs about every 5 minutes.
+ *
+ * Secured with `Authorization: Bearer <CRON_SECRET>` so random clients cannot trigger syncs.
+ * Iterates every user with at least one Plaid account and runs `silent_auto` (append new subs).
  */
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET?.trim();

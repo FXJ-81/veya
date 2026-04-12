@@ -1,3 +1,10 @@
+/**
+ * Generates in-app notifications and related emails for one user (welcome, renewal reminders,
+ * budget alerts, weekly summary). Invoked from `POST /api/notifications/generate` (e.g. cron or client).
+ *
+ * Renewal emails: exactly **one** per subscription per renewal UTC date, only when **7 days**
+ * before renewal, respecting `renewalReminders` prefs and `renewal_reminder:*` idempotency keys.
+ */
 import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/utils";
 import { mergeNotificationPrefs } from "@/lib/notificationPrefs";

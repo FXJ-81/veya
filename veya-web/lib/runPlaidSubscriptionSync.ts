@@ -1,3 +1,8 @@
+/**
+ * Orchestrates one Plaid sync run for a user: pull transactions (per linked bank), detect
+ * subscription-like spend, classify against existing subs + declined merchants, then either
+ * return candidates for the UI (`return_only`) or auto-create rows (`silent_auto`).
+ */
 import type { Transaction } from "plaid";
 import { prisma } from "@/lib/prisma";
 import { getPlaidClient } from "@/lib/plaidServer";

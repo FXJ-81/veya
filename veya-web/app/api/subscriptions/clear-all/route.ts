@@ -8,7 +8,9 @@ const bodySchema = z.object({
 });
 
 /**
- * Deletes all subscriptions for the authenticated user. Does not clear Plaid declined-merchant preferences.
+ * Deletes **all** `Subscription` rows for the signed-in user.
+ * Requires explicit JSON `{ "confirm": "CLEAR_ALL_SUBSCRIPTIONS" }` to avoid accidental wipes.
+ * Does **not** remove Plaid links or `plaidDeclinedMerchantKeys` (decline memory stays intact).
  */
 export async function POST(req: Request) {
   const authUser = await getAuthUser(req);

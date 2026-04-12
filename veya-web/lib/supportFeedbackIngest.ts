@@ -1,6 +1,9 @@
 /**
  * Server-side forward of Support & Feedback submissions to a Google Apps Script Web App
  * that appends rows to Google Sheets.
+ *
+ * Contract: the Web App must respond with HTTP 200 and a JSON body `{ "ok": true }` on success
+ * so Veya can distinguish a real append from HTML error pages or misconfigured deployments.
  */
 
 export type SupportFeedbackIngestPayload = {
@@ -27,6 +30,7 @@ export async function forwardSupportFeedbackToIngest(
   webappUrl: string,
   payload: SupportFeedbackIngestPayload,
 ): Promise<SupportIngestResult> {
+  // 1) POST JSON (server → Google; avoids browser CORS and keeps secrets off the client).
   let res: Response;
   try {
     res = await fetch(webappUrl, {
@@ -44,6 +48,7 @@ export async function forwardSupportFeedbackToIngest(
     };
   }
 
+  // 2) Apps Script returns JSON text; non-JSON usually means wrong URL or HTML error page.
   const text = await res.text();
   let parsed: { ok?: boolean; error?: string } | null = null;
   try {
@@ -53,6 +58,7 @@ export async function forwardSupportFeedbackToIngest(
     return { ok: false, reason: "invalid_json", status: res.status, snippet: text.slice(0, 300) };
   }
 
+  // 3) HTTP status must be OK (some misconfigs return 200 with ok:false in JSON).
   if (!res.ok) {
     console.error("[supportFeedbackIngest] HTTP error", res.status, text.slice(0, 400));
     return { ok: false, reason: "http_error", status: res.status, snippet: text.slice(0, 300) };
