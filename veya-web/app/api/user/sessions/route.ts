@@ -3,6 +3,8 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 
+export const dynamic = "force-dynamic";
+
 /** Removes database session rows for this user (e.g. other devices using DB-backed sessions). */
 export async function DELETE() {
   const session = await getServerSession(authOptions);
