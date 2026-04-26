@@ -6,6 +6,7 @@ import { compare } from "bcryptjs";
 import { applyCanonicalNextAuthUrlForOAuth } from "./googleOAuthCallback";
 import { prisma } from "./prisma";
 import { recordOAuthError } from "./oauthErrorBuffer";
+import { authDevLog } from "./authDevLog";
 import type { Adapter, AdapterUser } from "next-auth/adapters";
 
 applyCanonicalNextAuthUrlForOAuth();
@@ -65,7 +66,7 @@ function createRobustAdapter(): Adapter {
       const emailNorm = normalizeEmail(data.email as string | undefined);
       if (emailNorm) data.email = emailNorm;
 
-      console.log("[auth][createUser] start", {
+      authDevLog("[auth][createUser] start", {
         email: data.email,
         name: data.name,
         hasEmailVerified: data.emailVerified != null,
@@ -74,15 +75,15 @@ function createRobustAdapter(): Adapter {
 
       try {
         const user = await prisma.user.create({ data: data as never });
-        console.log("[auth][createUser] success userId:", user.id, "email:", user.email);
+        authDevLog("[auth][createUser] success userId:", user.id, "email:", user.email);
         return user as AdapterUser;
       } catch (err: unknown) {
         const code = (err as { code?: string }).code;
         if (code === "P2002" && data.email) {
-          console.log("[auth][createUser] P2002 unique violation — resolving existing user by email");
+          authDevLog("[auth][createUser] P2002 unique violation — resolving existing user by email");
           const existing = await findUserByEmailCaseInsensitive(data.email as string);
           if (existing) {
-            console.log("[auth][createUser] returning existing userId:", existing.id);
+            authDevLog("[auth][createUser] returning existing userId:", existing.id);
             return existing as AdapterUser;
           }
         }
@@ -96,19 +97,19 @@ function createRobustAdapter(): Adapter {
     linkAccount: async (raw: Record<string, unknown>) => {
       const data = pick(raw, ACCOUNT_FIELDS);
       const stripped = Object.keys(raw).filter((k) => !ACCOUNT_FIELDS.has(k));
-      console.log("[auth][linkAccount]", {
+      authDevLog("[auth][linkAccount]", {
         provider: data.provider, userId: data.userId,
         ...(stripped.length ? { strippedFields: stripped } : {}),
       });
 
       try {
         const acct = await prisma.account.create({ data: data as never });
-        console.log("[auth][linkAccount] OK");
+        authDevLog("[auth][linkAccount] OK");
         return acct as never;
       } catch (err: unknown) {
         const code = (err as { code?: string }).code;
         if (code === "P2002") {
-          console.log("[auth][linkAccount] P2002 – updating existing account");
+          authDevLog("[auth][linkAccount] P2002 – updating existing account");
           const existing = await prisma.account.findFirst({
             where: {
               provider: data.provider as string,
@@ -129,7 +130,7 @@ function createRobustAdapter(): Adapter {
                 session_state: (data.session_state as string) ?? undefined,
               },
             });
-            console.log("[auth][linkAccount] OK (updated existing)");
+            authDevLog("[auth][linkAccount] OK (updated existing)");
             return updated as never;
           }
         }
@@ -147,13 +148,13 @@ function createRobustAdapter(): Adapter {
         const n = normalizeEmail(rest.email);
         if (n) rest.email = n;
       }
-      console.log("[auth][updateUser] start", { id, keys: Object.keys(rest) });
+      authDevLog("[auth][updateUser] start", { id, keys: Object.keys(rest) });
       try {
         const user = await prisma.user.update({
           where: { id },
           data: rest as never,
         });
-        console.log("[auth][updateUser] success userId:", user.id);
+        authDevLog("[auth][updateUser] success userId:", user.id);
         return user as AdapterUser;
       } catch (err) {
         recordOAuthError("updateUser", err);
@@ -164,7 +165,7 @@ function createRobustAdapter(): Adapter {
 
     /* ---------- getUserByEmail ---------- */
     getUserByEmail: async (email: string) => {
-      console.log("[auth][getUserByEmail] lookup", email);
+      authDevLog("[auth][getUserByEmail] lookup", email);
       try {
         const user = await findUserByEmailCaseInsensitive(email);
         console.log(
@@ -181,13 +182,13 @@ function createRobustAdapter(): Adapter {
 
     /* ---------- getUserByAccount ---------- */
     getUserByAccount: async (provider_providerAccountId) => {
-      console.log("[auth][getUserByAccount]",
+      authDevLog("[auth][getUserByAccount]",
         provider_providerAccountId.provider,
         provider_providerAccountId.providerAccountId,
       );
       try {
         const user = await base.getUserByAccount!(provider_providerAccountId);
-        console.log("[auth][getUserByAccount]", user ? `found ${user.id}` : "not found");
+        authDevLog("[auth][getUserByAccount]", user ? `found ${user.id}` : "not found");
         return user;
       } catch (err) {
         recordOAuthError("getUserByAccount", err);
@@ -256,7 +257,7 @@ export const authOptions: NextAuthOptions = {
   pages: { signIn: "/sign-in" },
   events: {
     async signIn({ user, account, isNewUser }) {
-      console.log("[auth][event signIn]", {
+      authDevLog("[auth][event signIn]", {
         provider: account?.provider,
         userId: user.id,
         email: user.email,
@@ -267,15 +268,19 @@ export const authOptions: NextAuthOptions = {
   debug: process.env.NODE_ENV === "development",
   logger: {
     error(code, metadata) {
-      console.error("[auth][nextauth-error]", code,
-        metadata instanceof Error ? metadata.message : metadata,
-      );
+      if (process.env.NODE_ENV === "development") {
+        console.error("[auth][nextauth-error]", code, metadata);
+      } else if (metadata instanceof Error) {
+        console.error("[auth][nextauth-error]", code, metadata.message);
+      } else {
+        console.error("[auth][nextauth-error]", code);
+      }
     },
     warn(code) {
       console.warn("[auth][nextauth-warn]", code);
     },
     debug(code, metadata) {
-      console.log("[auth][nextauth-debug]", code, metadata);
+      authDevLog("[auth][nextauth-debug]", code, metadata);
     },
   },
   callbacks: {
@@ -283,7 +288,7 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider === "google") {
         const profileEmail = (profile as { email?: string })?.email;
         const email = profileEmail ?? user.email;
-        console.log("[auth][signIn cb] Google allow check:", {
+        authDevLog("[auth][signIn cb] Google allow check:", {
           profileEmail,
           userEmail: user.email,
           userId: user.id,
@@ -308,7 +313,7 @@ export const authOptions: NextAuthOptions = {
               })
             : null;
 
-        console.log("[auth][signIn cb] Google linkage snapshot:", {
+        authDevLog("[auth][signIn cb] Google linkage snapshot:", {
           existingUserByEmail: existingByEmail?.id ?? null,
           existingGoogleAccountRow: existingGoogleAccount?.id ?? null,
           googleAccountUserId: existingGoogleAccount?.userId ?? null,

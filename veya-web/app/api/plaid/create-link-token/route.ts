@@ -2,10 +2,18 @@ import { NextResponse } from "next/server";
 import { CountryCode, Products } from "plaid";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { getPlaidClient } from "@/lib/plaidServer";
+import { rateLimitAllow } from "@/lib/rateLimitInMemory";
 
 export async function POST(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+
+  if (!rateLimitAllow(`plaid:link-token:${authUser.id}`, 40, 60 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "Too many link attempts. Try again later." },
+      { status: 429 },
+    );
+  }
 
   try {
     const plaid = getPlaidClient();

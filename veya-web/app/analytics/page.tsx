@@ -15,7 +15,8 @@ import { BudgetLimitsSection } from "@/components/analytics/BudgetLimitsSection"
 export default function AnalyticsPage() {
   const { status } = useSession();
   const router = useRouter();
-  const { data: analytics, isLoading, isFetching, isError, refetch } = useAnalytics();
+  const { data: analytics, isLoading, isFetching, isError, error, refetch } = useAnalytics();
+  const premiumLocked = error instanceof Error && error.message === "PREMIUM_REQUIRED";
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/sign-in");
@@ -46,6 +47,24 @@ export default function AnalyticsPage() {
           <div className="space-y-6">
             <Skeleton className="h-48 rounded-2xl" />
             <Skeleton className="h-64 rounded-2xl" />
+          </div>
+        ) : premiumLocked ? (
+          <div className="rounded-2xl border border-border bg-card p-6 sm:p-8">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <p className="font-semibold text-text-primary">Analytics are Premium</p>
+                <p className="mt-2 text-sm text-text-secondary">
+                  Upgrade to Premium for advanced analytics, spending insights, yearly projections, and category breakdowns.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => router.push("/settings")}
+                className="rounded-xl bg-accent px-6 py-3 text-sm font-semibold text-white hover:opacity-90"
+              >
+                Upgrade to Premium
+              </button>
+            </div>
           </div>
         ) : isError ? (
           <div className="rounded-2xl border border-border bg-card p-8 text-center">

@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -34,6 +35,7 @@ export function AddSubscriptionModal({
   defaultDate,
 }: AddSubscriptionModalProps) {
   const today = defaultDate ?? new Date().toISOString().slice(0, 10);
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -49,9 +51,14 @@ export function AddSubscriptionModal({
   });
 
   const handleFormSubmit = async (data: FormData) => {
-    await onSubmit(data);
-    reset();
-    onClose();
+    setSubmitError(null);
+    try {
+      await onSubmit(data);
+      reset();
+      onClose();
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Could not add subscription.");
+    }
   };
 
   return (
@@ -150,6 +157,11 @@ export function AddSubscriptionModal({
             Add
           </Button>
         </div>
+        {submitError && (
+          <p className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+            {submitError}
+          </p>
+        )}
       </form>
     </Modal>
   );

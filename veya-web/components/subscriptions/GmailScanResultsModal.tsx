@@ -27,6 +27,10 @@ function rowKey(c: GmailScanRow, index: number): string {
   return c.rowId ?? c.messageId ?? `scan-${index}`;
 }
 
+function formatSubscriptionCount(count: number): string {
+  return `${count} subscription${count === 1 ? "" : "s"}`;
+}
+
 function sourceLabel(source?: SubscriptionScanSource): string {
   if (source === "plaid") return "🏦 Found in bank";
   if (source === "confirmed") return "✅ Confirmed";
@@ -72,6 +76,14 @@ export function GmailScanResultsModal({
     added: number;
     skipped: number;
   } | null>(null);
+  const plaidImportHeadline = plaidImportSummary
+    ? plaidImportSummary.added > 0
+      ? "Subscriptions added"
+      : "Subscriptions updated"
+    : null;
+  const plaidImportMessage = plaidImportSummary
+    ? `${formatSubscriptionCount(plaidImportSummary.added)} added. ${plaidImportSummary.skipped} already on your list.`
+    : null;
 
   useEffect(() => {
     if (!open) {
@@ -191,11 +203,8 @@ export function GmailScanResultsModal({
     >
       {plaidImportSummary && (
         <div className="mb-4 rounded-xl border border-border bg-background-secondary/80 px-4 py-3 text-sm text-text-primary">
-          <p className="font-medium text-text-primary">Import complete</p>
-          <p className="mt-1 text-text-secondary">
-            {plaidImportSummary.added} new found, {plaidImportSummary.skipped} already in your list
-            (skipped)
-          </p>
+          <p className="font-medium text-text-primary">{plaidImportHeadline}</p>
+          <p className="mt-1 text-text-secondary">{plaidImportMessage}</p>
         </div>
       )}
 

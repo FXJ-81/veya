@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
+import { getSubscriptionLimitStatus, planLimitResponse } from "@/lib/planLimits";
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -25,15 +26,20 @@ export async function GET(req: Request) {
     where: { userId: authUser.id },
     orderBy: { nextRenewal: "asc" },
   });
-  return NextResponse.json(
-    subs.map((s) => ({
+  const limitStatus = await getSubscriptionLimitStatus(authUser.id);
+  return NextResponse.json({
+    subscriptions: subs.map((s) => ({
       ...s,
       startDate: s.startDate.toISOString(),
       nextRenewal: s.nextRenewal.toISOString(),
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString(),
-    }))
-  );
+    })),
+    plan: limitStatus.plan,
+    subscriptionLimit: limitStatus.limit,
+    subscriptionCount: limitStatus.count,
+    subscriptionRemaining: limitStatus.remaining,
+  });
 }
 
 export async function POST(req: Request) {
@@ -50,19 +56,26 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: parsed.error.message }, { status: 400 });
   }
   const data = parsed.data;
-  const sub = await createSubscriptionForUser(authUser.id, {
-    name: data.name,
-    category: data.category,
-    price: data.price,
-    billingCycle: data.billingCycle,
-    startDate: new Date(data.startDate),
-    nextRenewal: new Date(data.nextRenewal),
-    status: data.status ?? "active",
-    notes: data.notes,
-    isShared: data.isShared ?? false,
-    color: data.color,
-    source: data.source ?? "manual",
-  });
+  let sub: Awaited<ReturnType<typeof createSubscriptionForUser>>;
+  try {
+    sub = await createSubscriptionForUser(authUser.id, {
+      name: data.name,
+      category: data.category,
+      price: data.price,
+      billingCycle: data.billingCycle,
+      startDate: new Date(data.startDate),
+      nextRenewal: new Date(data.nextRenewal),
+      status: data.status ?? "active",
+      notes: data.notes,
+      isShared: data.isShared ?? false,
+      color: data.color,
+      source: data.source ?? "manual",
+    });
+  } catch (e) {
+    const limit = planLimitResponse(e);
+    if (limit) return limit;
+    throw e;
+  }
 
   return NextResponse.json({
     ...sub,

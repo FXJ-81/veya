@@ -70,12 +70,17 @@ export async function POST(req: Request) {
     console.error(
       "[support/feedback] Missing env: set SUPPORT_FEEDBACK_WEBAPP_URL (or alias GOOGLE_APPS_SCRIPT_SUPPORT_URL)",
     );
+    const isProd = process.env.NODE_ENV === "production";
     return NextResponse.json(
       {
         error: "Support messaging isn’t connected yet.",
         code: "MISSING_SUPPORT_INGEST",
-        details:
-          "Add SUPPORT_FEEDBACK_WEBAPP_URL to your server environment (Vercel → Settings → Environment Variables, or .env locally). It must be the Google Apps Script Web app URL that appends rows to your Sheet. Copy the script from veya-web/scripts/support-feedback-ingest.gs into a script bound to your spreadsheet, deploy as a Web app, then paste the deployment URL. Optional: SUPPORT_FEEDBACK_WEBAPP_SECRET on the server and INGEST_SECRET in the script’s Project Settings → Script properties (same value).",
+        ...(!isProd
+          ? {
+              details:
+                "Add SUPPORT_FEEDBACK_WEBAPP_URL to your server environment (Vercel → Settings → Environment Variables, or .env locally). It must be the Google Apps Script Web app URL that appends rows to your Sheet. Copy the script from veya-web/scripts/support-feedback-ingest.gs into a script bound to your spreadsheet, deploy as a Web app, then paste the deployment URL. Optional: SUPPORT_FEEDBACK_WEBAPP_SECRET on the server and INGEST_SECRET in the script’s Project Settings → Script properties (same value).",
+            }
+          : {}),
       },
       { status: 503 },
     );
@@ -98,7 +103,10 @@ export async function POST(req: Request) {
   // --- Forward to Google Apps Script; success requires HTTP 200 + JSON { ok: true }. ---
   const ingest = await forwardSupportFeedbackToIngest(webappUrl, payload);
   if (!ingest.ok) {
-    console.error("[support/feedback] ingest failed", ingest);
+    console.error("[support/feedback] ingest failed", {
+      reason: ingest.reason,
+      status: ingest.status,
+    });
     return NextResponse.json(
       {
         error: "Could not save your message. Please try again in a moment.",

@@ -9,6 +9,7 @@ import {
 } from "@/lib/subscriptionBilling";
 import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
 import type { Subscription } from "@/types";
+import { requirePremiumFeature } from "@/lib/planLimits";
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -223,6 +224,8 @@ function buildInsightCards(params: {
 export async function GET(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const premiumGate = await requirePremiumFeature(authUser.id, "Analytics");
+  if (premiumGate) return premiumGate;
 
   const [subsActive, pausedCount, budgets] = await Promise.all([
     prisma.subscription.findMany({
@@ -362,6 +365,8 @@ export async function GET(req: Request) {
   });
 
   return NextResponse.json({
+    plan: "premium",
+    advancedAnalyticsLocked: false,
     score,
     hasActiveSubscriptions,
     monthlySpend,

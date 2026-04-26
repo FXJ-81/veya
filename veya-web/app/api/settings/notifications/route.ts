@@ -6,6 +6,7 @@ import {
   NOTIFICATION_PREF_KEYS,
   type NotificationPrefKey,
 } from "@/lib/notificationPrefs";
+import { getUserPlan } from "@/lib/planLimits";
 
 async function ensureSettings(userId: string) {
   return prisma.userSettings.upsert({
@@ -15,13 +16,23 @@ async function ensureSettings(userId: string) {
   });
 }
 
+function lockPremiumNotificationPrefs(prefs: Record<NotificationPrefKey, boolean>) {
+  for (const key of NOTIFICATION_PREF_KEYS) {
+    prefs[key] = false;
+  }
+}
+
 export async function GET(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   await ensureSettings(authUser.id);
   const row = await prisma.userSettings.findUnique({ where: { userId: authUser.id } });
-  return NextResponse.json({ prefs: mergeNotificationPrefs(row?.notificationPrefs) });
+  const prefs = mergeNotificationPrefs(row?.notificationPrefs);
+  if ((await getUserPlan(authUser.id)) !== "premium") {
+    lockPremiumNotificationPrefs(prefs);
+  }
+  return NextResponse.json({ prefs });
 }
 
 export async function PATCH(req: Request) {
@@ -43,10 +54,14 @@ export async function PATCH(req: Request) {
   const row = await prisma.userSettings.findUnique({ where: { userId: authUser.id } });
   const current = mergeNotificationPrefs(row?.notificationPrefs);
   const patch = body as Record<string, unknown>;
+  const plan = await getUserPlan(authUser.id);
 
   const next: Record<NotificationPrefKey, boolean> = { ...current };
   for (const key of NOTIFICATION_PREF_KEYS) {
     if (key in patch) next[key] = Boolean(patch[key]);
+  }
+  if (plan !== "premium") {
+    lockPremiumNotificationPrefs(next);
   }
 
   await prisma.userSettings.update({

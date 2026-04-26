@@ -3,7 +3,12 @@
  */
 
 import assert from "node:assert/strict";
-import { classifyPlaidDetectionsForUser } from "./plaidSyncCore";
+import {
+  classifyPlaidDetectionsForUser,
+  isPlaidMerchantDuplicateOfExisting,
+  keysForPlaidMerchant,
+} from "./plaidSyncCore";
+import { primaryPlaidCandidateKey } from "./plaidCandidateState";
 import type { PlaidDetectedSubscription } from "./plaidSubscriptionDetect";
 
 function run(name: string, fn: () => void) {
@@ -44,6 +49,36 @@ run("new merchant is selected and auto-import eligible", () => {
   const r = classifyPlaidDetectionsForUser([row("NewCo")], [], []);
   assert.equal(r.forModal[0]!.defaultSelected, true);
   assert.equal(r.forAutoImport.length, 1);
+});
+
+run("merchant keys normalize both name and merchant name", () => {
+  const keys = keysForPlaidMerchant({ name: "  Hulu  ", merchantName: "Hulu, Inc." });
+  assert.deepEqual(keys, ["hulu", "hulu, inc.".trim().toLowerCase()]);
+});
+
+run("existing or batch duplicates are skipped during plaid adds", () => {
+  const existingKeys = new Set(["netflix"]);
+  const batchSeen = new Set(["spotify"]);
+  assert.equal(
+    isPlaidMerchantDuplicateOfExisting({ name: "Netflix", merchantName: "Netflix" }, existingKeys, new Set()),
+    true,
+  );
+  assert.equal(
+    isPlaidMerchantDuplicateOfExisting({ name: "Spotify", merchantName: "Spotify" }, new Set(), batchSeen),
+    true,
+  );
+  assert.equal(
+    isPlaidMerchantDuplicateOfExisting({ name: "Disney+", merchantName: "Disney+" }, new Set(), new Set()),
+    false,
+  );
+});
+
+run("primary pending candidate key prefers merchant name", () => {
+  assert.equal(
+    primaryPlaidCandidateKey({ name: "Spotify Premium", merchantName: "Spotify" }),
+    "spotify",
+  );
+  assert.equal(primaryPlaidCandidateKey({ name: "Netflix" }), "netflix");
 });
 
 if (!process.exitCode) console.log("\nPlaid sync dedup tests passed.");

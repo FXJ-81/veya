@@ -1,7 +1,6 @@
 /**
- * Manual Plaid “sync” from the app: pulls transactions, runs detection, returns **candidates**
- * for the scan modal (`return_only`). Does not auto-add subscriptions here—that path is cron
- * `silent_auto` or user confirms in the modal → import API.
+ * Manual Plaid sync from the app: pulls transactions, runs detection, and stores new candidates
+ * as pending review items. Returns the pending review rows found during this run for the modal.
  */
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
@@ -24,7 +23,7 @@ export async function POST(req: Request) {
   try {
     const result = await runPlaidSubscriptionSyncForUser(authUser.id, {
       plaidAccountId,
-      mode: "return_only",
+      mode: "store_pending",
     });
 
     if (!result.ok) {
@@ -43,6 +42,8 @@ export async function POST(req: Request) {
       result.transactionsCount,
       "candidates",
       result.candidates?.length ?? 0,
+      "pending created",
+      result.pendingCreated,
     );
 
     return NextResponse.json({

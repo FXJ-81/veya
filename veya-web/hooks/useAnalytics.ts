@@ -11,11 +11,13 @@ export type AnalyticsInsightCard = {
 };
 
 interface AnalyticsData {
-  score: number;
+  plan: "free" | "premium";
+  advancedAnalyticsLocked: boolean;
+  score: number | null;
   hasActiveSubscriptions: boolean;
   monthlySpend: MonthlySpend[];
   categoryBreakdown: SpendingBreakdown[];
-  yearlyProjection: number;
+  yearlyProjection: number | null;
   monthlySubscriptionSpend: number;
   nationalAvgMonthly: number;
   insightCards: AnalyticsInsightCard[];
@@ -23,7 +25,10 @@ interface AnalyticsData {
 
 async function fetchAnalytics(): Promise<AnalyticsData> {
   const res = await fetch("/api/analytics");
-  if (!res.ok) throw new Error("Failed to fetch analytics");
+  if (!res.ok) {
+    const body = await res.json().catch(() => ({}));
+    throw new Error(typeof body.code === "string" ? body.code : "Failed to fetch analytics");
+  }
   return res.json();
 }
 

@@ -3,10 +3,19 @@ import { randomBytes } from "crypto";
 import sgMail from "@sendgrid/mail";
 import { prisma } from "@/lib/prisma";
 import { getGoogleOAuthOrigin } from "@/lib/googleOAuthCallback";
+import { getClientIp, rateLimitAllow } from "@/lib/rateLimitInMemory";
 
 const RESET_EXPIRY_HOURS = 1;
 
 export async function POST(req: Request) {
+  const ip = getClientIp(req);
+  if (!rateLimitAllow(`auth:forgot:${ip}`, 25, 60 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "Too many requests. Try again later." },
+      { status: 429 },
+    );
+  }
+
   let body: { email?: string };
   try {
     body = await req.json();
@@ -14,8 +23,16 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
   const email = body.email?.trim();
-  if (!email) {
+  if (!email || email.length > 320) {
     return NextResponse.json({ error: "Email required" }, { status: 400 });
+  }
+
+  const emailKey = email.toLowerCase();
+  if (!rateLimitAllow(`auth:forgot:email:${emailKey}`, 8, 60 * 60 * 1000)) {
+    return NextResponse.json(
+      { error: "Too many requests. Try again later." },
+      { status: 429 },
+    );
   }
 
   const apiKey = process.env.SENDGRID_API_KEY;
@@ -26,7 +43,9 @@ export async function POST(req: Request) {
     );
   }
 
-  const user = await prisma.user.findUnique({ where: { email } });
+  const user = await prisma.user.findFirst({
+    where: { email: { equals: email, mode: "insensitive" } },
+  });
   if (!user) {
     return NextResponse.json({ message: "If an account exists, we sent a reset link." });
   }
@@ -38,9 +57,9 @@ export async function POST(req: Request) {
   const token = randomBytes(32).toString("hex");
   const expires = new Date(Date.now() + RESET_EXPIRY_HOURS * 60 * 60 * 1000);
 
-  await prisma.verificationToken.deleteMany({ where: { identifier: email } });
+  await prisma.verificationToken.deleteMany({ where: { identifier: user.email } });
   await prisma.verificationToken.create({
-    data: { identifier: email, token, expires },
+    data: { identifier: user.email, token, expires },
   });
 
   const baseUrl = getGoogleOAuthOrigin();
@@ -54,7 +73,7 @@ export async function POST(req: Request) {
   sgMail.setApiKey(apiKey);
   try {
     await sgMail.send({
-      to: email,
+      to: user.email,
       from: fromEmail,
       subject: "Reset your Veya password",
       text: `Use this link to reset your password (valid ${RESET_EXPIRY_HOURS} hour): ${resetLink}`,

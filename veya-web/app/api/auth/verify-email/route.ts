@@ -1,13 +1,19 @@
 import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { getGoogleOAuthOrigin } from "@/lib/googleOAuthCallback";
+import { getClientIp, rateLimitAllow } from "@/lib/rateLimitInMemory";
 
 const VERIFY_PREFIX = "verify:";
 
 export async function GET(req: Request) {
+  const ip = getClientIp(req);
+  if (!rateLimitAllow(`auth:verify-email:${ip}`, 40, 60 * 60 * 1000)) {
+    return NextResponse.redirect(new URL("/sign-in?error=Too+many+attempts", req.url));
+  }
+
   const { searchParams } = new URL(req.url);
   const token = searchParams.get("token");
-  if (!token?.trim()) {
+  if (!token?.trim() || token.length > 512) {
     return NextResponse.redirect(new URL("/sign-in?error=Invalid+link", req.url));
   }
 

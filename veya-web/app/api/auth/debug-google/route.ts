@@ -8,9 +8,13 @@ import {
 /**
  * Dev-only: check that Google OAuth env vars are set and what redirect URI will be used.
  * Open http://localhost:3000/api/auth/debug-google when testing.
- * Remove or protect this route in production.
+ * Disabled in production (returns 404 with no body).
  */
 export async function GET() {
+  if (process.env.NODE_ENV === "production") {
+    return new NextResponse(null, { status: 404 });
+  }
+
   const clientId = process.env.GOOGLE_CLIENT_ID ?? "";
   const clientSecret = process.env.GOOGLE_CLIENT_SECRET ?? "";
   const origin = getGoogleOAuthOrigin();

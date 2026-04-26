@@ -54,7 +54,7 @@ function mondayDateKeyOfWeek(d: Date): string {
 export async function generateNotificationsForUser(userId: string): Promise<void> {
   const user = await prisma.user.findUnique({
     where: { id: userId },
-    select: { id: true, email: true, name: true },
+    select: { id: true, email: true, name: true, plan: true },
   });
   if (!user?.email) return;
 
@@ -66,6 +66,7 @@ export async function generateNotificationsForUser(userId: string): Promise<void
 
   const settings = await prisma.userSettings.findUnique({ where: { userId } });
   const prefs = mergeNotificationPrefs(settings?.notificationPrefs);
+  const premium = user.plan === "premium";
 
   const welcome = await prisma.notification.findFirst({
     where: { userId, type: "welcome" },
@@ -86,7 +87,7 @@ export async function generateNotificationsForUser(userId: string): Promise<void
     }
   }
 
-  if (prefs.renewalReminders) {
+  if (premium && prefs.renewalReminders) {
     const subs = await prisma.subscription.findMany({
       where: { userId, status: "active" },
     });
@@ -136,7 +137,7 @@ export async function generateNotificationsForUser(userId: string): Promise<void
     }
   }
 
-  if (prefs.budgetAlerts) {
+  if (premium && prefs.budgetAlerts) {
     const todayKey = localDateKey(new Date());
     const [budgets, subs] = await Promise.all([
       prisma.budget.findMany({ where: { userId } }),
@@ -190,7 +191,7 @@ export async function generateNotificationsForUser(userId: string): Promise<void
     }
   }
 
-  if (prefs.weeklySpendingSummary) {
+  if (premium && prefs.weeklySpendingSummary) {
     const now = new Date();
     if (now.getDay() === 1) {
       const weekKey = mondayDateKeyOfWeek(now);

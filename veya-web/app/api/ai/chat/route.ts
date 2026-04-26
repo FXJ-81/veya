@@ -5,6 +5,8 @@ import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { pricePerMonth, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
 import { SUBSCRIPTION_CATEGORIES } from "@/lib/categories";
+import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
+import { consumeAiMessageForPlan, planLimitResponse } from "@/lib/planLimits";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -17,6 +19,10 @@ type ActionPayload = {
 };
 
 type ChatMessage = Record<string, unknown>;
+
+function toBillingCycle(value: string): "monthly" | "yearly" | "weekly" | "custom" {
+  return value === "yearly" || value === "weekly" || value === "custom" ? value : "monthly";
+}
 
 function toConversationJson(messages: ChatMessage[]): Prisma.InputJsonValue {
   return messages as Prisma.InputJsonArray;
@@ -159,6 +165,15 @@ export async function POST(req: Request) {
   }
   if (!body?.message || typeof body.message !== "string") {
     return NextResponse.json({ error: "Invalid message" }, { status: 400 });
+  }
+
+  try {
+    await consumeAiMessageForPlan(authUser.id);
+  } catch (e) {
+    const limit = planLimitResponse(e);
+    if (limit) return limit;
+    console.error("[/api/ai/chat] usage limit check failed", e);
+    return NextResponse.json({ error: "AI usage check failed" }, { status: 500 });
   }
 
   // ─── Load context ────────────────────────────────────────────────────────────
@@ -483,7 +498,9 @@ async function executeAction(
   if (action.action === "createSubscription" || action.action === "create") {
     const name = (data.name as string | undefined) ?? (action.name as string | undefined) ?? "Subscription";
     const price = Number(data.price ?? action.price ?? 0);
-    const billingCycle = (data.billingCycle as string | undefined) ?? (action.billingCycle as string | undefined) ?? "monthly";
+    const billingCycle = toBillingCycle(
+      (data.billingCycle as string | undefined) ?? (action.billingCycle as string | undefined) ?? "monthly",
+    );
     const category = (data.category as string | undefined) ?? (action.category as string | undefined) ?? "Other";
     const notes = data.notes as string | undefined;
     const startDate = data.startDate ? new Date(data.startDate as string) : new Date();
@@ -491,9 +508,9 @@ async function executeAction(
       ? new Date(data.nextRenewal as string)
       : addCycle(startDate, billingCycle);
 
-    const created = await prisma.subscription.create({
-      data: {
-        userId,
+    let created: Awaited<ReturnType<typeof createSubscriptionForUser>>;
+    try {
+      created = await createSubscriptionForUser(userId, {
         name,
         price,
         billingCycle,
@@ -504,8 +521,12 @@ async function executeAction(
         source: "manual",
         isShared: false,
         notes,
-      },
-    });
+      });
+    } catch (e) {
+      const limit = planLimitResponse(e);
+      if (limit) return limit;
+      throw e;
+    }
     const chat = chatMsg(replyText || `Added **${created.name}** ✅`);
     const success = actionMsg(
       `✅ Added **${created.name}** ($${created.price.toFixed(2)}/${created.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,

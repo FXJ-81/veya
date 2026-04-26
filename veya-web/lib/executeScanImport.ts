@@ -53,7 +53,12 @@ export async function executeScanImport(
 
   if (payload.plaidItems.length > 0) {
     const subsRes = await fetch("/api/subscriptions");
-    const existingList = subsRes.ok ? ((await subsRes.json()) as { name: string }[]) : [];
+    const subsBody = subsRes.ok ? await subsRes.json() : [];
+    const existingList = Array.isArray(subsBody)
+      ? (subsBody as { name: string }[])
+      : Array.isArray(subsBody.subscriptions)
+        ? (subsBody.subscriptions as { name: string }[])
+        : [];
     const existingKeys = subscriptionNameKeySet(existingList);
     const batchSeen = new Set<string>();
     const importedKeys: string[] = [];

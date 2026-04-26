@@ -32,13 +32,13 @@ const FEATURES = [
   },
   {
     title: "Smart Alerts",
-    desc: "Renewal reminders, price changes, and spending alerts so nothing surprises you.",
+    desc: "Premium renewal reminders, price changes, and spending alerts so nothing surprises you.",
     icon: "🔔",
   },
 ];
 
 const FAQ = [
-  { q: "How do I add my subscriptions?", a: "Sign up, then add each subscription manually with name, price, and billing cycle. Bank linking (Premium) can auto-detect some." },
+  { q: "How do I add my subscriptions?", a: "Sign up, then add each subscription manually with name, price, and billing cycle. Bank linking can auto-detect some." },
   { q: "Is my data secure?", a: "Yes. We use encryption and never sell your data. Passwords are hashed with bcrypt." },
   { q: "Can I cancel Premium anytime?", a: "Yes. Cancel before your next billing date and you keep access until the period ends." },
   { q: "What's the AI coach?", a: "An AI that sees your subscription data and gives specific, actionable advice to save money." },
@@ -137,10 +137,10 @@ export default function LandingPage() {
               </p>
               <p className="text-text-secondary text-sm">forever</p>
               <ul className="mt-6 space-y-3 text-text-secondary text-sm">
-                <li>Up to 10 subscriptions</li>
-                <li>Basic analytics</li>
-                <li>1 AI message per day</li>
-                <li>Renewal reminders</li>
+                <li>Track up to 10 subscriptions</li>
+                <li>Bank linking and automatic detection</li>
+                <li>Budget tracking</li>
+                <li>5 AI messages per day</li>
               </ul>
               <Link
                 href="/sign-up"
@@ -165,17 +165,16 @@ export default function LandingPage() {
               <p className="text-text-secondary text-sm">/month</p>
               <ul className="mt-6 space-y-3 text-text-secondary text-sm">
                 <li>Unlimited subscriptions</li>
-                <li>Full analytics & insights</li>
-                <li>Unlimited AI coach</li>
-                <li>Export-ready summaries</li>
-                <li>Bank linking</li>
-                <li>7-day free trial</li>
+                <li>Advanced analytics and insights</li>
+                <li>Unlimited AI Coach</li>
+                <li>Renewal reminders</li>
+                <li>Notification alerts and weekly summaries</li>
               </ul>
               <Link
                 href="/sign-up"
                 className="mt-8 block w-full rounded-xl bg-accent py-3 text-center font-semibold text-white hover:opacity-90"
               >
-                Start free trial
+                Get Premium
               </Link>
             </motion.div>
           </div>

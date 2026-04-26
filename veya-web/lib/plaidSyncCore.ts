@@ -1,8 +1,8 @@
 /**
  * Plaid bank-scan deduplication and “declined merchant” handling.
  *
- * Used by both manual detect (`return_only`) and background auto-import so the same rules
- * apply everywhere: skip subs already saved, remember declined Plaid merchants, avoid dupes.
+ * Shared helpers for Plaid scan deduplication, normalized merchant matching, and the
+ * legacy modal classification path.
  */
 import type { PlaidDetectedSubscription } from "@/lib/plaidSubscriptionDetect";
 import {

@@ -11,17 +11,10 @@ import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
-import {
-  GmailScanResultsModal,
-  type GmailScanRow,
-} from "@/components/subscriptions/GmailScanResultsModal";
 import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
 import { PlaidSecurityBadges } from "@/components/settings/PlaidSecurityBadges";
 import { SupportFeedbackForm } from "@/components/settings/SupportFeedbackForm";
-import { executeScanImport } from "@/lib/executeScanImport";
 import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
-import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
-import type { ScanImportPayload } from "@/types/scan";
 import { cn } from "@/lib/utils";
 import type { NotificationPrefKey } from "@/lib/notificationPrefs";
 
@@ -121,11 +114,6 @@ export default function SettingsPage() {
   // Plaid Link
   const [plaidLinkToken, setPlaidLinkToken] = useState<string | null>(null);
 
-  // Scan results after connecting / resyncing
-  const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
-  const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
-  const [gmailImportBusy, setGmailImportBusy] = useState(false);
-
   // Disconnect confirmation
   const [confirmDisconnect, setConfirmDisconnect] = useState<PlaidAccountRow | null>(null);
 
@@ -167,18 +155,6 @@ export default function SettingsPage() {
   }, [status, router]);
 
   // ── load bank accounts ──────────────────────────────────────────────────────
-  const persistPlaidDeclinedMerchants = useCallback(async (keys: string[]) => {
-    if (!keys.length) return;
-    const res = await fetch("/api/settings/plaid-declined", {
-      method: "PATCH",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ addKeys: keys }),
-    });
-    if (!res.ok) {
-      console.warn("[settings] failed to save declined Plaid merchants");
-    }
-  }, []);
-
   const loadBankAccounts = useCallback(async () => {
     setBankLoadError(false);
     setBankError(null);
@@ -186,6 +162,10 @@ export default function SettingsPage() {
       const res = await fetch("/api/plaid/banks");
       const d = await res.json().catch(() => ({})) as Record<string, unknown>;
       if (!res.ok) {
+        if (res.status === 403 && d.code === "PREMIUM_REQUIRED") {
+          setPlaidAccounts([]);
+          return;
+        }
         const detail = typeof d.detail === "string" ? d.detail : typeof d.error === "string" ? d.error : "";
         const msg = res.status === 401
           ? "Session expired — please refresh the page."
@@ -297,18 +277,12 @@ export default function SettingsPage() {
       // Refresh accounts first so the new bank shows immediately
       await loadBankAccounts();
 
-      // Then detect subscriptions from the new bank
+      // Store any newly detected subscriptions silently.
+      // Review happens only on the Subscriptions page.
       try {
         const det = await fetch("/api/plaid/detect-subscriptions", { method: "POST" });
         const dj = await det.json().catch(() => ({}));
         if (det.ok && dj.ok) {
-          const rows = mapPlaidDetectToScanRows(
-            Array.isArray(dj.subscriptions) ? dj.subscriptions : [],
-          );
-          if (rows.length > 0) {
-            setGmailCandidates(rows);
-            setGmailResultsOpen(true);
-          }
           // Refresh again to get updated lastSync time
           await loadBankAccounts();
         }
@@ -322,7 +296,7 @@ export default function SettingsPage() {
     }
   };
 
-  // ── Manual bank sync (same pipeline as background job; opens review when new candidates exist) ──
+  // ── Manual bank sync (same pipeline as background job; review stays on Subscriptions) ──
   const resyncBank = async (acc: PlaidAccountRow) => {
     setBankError(null);
     setResyncingId(acc.id);
@@ -334,13 +308,6 @@ export default function SettingsPage() {
       });
       const dj = await det.json().catch(() => ({}));
       if (!det.ok || !dj.ok) throw new Error(dj.error ?? "Could not sync bank data");
-      const rows = mapPlaidDetectToScanRows(
-        Array.isArray(dj.subscriptions) ? dj.subscriptions : [],
-      );
-      if (rows.length > 0) {
-        setGmailCandidates(rows);
-        setGmailResultsOpen(true);
-      }
       await loadBankAccounts();
     } catch (e) {
       setBankError(e instanceof Error ? e.message : "Could not sync bank data");
@@ -397,22 +364,6 @@ export default function SettingsPage() {
     }
   };
 
-  // ── Scan import ─────────────────────────────────────────────────────────────
-  const importScanSelection = async (payload: ScanImportPayload) => {
-    setGmailImportBusy(true);
-    try {
-      const result = await executeScanImport(payload);
-      await invalidateAfterSubscriptionChange(qc);
-      await loadBankAccounts();
-      return result;
-    } catch (e) {
-      setBankError(e instanceof Error ? e.message : "Import failed");
-      throw e;
-    } finally {
-      setGmailImportBusy(false);
-    }
-  };
-
   // ── Security ────────────────────────────────────────────────────────────────
   const submitPasswordChange = async (e: FormEvent) => {
     e.preventDefault();
@@ -446,14 +397,20 @@ export default function SettingsPage() {
     }
   };
 
-  const handleUpgrade = async () => {
+  const switchPlan = async (nextPlan: "free" | "premium") => {
     const res = await fetch("/api/billing", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ action: "upgrade" }),
+      body: JSON.stringify({ action: nextPlan === "premium" ? "upgrade" : "downgrade" }),
     });
     const json = await res.json();
     if (json.plan) setPlan(json.plan);
+    fetch("/api/settings/notifications")
+      .then((r) => r.json())
+      .then((d: { prefs?: Record<NotificationPrefKey, boolean> }) => {
+        if (d.prefs) setNotifPrefs(d.prefs);
+      })
+      .catch(() => {});
   };
 
   const runDeleteAccount = async () => {
@@ -512,16 +469,18 @@ export default function SettingsPage() {
               <Badge variant={plan === "premium" ? "accent" : "default"}>
                 {plan === "premium" ? "Premium" : "Free"}
               </Badge>
-              {plan === "free" && (
-                <Button className="w-full sm:w-auto" onClick={handleUpgrade}>
-                  Upgrade to Premium
-                </Button>
-              )}
+              <Button
+                className="w-full sm:w-auto"
+                variant={plan === "premium" ? "secondary" : "primary"}
+                onClick={() => void switchPlan(plan === "premium" ? "free" : "premium")}
+              >
+                {plan === "premium" ? "Switch to Free" : "Upgrade to Premium"}
+              </Button>
             </div>
             <p className="mt-2 text-sm text-text-secondary">
               {plan === "premium"
-                ? "You have full access to AI coach, full analytics, and more."
-                : "Upgrade for unlimited subscriptions, full analytics, and AI coach."}
+                ? "You have unlimited subscriptions, unlimited AI Coach, analytics, and notifications."
+                : "Free includes 10 subscriptions, bank linking, budget tracking, and 5 AI messages per day."}
             </p>
           </Card>
 
@@ -709,34 +668,46 @@ export default function SettingsPage() {
               <p className="text-sm text-text-secondary">Could not load notification settings.</p>
             ) : (
               <ul className="divide-y divide-border">
-                {NOTIFICATION_SETTING_ROWS.map((row) => (
-                  <li
-                    key={row.key}
-                    className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
-                  >
-                    <div className="min-w-0 flex-1 pr-2">
-                      <p className="font-medium text-text-primary">{row.label}</p>
-                      <p className="mt-0.5 text-sm text-text-tertiary">{row.description}</p>
-                    </div>
-                    <button
-                      type="button"
-                      role="switch"
-                      aria-checked={notifPrefs[row.key]}
-                      onClick={() => void toggleNotifPref(row.key)}
-                      className={cn(
-                        "relative inline-flex h-8 w-[3.25rem] shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background",
-                        notifPrefs[row.key] ? "bg-accent" : "bg-border",
-                      )}
+                {NOTIFICATION_SETTING_ROWS.map((row) => {
+                  const locked = plan !== "premium";
+                  return (
+                    <li
+                      key={row.key}
+                      className="flex items-center justify-between gap-4 py-4 first:pt-0 last:pb-0"
                     >
-                      <span
+                      <div className="min-w-0 flex-1 pr-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium text-text-primary">{row.label}</p>
+                          {locked && (
+                            <Badge variant="default">Premium</Badge>
+                          )}
+                        </div>
+                        <p className="mt-0.5 text-sm text-text-tertiary">
+                          {locked ? "Upgrade to Premium to use notification reminders." : row.description}
+                        </p>
+                      </div>
+                      <button
+                        type="button"
+                        role="switch"
+                        aria-checked={!locked && notifPrefs[row.key]}
+                        disabled={locked}
+                        onClick={() => void toggleNotifPref(row.key)}
                         className={cn(
-                          "pointer-events-none mt-0.5 inline-block h-6 w-6 rounded-full bg-white shadow transition duration-200 ease-out",
-                          notifPrefs[row.key] ? "translate-x-[1.35rem]" : "translate-x-0.5",
+                          "relative inline-flex h-8 w-[3.25rem] shrink-0 rounded-full border-2 border-transparent transition-colors focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background",
+                          locked ? "cursor-not-allowed bg-border opacity-60" : "cursor-pointer",
+                          !locked && notifPrefs[row.key] ? "bg-accent" : "bg-border",
                         )}
-                      />
-                    </button>
-                  </li>
-                ))}
+                      >
+                        <span
+                          className={cn(
+                            "pointer-events-none mt-0.5 inline-block h-6 w-6 rounded-full bg-white shadow transition duration-200 ease-out",
+                            !locked && notifPrefs[row.key] ? "translate-x-[1.35rem]" : "translate-x-0.5",
+                          )}
+                        />
+                      </button>
+                    </li>
+                  );
+                })}
               </ul>
             )}
           </Card>
@@ -945,18 +916,6 @@ export default function SettingsPage() {
           </Button>
         </div>
       </Modal>
-
-      {/* ── Scan results modal ── */}
-      <GmailScanResultsModal
-        open={gmailResultsOpen}
-        candidates={gmailCandidates}
-        onClose={() => { if (!gmailImportBusy) setGmailResultsOpen(false); }}
-        onSkip={() => setGmailResultsOpen(false)}
-        onImport={importScanSelection}
-        onAfterImportClose={() => setGmailResultsOpen(false)}
-        persistPlaidDeclinedMerchants={persistPlaidDeclinedMerchants}
-        busy={gmailImportBusy}
-      />
 
       <Modal
         open={clearSubsOpen}
