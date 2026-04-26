@@ -1,12 +1,11 @@
 /**
  * Persists normalized merchant keys the user **declined** from Plaid scan suggestions.
- * Used by the scan modal + Settings so auto-sync never re-adds those merchants without consent.
+ * Used by the scan modal + settings flows so auto-sync never re-adds those merchants without consent.
  */
 import { NextResponse } from "next/server";
 import { z } from "zod";
 import { getAuthUser } from "@/lib/getAuthUser";
-import { prisma } from "@/lib/prisma";
-import { mergeDeclinedMerchantKeys, removeKeysFromDeclinedList } from "@/lib/plaidSyncCore";
+import { markPlaidCandidatesAddedByKeys, markPlaidCandidatesDeclinedByKeys } from "@/lib/plaidCandidateState";
 
 const patchSchema = z.object({
   addKeys: z.array(z.string()).optional(),
@@ -30,25 +29,16 @@ export async function PATCH(req: Request) {
   }
 
   const { addKeys = [], removeKeys = [] } = parsed.data;
-
-  const current = await prisma.userSettings.findUnique({
-    where: { userId: authUser.id },
-    select: { plaidDeclinedMerchantKeys: true },
-  });
-
-  let next = current?.plaidDeclinedMerchantKeys ?? [];
   if (removeKeys.length > 0) {
-    next = removeKeysFromDeclinedList(next, removeKeys);
+    await markPlaidCandidatesAddedByKeys(authUser.id, removeKeys);
   }
   if (addKeys.length > 0) {
-    next = mergeDeclinedMerchantKeys(next, addKeys);
+    await markPlaidCandidatesDeclinedByKeys(authUser.id, addKeys);
   }
 
-  await prisma.userSettings.upsert({
-    where: { userId: authUser.id },
-    create: { userId: authUser.id, plaidDeclinedMerchantKeys: next },
-    update: { plaidDeclinedMerchantKeys: next },
+  return NextResponse.json({
+    ok: true,
+    added: addKeys.length,
+    removed: removeKeys.length,
   });
-
-  return NextResponse.json({ ok: true, count: next.length });
 }

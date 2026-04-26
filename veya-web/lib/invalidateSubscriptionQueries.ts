@@ -8,6 +8,7 @@ import { QUERY_KEYS } from "@/lib/queryKeys";
 export async function invalidateAfterSubscriptionChange(qc: QueryClient): Promise<void> {
   await Promise.all([
     qc.invalidateQueries({ queryKey: QUERY_KEYS.subscriptions }),
+    qc.invalidateQueries({ queryKey: QUERY_KEYS.pendingPlaidSubscriptions }),
     // Entire analytics tree (bundle lives under ["analytics", ...])
     qc.invalidateQueries({ queryKey: QUERY_KEYS.analytics.all }),
     // Explicit segments (for future split queries; no-ops today if unused)

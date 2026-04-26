@@ -3,6 +3,7 @@ import { z } from "zod";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { getAccountWithGmailAccess, importGmailMessageIds, scanGmailInbox } from "@/lib/gmailScan";
+import { planLimitResponse } from "@/lib/planLimits";
 
 async function ensureSettings(userId: string) {
   await prisma.userSettings.upsert({
@@ -96,7 +97,14 @@ export async function POST(req: Request) {
       );
     }
 
-    const result = await importGmailMessageIds(authUser.id, parsed.data.messageIds);
+    let result: Awaited<ReturnType<typeof importGmailMessageIds>>;
+    try {
+      result = await importGmailMessageIds(authUser.id, parsed.data.messageIds);
+    } catch (e) {
+      const limit = planLimitResponse(e);
+      if (limit) return limit;
+      throw e;
+    }
 
     await prisma.userSettings.update({
       where: { userId: authUser.id },

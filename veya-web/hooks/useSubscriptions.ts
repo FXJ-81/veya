@@ -4,17 +4,63 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Subscription } from "@/types";
 import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
 import { QUERY_KEYS } from "@/lib/queryKeys";
+import type { PendingPlaidSubscriptionCandidate } from "@/types/plaidCandidate";
 
-async function fetchSubscriptions(): Promise<Subscription[]> {
+export type SubscriptionListData = {
+  subscriptions: Subscription[];
+  plan: "free" | "premium";
+  subscriptionLimit: number | null;
+  subscriptionCount: number;
+  subscriptionRemaining: number | null;
+};
+
+async function fetchSubscriptions(): Promise<SubscriptionListData> {
   const res = await fetch("/api/subscriptions");
   if (!res.ok) throw new Error("Failed to fetch subscriptions");
-  return res.json();
+  const body = await res.json();
+  if (Array.isArray(body)) {
+    return {
+      subscriptions: body,
+      plan: "free",
+      subscriptionLimit: null,
+      subscriptionCount: body.length,
+      subscriptionRemaining: null,
+    };
+  }
+  return {
+    subscriptions: Array.isArray(body.subscriptions) ? body.subscriptions : [],
+    plan: body.plan === "premium" ? "premium" : "free",
+    subscriptionLimit: typeof body.subscriptionLimit === "number" ? body.subscriptionLimit : null,
+    subscriptionCount:
+      typeof body.subscriptionCount === "number"
+        ? body.subscriptionCount
+        : Array.isArray(body.subscriptions)
+          ? body.subscriptions.length
+          : 0,
+    subscriptionRemaining:
+      typeof body.subscriptionRemaining === "number" ? body.subscriptionRemaining : null,
+  };
+}
+
+async function fetchPendingPlaidSubscriptions(): Promise<PendingPlaidSubscriptionCandidate[]> {
+  const res = await fetch("/api/plaid/pending-subscriptions");
+  if (!res.ok) throw new Error("Failed to fetch pending bank subscriptions");
+  const body = (await res.json()) as { candidates?: PendingPlaidSubscriptionCandidate[] };
+  return Array.isArray(body.candidates) ? body.candidates : [];
 }
 
 export function useSubscriptions() {
   return useQuery({
     queryKey: QUERY_KEYS.subscriptions,
     queryFn: fetchSubscriptions,
+    staleTime: 0,
+  });
+}
+
+export function usePendingPlaidSubscriptions() {
+  return useQuery({
+    queryKey: QUERY_KEYS.pendingPlaidSubscriptions,
+    queryFn: fetchPendingPlaidSubscriptions,
     staleTime: 0,
   });
 }
@@ -36,12 +82,28 @@ export function useSubscriptionMutations() {
       return (await res.json()) as Subscription;
     },
     onSuccess: async (data) => {
-      qc.setQueryData<Subscription[]>(QUERY_KEYS.subscriptions, (old) => {
-        const list = old ?? [];
-        if (list.some((s) => s.id === data.id)) {
-          return list.map((s) => (s.id === data.id ? data : s));
+      qc.setQueryData<SubscriptionListData>(QUERY_KEYS.subscriptions, (old) => {
+        const list = old?.subscriptions ?? [];
+        const nextSubscriptions = list.some((s) => s.id === data.id)
+          ? list.map((s) => (s.id === data.id ? data : s))
+          : [...list, data];
+        if (!old) {
+          return {
+            subscriptions: nextSubscriptions,
+            plan: "free",
+            subscriptionLimit: null,
+            subscriptionCount: nextSubscriptions.length,
+            subscriptionRemaining: null,
+          };
         }
-        return [...list, data];
+        const countDelta = list.some((s) => s.id === data.id) ? 0 : 1;
+        return {
+          ...old,
+          subscriptions: nextSubscriptions,
+          subscriptionCount: old.subscriptionCount + countDelta,
+          subscriptionRemaining:
+            old.subscriptionRemaining == null ? null : Math.max(0, old.subscriptionRemaining - countDelta),
+        };
       });
       await invalidateAfterSubscriptionChange(qc);
     },
@@ -62,9 +124,14 @@ export function useSubscriptionMutations() {
     },
     onMutate: async ({ id, ...patch }) => {
       await qc.cancelQueries({ queryKey: QUERY_KEYS.subscriptions });
-      const previous = qc.getQueryData<Subscription[]>(QUERY_KEYS.subscriptions);
-      qc.setQueryData<Subscription[]>(QUERY_KEYS.subscriptions, (old) =>
-        (old ?? []).map((s) => (s.id === id ? { ...s, ...patch } : s))
+      const previous = qc.getQueryData<SubscriptionListData>(QUERY_KEYS.subscriptions);
+      qc.setQueryData<SubscriptionListData>(QUERY_KEYS.subscriptions, (old) =>
+        old
+          ? {
+              ...old,
+              subscriptions: old.subscriptions.map((s) => (s.id === id ? { ...s, ...patch } : s)),
+            }
+          : old,
       );
       return { previous };
     },
@@ -74,8 +141,13 @@ export function useSubscriptionMutations() {
       }
     },
     onSuccess: async (data) => {
-      qc.setQueryData<Subscription[]>(QUERY_KEYS.subscriptions, (old) =>
-        (old ?? []).map((s) => (s.id === data.id ? { ...s, ...data } : s))
+      qc.setQueryData<SubscriptionListData>(QUERY_KEYS.subscriptions, (old) =>
+        old
+          ? {
+              ...old,
+              subscriptions: old.subscriptions.map((s) => (s.id === data.id ? { ...s, ...data } : s)),
+            }
+          : old,
       );
       await invalidateAfterSubscriptionChange(qc);
     },
@@ -88,9 +160,17 @@ export function useSubscriptionMutations() {
     },
     onMutate: async (id) => {
       await qc.cancelQueries({ queryKey: QUERY_KEYS.subscriptions });
-      const previous = qc.getQueryData<Subscription[]>(QUERY_KEYS.subscriptions);
-      qc.setQueryData<Subscription[]>(QUERY_KEYS.subscriptions, (old) =>
-        (old ?? []).filter((s) => s.id !== id),
+      const previous = qc.getQueryData<SubscriptionListData>(QUERY_KEYS.subscriptions);
+      qc.setQueryData<SubscriptionListData>(QUERY_KEYS.subscriptions, (old) =>
+        old
+          ? {
+              ...old,
+              subscriptions: old.subscriptions.filter((s) => s.id !== id),
+              subscriptionCount: Math.max(0, old.subscriptionCount - 1),
+              subscriptionRemaining:
+                old.subscriptionRemaining == null ? null : old.subscriptionRemaining + 1,
+            }
+          : old,
       );
       return { previous };
     },
@@ -104,5 +184,23 @@ export function useSubscriptionMutations() {
     },
   });
 
-  return { create, update, remove };
+  const resolvePendingPlaid = useMutation({
+    mutationFn: async (vars: { action: "add" | "dismiss"; ids: string[] }) => {
+      const res = await fetch("/api/plaid/pending-subscriptions", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(vars),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error ?? "Failed to update pending bank subscriptions");
+      }
+      return res.json();
+    },
+    onSuccess: async () => {
+      await invalidateAfterSubscriptionChange(qc);
+    },
+  });
+
+  return { create, update, remove, resolvePendingPlaid };
 }

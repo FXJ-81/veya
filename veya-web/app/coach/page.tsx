@@ -223,8 +223,14 @@ export default function CoachPage() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
       });
-      const json = await res.json();
-      if (!res.ok) throw new Error(json.error ?? "Failed");
+      const text = await res.text();
+      let json: Record<string, unknown> = {};
+      try {
+        json = text ? (JSON.parse(text) as Record<string, unknown>) : {};
+      } catch {
+        throw new Error("AI service returned an invalid response. Please try again.");
+      }
+      if (!res.ok) throw new Error(typeof json.error === "string" ? json.error : "Failed");
 
       // Sync conversation ID from server in case the server created one as fallback
       if (json.conversationId && !activeConversationId) {
@@ -242,7 +248,7 @@ export default function CoachPage() {
           ...prev,
           {
             role: "assistant",
-            content: stripJsonActions(json.reply ?? ""),
+            content: stripJsonActions(typeof json.reply === "string" ? json.reply : ""),
             createdAt: new Date().toISOString(),
           },
         ]);

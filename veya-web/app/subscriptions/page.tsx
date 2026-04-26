@@ -13,7 +13,7 @@ import {
   type GmailScanRow,
 } from "@/components/subscriptions/GmailScanResultsModal";
 import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
-import { useSubscriptions, useSubscriptionMutations } from "@/hooks/useSubscriptions";
+import { usePendingPlaidSubscriptions, useSubscriptions, useSubscriptionMutations } from "@/hooks/useSubscriptions";
 import { useQueryClient } from "@tanstack/react-query";
 import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
 import type { Subscription } from "@/types";
@@ -23,8 +23,14 @@ import { executeScanImport } from "@/lib/executeScanImport";
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import type { ScanImportPayload } from "@/types/scan";
 import { categorySelectLabel } from "@/lib/categories";
+import type { PendingPlaidSubscriptionCandidate } from "@/types/plaidCandidate";
+import { formatCurrency } from "@/lib/utils";
 
 type PlaidAccountRow = { id: string; bankName: string; lastSync: string | null };
+
+function bankCandidateSummary(candidate: PendingPlaidSubscriptionCandidate): string {
+  return `${formatCurrency(candidate.price)}/mo • ${categorySelectLabel(candidate.category)}`;
+}
 
 function SubscriptionsContent() {
   const { status } = useSession();
@@ -35,21 +41,32 @@ function SubscriptionsContent() {
   const [category, setCategory] = useState("");
   const [sort, setSort] = useState<"name" | "price" | "nextRenewal">("nextRenewal");
   const {
-    data: subs,
+    data: subscriptionData,
     isLoading,
     isFetching,
     isError: subsError,
     refetch: refetchSubs,
   } = useSubscriptions();
-  const { update, remove, create } = useSubscriptionMutations();
+  const {
+    data: pendingPlaidCandidates,
+    isLoading: pendingPlaidLoading,
+  } = usePendingPlaidSubscriptions();
+  const { update, remove, create, resolvePendingPlaid } = useSubscriptionMutations();
   const qc = useQueryClient();
-  const isMutating = create.isPending || update.isPending || remove.isPending;
+  const isMutating =
+    create.isPending || update.isPending || remove.isPending || resolvePendingPlaid.isPending;
   const [plaidAccounts, setPlaidAccounts] = useState<PlaidAccountRow[] | null>(null);
   const [gmailResultsOpen, setGmailResultsOpen] = useState(false);
   const [gmailCandidates, setGmailCandidates] = useState<GmailScanRow[]>([]);
   const [gmailImportBusy, setGmailImportBusy] = useState(false);
   const [plaidLinkToken, setPlaidLinkToken] = useState<string | null>(null);
   const [plaidBusy, setPlaidBusy] = useState(false);
+  const subs = subscriptionData?.subscriptions ?? [];
+  const plan = subscriptionData?.plan ?? "free";
+  const isPremium = plan === "premium";
+  const subscriptionLimit = subscriptionData?.subscriptionLimit ?? 10;
+  const subscriptionRemaining = subscriptionData?.subscriptionRemaining ?? null;
+  const atFreeSubscriptionLimit = !isPremium && subscriptionRemaining === 0;
 
   const refreshConnectionSettings = () =>
     fetch("/api/settings/gmail")
@@ -147,6 +164,7 @@ function SubscriptionsContent() {
   };
 
   const plaidLinked = (plaidAccounts?.length ?? 0) > 0;
+  const pendingReviewCount = pendingPlaidCandidates?.length ?? 0;
 
   const resyncPlaid = async () => {
     if (!plaidLinked || plaidBusy) return;
@@ -218,11 +236,11 @@ function SubscriptionsContent() {
       }) ?? [];
 
   const categories = Array.from(
-    new Set(subs?.map((s) => s.category) ?? [])
+    new Set(subs.map((s) => s.category))
   ).sort();
 
   const handlePause = (id: string) => {
-    const sub = subs?.find((s) => s.id === id);
+    const sub = subs.find((s) => s.id === id);
     if (sub) update.mutate({ id, status: sub.status === "active" ? "paused" : "active" });
   };
 
@@ -235,6 +253,11 @@ function SubscriptionsContent() {
     nextRenewal: string;
     notes?: string;
   }) => {
+    if (atFreeSubscriptionLimit) {
+      throw new Error(
+        `Free accounts can track up to ${subscriptionLimit} subscriptions. Upgrade to Premium for unlimited subscriptions.`,
+      );
+    }
     await create.mutateAsync({
       ...data,
       status: "active",
@@ -260,6 +283,14 @@ function SubscriptionsContent() {
     });
   };
 
+  const handlePendingCandidateAction = async (
+    ids: string[],
+    action: "add" | "dismiss",
+  ) => {
+    await resolvePendingPlaid.mutateAsync({ ids, action });
+    await refreshConnectionSettings();
+  };
+
   return (
     <>
     <AppShell>
@@ -272,7 +303,7 @@ function SubscriptionsContent() {
             <h1 className="text-2xl font-bold text-text-primary">
               Subscriptions
             </h1>
-            {(isMutating || (isFetching && subs != null)) && (
+            {(isMutating || (isFetching && subscriptionData != null)) && (
               <span className="text-xs font-medium text-text-tertiary animate-pulse">
                 Updating…
               </span>
@@ -321,7 +352,13 @@ function SubscriptionsContent() {
             )}
             <button
               type="button"
-              onClick={() => setAddOpen(true)}
+              onClick={() => {
+                if (atFreeSubscriptionLimit) {
+                  alert(`Free accounts can track up to ${subscriptionLimit} subscriptions. Upgrade to Premium for unlimited subscriptions.`);
+                  return;
+                }
+                setAddOpen(true);
+              }}
               className="hidden rounded-xl bg-accent px-5 py-2.5 text-sm font-semibold text-white hover:opacity-90 md:inline-flex md:min-h-[44px] md:items-center"
             >
               + Add subscription
@@ -362,9 +399,99 @@ function SubscriptionsContent() {
           </div>
         </div>
 
+        {!isPremium && (
+          <section className="mb-6 rounded-2xl border border-border bg-card p-4 sm:p-5">
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">
+                  Free plan limits
+                </h2>
+                <p className="mt-1 text-sm text-text-secondary">
+                  You can track up to {subscriptionLimit} subscriptions on Free. Bank linking is included; Premium unlocks unlimited subscriptions, analytics, AI Coach, and notifications.
+                </p>
+              </div>
+              <span className="inline-flex w-fit rounded-full border border-border bg-background-secondary px-3 py-1 text-xs font-medium text-text-secondary">
+                {subscriptionData?.subscriptionCount ?? subs.length}/{subscriptionLimit} used
+              </span>
+            </div>
+          </section>
+        )}
+
+        {plaidLinked && (pendingPlaidLoading || pendingReviewCount > 0) && (
+          <section className="mb-6 rounded-2xl border border-border bg-card p-4 sm:p-5">
+            <div className="flex flex-col gap-2 sm:flex-row sm:items-start sm:justify-between">
+              <div>
+                <h2 className="text-base font-semibold text-text-primary">
+                  Review bank-detected subscriptions
+                </h2>
+                <p className="mt-1 text-sm text-text-secondary">
+                  {pendingPlaidLoading
+                    ? "Checking your connected banks for subscriptions awaiting review..."
+                    : pendingReviewCount === 1
+                      ? "We found 1 subscription from your connected bank activity that is waiting for review."
+                      : `We found ${pendingReviewCount} subscriptions from your connected bank activity that are waiting for review.`}
+                </p>
+              </div>
+              {!pendingPlaidLoading && pendingReviewCount > 0 && (
+                <span className="inline-flex w-fit items-center rounded-full border border-border bg-background-secondary px-3 py-1 text-xs font-medium text-text-secondary">
+                  {pendingReviewCount} to review
+                </span>
+              )}
+            </div>
+
+            {!pendingPlaidLoading && pendingReviewCount > 0 && (
+              <div className="mt-4 space-y-3">
+                {pendingPlaidCandidates!.map((candidate) => (
+                  <div
+                    key={candidate.id}
+                    className="flex flex-col gap-3 rounded-xl border border-border bg-background-secondary/80 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="min-w-0">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <p className="font-medium text-text-primary">{candidate.name}</p>
+                        <span className="text-[11px] text-text-tertiary">Found from bank activity</span>
+                      </div>
+                      <p className="mt-1 text-sm text-text-secondary">
+                        {bankCandidateSummary(candidate)}
+                      </p>
+                      <p className="mt-1 text-xs text-text-tertiary">
+                        Last charged {new Date(candidate.lastCharged).toLocaleDateString()}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-2 sm:flex-row">
+                      <button
+                        type="button"
+                        onClick={() => void handlePendingCandidateAction([candidate.id], "dismiss")}
+                        disabled={resolvePendingPlaid.isPending}
+                        className="rounded-xl border border-border bg-background px-4 py-2.5 text-sm font-medium text-text-primary hover:bg-background-secondary disabled:opacity-50"
+                      >
+                        Dismiss
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => void handlePendingCandidateAction([candidate.id], "add")}
+                        disabled={resolvePendingPlaid.isPending}
+                        className="rounded-xl bg-accent px-4 py-2.5 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
+                      >
+                        Add subscription
+                      </button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </section>
+        )}
+
         <button
           type="button"
-          onClick={() => setAddOpen(true)}
+          onClick={() => {
+            if (atFreeSubscriptionLimit) {
+              alert(`Free accounts can track up to ${subscriptionLimit} subscriptions. Upgrade to Premium for unlimited subscriptions.`);
+              return;
+            }
+            setAddOpen(true);
+          }}
           className="fixed bottom-[calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px)+12px)] right-4 z-[56] flex h-14 w-14 items-center justify-center rounded-full bg-accent text-2xl font-light text-white shadow-lg md:hidden"
           aria-label="Add subscription"
         >
@@ -390,7 +517,7 @@ function SubscriptionsContent() {
         ) : (
           <div
             className={`space-y-4 transition-opacity duration-200 ${
-              isMutating || (isFetching && subs != null) ? "opacity-80" : "opacity-100"
+              isMutating || (isFetching && subscriptionData != null) ? "opacity-80" : "opacity-100"
             }`}
           >
             {filtered.map((sub, i) => (
