@@ -13,7 +13,7 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Veya — Your money. Your rules.",
+  title: "Veya — Manage your subscriptions",
   description:
     "Track, cancel, and save on subscriptions. AI-powered financial coaching.",
 };
