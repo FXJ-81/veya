@@ -1,109 +1,40 @@
+/**
+ * Veya transactional notification emails.
+ *
+ * Every email here uses the shared `renderEmailLayout` design so the inbox experience
+ * stays visually consistent. Each template still has purpose-specific copy and a tailored
+ * summary card. Plain-text fallbacks are included for accessibility and deliverability.
+ */
 import { getGoogleOAuthOrigin } from "@/lib/googleOAuthCallback";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { sendEmail } from "@/lib/sendEmail";
 import { utcCalendarDateKey } from "@/lib/subscriptionBilling";
+import {
+  defaultSettingsUrl,
+  escapeHtml,
+  firstNameRaw,
+  renderEmailLayout,
+  renderEmailPlainText,
+  renderSummaryCard,
+  sanitizeSubject,
+} from "@/lib/emailLayout";
 
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
-}
+const REASON_NOTES = {
+  renewal:
+    "You're receiving this because Renewal reminders are turned on in your Veya notification settings.",
+  budget:
+    "You're receiving this because Budget alerts are turned on in your Veya notification settings.",
+  newSub:
+    "You're receiving this because Bank-detected subscription alerts are turned on in your Veya notification settings.",
+  monthly:
+    "You're receiving this because Monthly summary emails are turned on in your Veya notification settings.",
+} as const;
 
-function ctaButton(href: string, label: string): string {
-  return `<p style="margin:20px 0;"><a href="${href}" style="display:inline-block;padding:12px 20px;background:#16a34a;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600;">${label}</a></p>`;
-}
+const MANAGE_PREFS_LABEL = "Manage notification preferences";
 
-function managePrefsFooter(): string {
-  const origin = getGoogleOAuthOrigin();
-  const settingsUrl = `${origin}/settings`;
-  return `<p style="margin:24px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.5;color:#64748b;">Manage your notification preferences: <a href="${settingsUrl}" style="color:#2563eb;text-decoration:underline;">Open Settings</a></p>`;
-}
-
-function firstName(name: string | null | undefined): string {
-  const n = name?.trim();
-  if (!n) return "there";
-  return escapeHtml(n.split(/\s+/)[0] ?? "there");
-}
-
-function renewalReminderSubject(subName: string, renewalLabel: string): string {
-  const name = subName.replace(/[\r\n]/g, " ").trim().slice(0, 72);
-  const when = renewalLabel.replace(/[\r\n]/g, " ").trim().slice(0, 40);
-  return `Upcoming renewal: ${name} on ${when}`;
-}
-
-function buildRenewalReminderEmailHtml(opts: {
-  recipientName: string | null | undefined;
-  subName: string;
-  renewalLabel: string;
-  monthlyAmountLabel: string;
-  subscriptionsUrl: string;
-  settingsUrl: string;
-}): string {
-  const subSafe = escapeHtml(opts.subName);
-  const renewalSafe = escapeHtml(opts.renewalLabel);
-  const amountSafe = escapeHtml(opts.monthlyAmountLabel);
-  const veyaWordmark = "Veya";
-
-  return `
-<table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="margin:0;padding:0;background-color:#f1f5f9;">
-  <tr>
-    <td align="center" style="padding:32px 16px;">
-      <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="max-width:560px;background-color:#ffffff;border-radius:12px;overflow:hidden;border:1px solid #e2e8f0;">
-        <tr>
-          <td style="background-color:#0f172a;padding:20px 28px;">
-            <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:22px;font-weight:600;letter-spacing:0.02em;color:#f8fafc;">${veyaWordmark}</p>
-            <p style="margin:8px 0 0;font-family:Arial,Helvetica,sans-serif;font-size:13px;line-height:1.4;color:#94a3b8;">Subscription renewal reminder</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:28px 28px 8px;font-family:Arial,Helvetica,sans-serif;">
-            <h1 style="margin:0 0 12px;font-size:20px;line-height:1.3;font-weight:600;color:#0f172a;">Your subscription renews in one week</h1>
-            <p style="margin:0;font-size:15px;line-height:1.6;color:#334155;">Hello ${firstName(opts.recipientName)},</p>
-            <p style="margin:16px 0 0;font-size:15px;line-height:1.6;color:#334155;">This is a scheduled reminder from Veya. One of your subscriptions is set to renew in <strong style="color:#0f172a;">seven days</strong>. Review the details below and open Veya if you need to make changes.</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:8px 28px 24px;font-family:Arial,Helvetica,sans-serif;">
-            <table role="presentation" width="100%" cellspacing="0" cellpadding="0" border="0" style="background-color:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;">
-              <tr>
-                <td style="padding:18px 20px;">
-                  <p style="margin:0 0 6px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;">Subscription</p>
-                  <p style="margin:0;font-size:17px;font-weight:600;color:#0f172a;">${subSafe}</p>
-                  <p style="margin:16px 0 6px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;">Renewal date</p>
-                  <p style="margin:0;font-size:15px;color:#1e293b;">${renewalSafe}</p>
-                  <p style="margin:16px 0 6px;font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:#64748b;">Estimated monthly cost</p>
-                  <p style="margin:0;font-size:15px;color:#1e293b;">${amountSafe}<span style="color:#64748b;font-size:13px;"> / month</span></p>
-                  <p style="margin:12px 0 0;font-size:12px;line-height:1.5;color:#64748b;">Yearly or custom plans are shown as a monthly equivalent so you can compare spend at a glance.</p>
-                </td>
-              </tr>
-            </table>
-          </td>
-        </tr>
-        <tr>
-          <td align="center" style="padding:0 28px 28px;font-family:Arial,Helvetica,sans-serif;">
-            <a href="${opts.subscriptionsUrl}" style="display:inline-block;padding:14px 28px;background-color:#16a34a;color:#ffffff;text-decoration:none;border-radius:8px;font-size:15px;font-weight:600;">View in Veya</a>
-            <p style="margin:20px 0 0;font-size:13px;line-height:1.55;color:#64748b;max-width:480px;">Open your subscriptions list to update the renewal date, pause or cancel tracking, or adjust notes before you are charged.</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:0 28px 28px;font-family:Arial,Helvetica,sans-serif;border-top:1px solid #e2e8f0;">
-            <p style="margin:20px 0 0;font-size:12px;line-height:1.6;color:#94a3b8;">You are receiving this message because <strong style="color:#64748b;">Renewal reminders</strong> is turned on in your Veya account. If you no longer want these emails, you can turn that option off in Settings.</p>
-            <p style="margin:12px 0 0;font-size:13px;line-height:1.5;"><a href="${opts.settingsUrl}" style="color:#2563eb;text-decoration:underline;">Notification preferences</a></p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:16px 28px 24px;background-color:#f8fafc;font-family:Arial,Helvetica,sans-serif;">
-            <p style="margin:0;font-size:12px;line-height:1.5;color:#94a3b8;">Sent by Veya · This is an automated billing reminder, not a receipt or invoice from your provider.</p>
-          </td>
-        </tr>
-      </table>
-    </td>
-  </tr>
-</table>
-`.trim();
-}
+/* -------------------------------------------------------------------------- */
+/*  Renewal reminder                                                           */
+/* -------------------------------------------------------------------------- */
 
 export async function sendRenewalReminderEmail(opts: {
   to: string;
@@ -113,21 +44,68 @@ export async function sendRenewalReminderEmail(opts: {
   renewalLabel: string;
   monthlyAmount: number;
 }): Promise<void> {
-  const origin = getGoogleOAuthOrigin();
   if (!utcCalendarDateKey(opts.renewalDate)) return;
 
-  const subject = `${renewalReminderSubject(opts.subName, opts.renewalLabel)} — Veya`;
+  const origin = getGoogleOAuthOrigin();
+  const subscriptionsUrl = `${origin}/subscriptions`;
+  const settingsUrl = defaultSettingsUrl();
   const monthlyAmountLabel = formatCurrency(opts.monthlyAmount);
-  const html = buildRenewalReminderEmailHtml({
-    recipientName: opts.recipientName,
-    subName: opts.subName,
-    renewalLabel: opts.renewalLabel,
-    monthlyAmountLabel,
-    subscriptionsUrl: `${origin}/subscriptions`,
-    settingsUrl: `${origin}/settings`,
+  const subSafe = escapeHtml(opts.subName);
+
+  const subject = sanitizeSubject(
+    `Renews in 7 days: ${opts.subName} on ${opts.renewalLabel}`,
+  );
+
+  const summaryCard = renderSummaryCard({
+    rows: [
+      { label: "Subscription", value: subSafe },
+      { label: "Renews on", value: escapeHtml(opts.renewalLabel) },
+      {
+        label: "Estimated monthly cost",
+        value: `${escapeHtml(monthlyAmountLabel)} <span style="color:#64748b;font-size:13px;font-weight:500;"> / month</span>`,
+        helper:
+          "Yearly and custom plans are shown as a monthly equivalent so you can compare spend at a glance.",
+      },
+    ],
   });
-  await sendEmail(opts.to, subject, html);
+
+  const html = renderEmailLayout({
+    preheader: `${opts.subName} renews on ${opts.renewalLabel}. Review or pause it before you're charged.`,
+    category: "Renewal reminder",
+    title: `${opts.subName} renews in 7 days`,
+    greeting: `Hi ${firstNameRaw(opts.recipientName)},`,
+    intro:
+      "This is a heads-up from Veya before your subscription renews. Review the details below — you can pause, cancel, or update tracking in a couple of taps.",
+    contentHtml: summaryCard,
+    cta: { href: subscriptionsUrl, label: "View in Veya" },
+    ctaNote:
+      "Open your subscriptions to update the renewal date, change the price, or stop tracking it before you're charged.",
+    reasonNote: REASON_NOTES.renewal,
+    manageLink: { href: settingsUrl, label: MANAGE_PREFS_LABEL },
+    supportLine: "Need help? Reply to this email — we read every message.",
+  });
+
+  const text = renderEmailPlainText({
+    title: `${opts.subName} renews in 7 days`,
+    greeting: `Hi ${firstNameRaw(opts.recipientName)},`,
+    intro:
+      "Here's a heads-up before your subscription renews. You can pause, cancel, or update tracking inside Veya at any time.",
+    lines: [
+      `Subscription: ${opts.subName}`,
+      `Renews on: ${opts.renewalLabel}`,
+      `Estimated monthly cost: ${monthlyAmountLabel} / month`,
+    ],
+    cta: { href: subscriptionsUrl, label: "View in Veya" },
+    reasonNote: REASON_NOTES.renewal,
+    manageLink: { href: settingsUrl, label: MANAGE_PREFS_LABEL },
+  });
+
+  await sendEmail({ to: opts.to, subject, html, text });
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Budget exceeded                                                            */
+/* -------------------------------------------------------------------------- */
 
 export async function sendBudgetExceededEmail(opts: {
   to: string;
@@ -137,19 +115,66 @@ export async function sendBudgetExceededEmail(opts: {
   spent: number;
 }): Promise<void> {
   const origin = getGoogleOAuthOrigin();
+  const analyticsUrl = `${origin}/analytics`;
+  const settingsUrl = defaultSettingsUrl();
+
   const overPct =
-    opts.limit > 0 ? Math.max(0, Math.round(((opts.spent - opts.limit) / opts.limit) * 100)) : 0;
-  const catSafe = escapeHtml(opts.categoryLabel);
-  const subject = `🚨 Budget exceeded — ${opts.categoryLabel.replace(/[\r\n]/g, " ").slice(0, 120)} — Veya`;
-  const html = `
-<p>Hi ${firstName(opts.recipientName)},</p>
-<p>You've exceeded your ${catSafe} budget limit of ${formatCurrency(opts.limit)}. Current spend: ${formatCurrency(opts.spent)} (${overPct}% over limit).</p>
-${ctaButton(`${origin}/analytics`, "View Budget →")}
-<p>— The Veya Team</p>
-${managePrefsFooter()}
-`;
-  await sendEmail(opts.to, subject, html.trim());
+    opts.limit > 0
+      ? Math.max(0, Math.round(((opts.spent - opts.limit) / opts.limit) * 100))
+      : 0;
+  const limitLabel = formatCurrency(opts.limit);
+  const spentLabel = formatCurrency(opts.spent);
+  const overLabel = formatCurrency(Math.max(0, opts.spent - opts.limit));
+
+  const subject = sanitizeSubject(
+    `${opts.categoryLabel} budget is over by ${overLabel}`,
+  );
+
+  const summaryCard = renderSummaryCard({
+    rows: [
+      { label: "Category", value: escapeHtml(opts.categoryLabel) },
+      { label: "Budget limit", value: escapeHtml(limitLabel) },
+      {
+        label: "Current spend",
+        value: `${escapeHtml(spentLabel)} <span style="color:#dc2626;font-size:13px;font-weight:600;"> · ${overPct}% over</span>`,
+        helper: `That's ${overLabel} above your monthly cap.`,
+      },
+    ],
+  });
+
+  const html = renderEmailLayout({
+    preheader: `Your ${opts.categoryLabel} category is ${overPct}% over its budget limit.`,
+    category: "Budget alert",
+    title: "You're over budget this month",
+    greeting: `Hi ${firstNameRaw(opts.recipientName)},`,
+    intro: `Your <strong>${escapeHtml(opts.categoryLabel)}</strong> spending has crossed its monthly limit. Take a look in Veya to see which subscriptions are driving it and adjust the cap if it no longer fits.`,
+    contentHtml: summaryCard,
+    cta: { href: analyticsUrl, label: "Review your budget" },
+    ctaNote: "Open Analytics to see a breakdown by category and subscription.",
+    reasonNote: REASON_NOTES.budget,
+    manageLink: { href: settingsUrl, label: MANAGE_PREFS_LABEL },
+  });
+
+  const text = renderEmailPlainText({
+    title: "You're over budget this month",
+    greeting: `Hi ${firstNameRaw(opts.recipientName)},`,
+    intro: `Your ${opts.categoryLabel} spending has crossed its monthly limit.`,
+    lines: [
+      `Category: ${opts.categoryLabel}`,
+      `Budget limit: ${limitLabel}`,
+      `Current spend: ${spentLabel} (${overPct}% over)`,
+    ],
+    cta: { href: analyticsUrl, label: "Review your budget" },
+    reasonNote: REASON_NOTES.budget,
+    manageLink: { href: settingsUrl, label: MANAGE_PREFS_LABEL },
+  });
+
+  await sendEmail({ to: opts.to, subject, html, text });
 }
+
+/* -------------------------------------------------------------------------- */
+/*  New subscription detected                                                  */
+/* -------------------------------------------------------------------------- */
 
 export async function sendNewSubscriptionEmail(opts: {
   to: string;
@@ -158,17 +183,60 @@ export async function sendNewSubscriptionEmail(opts: {
   monthlyAmount: number;
 }): Promise<void> {
   const origin = getGoogleOAuthOrigin();
-  const subject = "✅ New subscription detected — Veya";
-  const subSafe = escapeHtml(opts.subName);
-  const html = `
-<p>Hi ${firstName(opts.recipientName)},</p>
-<p>We detected a new subscription from your bank:<br/><strong>${subSafe}</strong> — ${formatCurrency(opts.monthlyAmount)}/month</p>
-${ctaButton(`${origin}/subscriptions`, "View Subscriptions →")}
-<p>— The Veya Team</p>
-${managePrefsFooter()}
-`;
-  await sendEmail(opts.to, subject, html.trim());
+  const subscriptionsUrl = `${origin}/subscriptions`;
+  const settingsUrl = defaultSettingsUrl();
+  const monthlyAmountLabel = formatCurrency(opts.monthlyAmount);
+
+  const subject = sanitizeSubject(
+    `New subscription detected: ${opts.subName}`,
+  );
+
+  const summaryCard = renderSummaryCard({
+    rows: [
+      { label: "Subscription", value: escapeHtml(opts.subName) },
+      {
+        label: "Estimated cost",
+        value: `${escapeHtml(monthlyAmountLabel)} <span style="color:#64748b;font-size:13px;font-weight:500;"> / month</span>`,
+        helper: "Detected from a recurring charge in your linked accounts.",
+      },
+    ],
+  });
+
+  const html = renderEmailLayout({
+    preheader: `Veya detected a new subscription — ${opts.subName} for about ${monthlyAmountLabel}/month.`,
+    category: "New subscription",
+    title: "We found a new subscription",
+    greeting: `Hi ${firstNameRaw(opts.recipientName)},`,
+    intro:
+      "Veya spotted a recurring charge in your linked accounts that looks like a new subscription. Confirm the details below — keep it tracked, edit the cost, or remove it if it's not yours.",
+    contentHtml: summaryCard,
+    cta: { href: subscriptionsUrl, label: "Review in Veya" },
+    ctaNote:
+      "Confirming new subscriptions keeps your monthly total accurate so you never miss a renewal.",
+    reasonNote: REASON_NOTES.newSub,
+    manageLink: { href: settingsUrl, label: MANAGE_PREFS_LABEL },
+  });
+
+  const text = renderEmailPlainText({
+    title: "We found a new subscription",
+    greeting: `Hi ${firstNameRaw(opts.recipientName)},`,
+    intro:
+      "Veya spotted a recurring charge that looks like a new subscription. Review it inside the app to keep your monthly total accurate.",
+    lines: [
+      `Subscription: ${opts.subName}`,
+      `Estimated cost: ${monthlyAmountLabel} / month`,
+    ],
+    cta: { href: subscriptionsUrl, label: "Review in Veya" },
+    reasonNote: REASON_NOTES.newSub,
+    manageLink: { href: settingsUrl, label: MANAGE_PREFS_LABEL },
+  });
+
+  await sendEmail({ to: opts.to, subject, html, text });
 }
+
+/* -------------------------------------------------------------------------- */
+/*  Monthly summary                                                            */
+/* -------------------------------------------------------------------------- */
 
 export async function sendMonthlySummaryEmail(opts: {
   to: string;
@@ -179,21 +247,92 @@ export async function sendMonthlySummaryEmail(opts: {
   budgetStatusLine: string;
 }): Promise<void> {
   const origin = getGoogleOAuthOrigin();
-  const subject = "Your monthly Veya summary";
-  const listSafe = escapeHtml(opts.renewingThisMonthList);
-  const budgetSafe = escapeHtml(opts.budgetStatusLine);
-  const html = `
-<p>Hi ${firstName(opts.recipientName)},</p>
-<p>Here's your subscription summary for this month:</p>
-<ul style="padding-left:20px;">
-  <li>Total monthly spend: ${formatCurrency(opts.totalMonthly)}</li>
-  <li>Active subscriptions: ${opts.activeCount}</li>
-  <li>Renewing this month: ${listSafe}</li>
-  <li>Budget status: ${budgetSafe}</li>
-</ul>
-${ctaButton(`${origin}/dashboard`, "View Dashboard →")}
-<p>— The Veya Team</p>
-${managePrefsFooter()}
-`;
-  await sendEmail(opts.to, subject, html.trim());
+  const dashboardUrl = `${origin}/dashboard`;
+  const settingsUrl = defaultSettingsUrl();
+  const totalLabel = formatCurrency(opts.totalMonthly);
+  const monthLabel = new Date().toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+  });
+
+  const subject = sanitizeSubject(
+    `Your ${monthLabel} subscription summary`,
+  );
+
+  const renewingValue = opts.renewingThisMonthList?.trim()
+    ? escapeHtml(opts.renewingThisMonthList)
+    : '<span style="color:#64748b;font-weight:500;">No renewals scheduled</span>';
+
+  const budgetValue = formatBudgetStatusValue(opts.budgetStatusLine);
+
+  const summaryCard = renderSummaryCard({
+    heading: `${monthLabel} at a glance`,
+    rows: [
+      {
+        label: "Estimated monthly spend",
+        value: escapeHtml(totalLabel),
+        helper: "Across every active subscription you're tracking.",
+      },
+      {
+        label: "Active subscriptions",
+        value: String(opts.activeCount),
+      },
+      {
+        label: "Renewing this month",
+        value: renewingValue,
+      },
+      {
+        label: "Budget status",
+        value: budgetValue,
+      },
+    ],
+  });
+
+  const html = renderEmailLayout({
+    preheader: `Your ${monthLabel} subscription summary from Veya — ${totalLabel}/month across ${opts.activeCount} active subscriptions.`,
+    category: "Monthly summary",
+    title: `Your ${monthLabel} subscription summary`,
+    greeting: `Hi ${firstNameRaw(opts.recipientName)},`,
+    intro:
+      "Here's a quick look at your subscriptions for the month — what you're spending, what's coming up, and how your budgets are tracking.",
+    contentHtml: summaryCard,
+    cta: { href: dashboardUrl, label: "Open dashboard" },
+    ctaNote:
+      "See the full breakdown by category, upcoming renewals, and AI Coach suggestions.",
+    reasonNote: REASON_NOTES.monthly,
+    manageLink: { href: settingsUrl, label: MANAGE_PREFS_LABEL },
+  });
+
+  const text = renderEmailPlainText({
+    title: `Your ${monthLabel} subscription summary`,
+    greeting: `Hi ${firstNameRaw(opts.recipientName)},`,
+    intro:
+      "Here's a quick look at your subscriptions for the month — what you're spending, what's coming up, and how your budgets are tracking.",
+    lines: [
+      `Estimated monthly spend: ${totalLabel}`,
+      `Active subscriptions: ${opts.activeCount}`,
+      `Renewing this month: ${opts.renewingThisMonthList || "None"}`,
+      `Budget status: ${opts.budgetStatusLine}`,
+    ],
+    cta: { href: dashboardUrl, label: "Open dashboard" },
+    reasonNote: REASON_NOTES.monthly,
+    manageLink: { href: settingsUrl, label: MANAGE_PREFS_LABEL },
+  });
+
+  await sendEmail({ to: opts.to, subject, html, text });
+}
+
+/* -------------------------------------------------------------------------- */
+/*  Helpers                                                                    */
+/* -------------------------------------------------------------------------- */
+
+function formatBudgetStatusValue(status: string): string {
+  const normalized = status.trim().toLowerCase();
+  if (normalized === "over budget") {
+    return '<span style="color:#dc2626;">Over budget</span>';
+  }
+  if (normalized === "on track") {
+    return '<span style="color:#15803d;">On track</span>';
+  }
+  return escapeHtml(status);
 }

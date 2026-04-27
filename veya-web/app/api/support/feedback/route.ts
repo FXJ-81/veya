@@ -15,6 +15,7 @@ import {
   forwardSupportFeedbackToIngest,
   resolveSupportFeedbackWebappUrl,
 } from "@/lib/supportFeedbackIngest";
+import { sendSupportFeedbackConfirmation } from "@/lib/supportEmails";
 
 /** Fields the Settings form sends; stricter rules are enforced here than in HTML5 alone. */
 const bodySchema = z.object({
@@ -123,5 +124,20 @@ export async function POST(req: Request) {
   // Only record cooldown after a successful ingest (failed attempts can retry sooner).
   lastSubmitByUser.set(authUser.id, now);
   console.log("[support/feedback] saved", { userId: authUser.id, topic: parsed.data.topic });
+
+  // Best-effort branded confirmation email — never blocks the user-visible response.
+  // SendGrid failures are logged inside `sendEmail`; the form still reports success.
+  try {
+    await sendSupportFeedbackConfirmation({
+      to: parsed.data.email,
+      recipientName: parsed.data.name,
+      topic: parsed.data.topic,
+      message: parsed.data.message,
+      submittedAt: new Date(submittedAt),
+    });
+  } catch (err) {
+    console.warn("[support/feedback] confirmation email failed", err);
+  }
+
   return NextResponse.json({ ok: true });
 }

@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import { randomBytes } from "crypto";
-import sgMail from "@sendgrid/mail";
 import { prisma } from "@/lib/prisma";
 import { getGoogleOAuthOrigin } from "@/lib/googleOAuthCallback";
 import { getClientIp, rateLimitAllow } from "@/lib/rateLimitInMemory";
+import { sendPasswordResetEmail } from "@/lib/authEmails";
 
 const RESET_EXPIRY_HOURS = 1;
 
@@ -35,23 +35,21 @@ export async function POST(req: Request) {
     );
   }
 
-  const apiKey = process.env.SENDGRID_API_KEY;
-  if (!apiKey) {
+  if (!process.env.SENDGRID_API_KEY?.trim()) {
     return NextResponse.json(
       { error: "Email not configured. Set SENDGRID_API_KEY." },
-      { status: 503 }
+      { status: 503 },
     );
   }
 
   const user = await prisma.user.findFirst({
     where: { email: { equals: email, mode: "insensitive" } },
   });
-  if (!user) {
-    return NextResponse.json({ message: "If an account exists, we sent a reset link." });
-  }
+  // Always return the same response so attackers can't enumerate accounts.
+  const genericMessage = { message: "If an account exists, we sent a reset link." };
 
-  if (!user.password) {
-    return NextResponse.json({ message: "If an account exists, we sent a reset link." });
+  if (!user || !user.password) {
+    return NextResponse.json(genericMessage);
   }
 
   const token = randomBytes(32).toString("hex");
@@ -64,36 +62,19 @@ export async function POST(req: Request) {
 
   const baseUrl = getGoogleOAuthOrigin();
   const resetLink = `${baseUrl}/reset-password?token=${token}`;
-  const fromEmail = (process.env.SENDGRID_FROM_EMAIL || "").trim() || "noreply@veya.app";
 
-  if (!process.env.SENDGRID_FROM_EMAIL?.trim()) {
-    console.warn("[forgot-password] SENDGRID_FROM_EMAIL is not set. SendGrid requires a verified sender.");
-  }
-
-  sgMail.setApiKey(apiKey);
-  try {
-    await sgMail.send({
-      to: user.email,
-      from: fromEmail,
-      subject: "Reset your Veya password",
-      text: `Use this link to reset your password (valid ${RESET_EXPIRY_HOURS} hour): ${resetLink}`,
-      html: `
-        <p>Use the link below to reset your password. It expires in ${RESET_EXPIRY_HOURS} hour.</p>
-        <p><a href="${resetLink}">Reset password</a></p>
-        <p>If you didn't request this, you can ignore this email.</p>
-      `,
-    });
-  } catch (err: unknown) {
-    const msg = err && typeof err === "object" && "response" in err
-      ? (err as { response?: { body?: { errors?: unknown } } }).response?.body?.errors
-      : err instanceof Error ? err.message : String(err);
-    console.error("[forgot-password] SendGrid error:", msg || err);
-    const isDev = process.env.NODE_ENV !== "production";
-    return NextResponse.json(
-      { error: isDev && msg ? `Email failed: ${JSON.stringify(msg)}` : "Failed to send email. Try again later." },
-      { status: 500 }
+  if (!process.env.SENDGRID_FROM_EMAIL?.trim() && !process.env.EMAIL_FROM?.trim()) {
+    console.warn(
+      "[forgot-password] SENDGRID_FROM_EMAIL is not set. SendGrid requires a verified sender.",
     );
   }
 
-  return NextResponse.json({ message: "If an account exists, we sent a reset link." });
+  await sendPasswordResetEmail({
+    to: user.email,
+    recipientName: user.name,
+    resetLink,
+    expiresInHours: RESET_EXPIRY_HOURS,
+  });
+
+  return NextResponse.json(genericMessage);
 }
