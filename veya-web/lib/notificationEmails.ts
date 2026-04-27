@@ -170,25 +170,25 @@ ${managePrefsFooter()}
   await sendEmail(opts.to, subject, html.trim());
 }
 
-export async function sendWeeklySummaryEmail(opts: {
+export async function sendMonthlySummaryEmail(opts: {
   to: string;
   recipientName: string | null | undefined;
   totalMonthly: number;
   activeCount: number;
-  renewingThisWeekList: string;
+  renewingThisMonthList: string;
   budgetStatusLine: string;
 }): Promise<void> {
   const origin = getGoogleOAuthOrigin();
-  const subject = "📊 Your weekly Veya summary";
-  const listSafe = escapeHtml(opts.renewingThisWeekList);
+  const subject = "Your monthly Veya summary";
+  const listSafe = escapeHtml(opts.renewingThisMonthList);
   const budgetSafe = escapeHtml(opts.budgetStatusLine);
   const html = `
 <p>Hi ${firstName(opts.recipientName)},</p>
-<p>Here's your subscription summary for this week:</p>
+<p>Here's your subscription summary for this month:</p>
 <ul style="padding-left:20px;">
   <li>Total monthly spend: ${formatCurrency(opts.totalMonthly)}</li>
   <li>Active subscriptions: ${opts.activeCount}</li>
-  <li>Renewing this week: ${listSafe}</li>
+  <li>Renewing this month: ${listSafe}</li>
   <li>Budget status: ${budgetSafe}</li>
 </ul>
 ${ctaButton(`${origin}/dashboard`, "View Dashboard →")}

@@ -4,7 +4,7 @@ export function notificationIconForType(type: string): string {
   if (type.startsWith("renewal_reminder:") || type.startsWith("renewal:")) return "🔔";
   if (type.startsWith("budget:")) return "💰";
   if (type.startsWith("new_subscription:")) return "✅";
-  if (type.startsWith("weekly:")) return "📊";
+  if (type.startsWith("weekly:") || type.startsWith("monthly:")) return "📊";
   if (type.startsWith("price_increase:")) return "⚠️";
   return "⚠️";
 }

@@ -32,6 +32,12 @@ function bankCandidateSummary(candidate: PendingPlaidSubscriptionCandidate): str
   return `${formatCurrency(candidate.price)}/mo • ${categorySelectLabel(candidate.category)}`;
 }
 
+function bankConnectionLabel(bankName: string): string {
+  const clean = bankName.trim() || "Bank";
+  const withBank = /\bbank\b/i.test(clean) ? clean : `${clean} Bank`;
+  return `${withBank} connected`;
+}
+
 function SubscriptionsContent() {
   const { status } = useSession();
   const router = useRouter();
@@ -320,11 +326,9 @@ function SubscriptionsContent() {
                 className="inline-flex max-w-full items-center gap-2 rounded-full border border-border bg-background-secondary px-3 py-2 text-sm font-medium text-text-primary hover:border-accent disabled:opacity-50"
               >
                 <span className="min-w-0 truncate">
-                  🟢{" "}
                   {plaidAccounts.length === 1
-                    ? plaidAccounts[0].bankName
-                    : `${plaidAccounts.length} banks`}{" "}
-                  · Connected
+                    ? bankConnectionLabel(plaidAccounts[0].bankName)
+                    : `${plaidAccounts.length} banks connected`}
                 </span>
                 <span className="shrink-0 text-text-tertiary" aria-hidden>
                   |
@@ -334,7 +338,6 @@ function SubscriptionsContent() {
                     "Loading..."
                   ) : (
                     <>
-                      <span aria-hidden>🔄</span>
                       Transactions
                     </>
                   )}
@@ -347,7 +350,7 @@ function SubscriptionsContent() {
                 disabled={plaidBusy}
                 className="rounded-lg border border-border bg-background-secondary px-3 py-2 text-sm font-medium text-text-primary hover:border-accent disabled:opacity-50"
               >
-                {plaidBusy ? "…" : "🏦 Connect bank account"}
+                {plaidBusy ? "…" : "Connect bank account"}
               </button>
             )}
             <button

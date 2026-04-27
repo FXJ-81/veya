@@ -18,6 +18,7 @@ export async function GET(req: Request) {
   return NextResponse.json(
     notifications.map((n) => ({
       ...n,
+      title: n.title === "Weekly spending summary" ? "Monthly spending summary" : n.title,
       sentAt: n.sentAt.toISOString(),
     }))
   );
