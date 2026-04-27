@@ -1,6 +1,6 @@
 /**
  * Generates in-app notifications and related emails for one user (welcome, renewal reminders,
- * budget alerts, weekly summary). Invoked from `POST /api/notifications/generate` (e.g. cron or client).
+ * budget alerts, monthly summary). Invoked from `POST /api/notifications/generate` (e.g. cron or client).
  *
  * Renewal emails: exactly **one** per subscription per renewal UTC date, only when **7 days**
  * before renewal, respecting `renewalReminders` prefs and `renewal_reminder:*` idempotency keys.
@@ -20,7 +20,7 @@ import { hasDuplicateNotificationToday } from "@/lib/notificationDedupe";
 import {
   sendRenewalReminderEmail,
   sendBudgetExceededEmail,
-  sendWeeklySummaryEmail,
+  sendMonthlySummaryEmail,
 } from "@/lib/notificationEmails";
 
 function localDateKey(d: Date): string {
@@ -42,13 +42,10 @@ function renewalReminderTypeKey(subscriptionId: string, renewalUtcDateKey: strin
   return `renewal_reminder:${subscriptionId}:${renewalUtcDateKey}`;
 }
 
-/** Local Monday date of the week containing `d` (0 = Sunday … 6 = Saturday). */
-function mondayDateKeyOfWeek(d: Date): string {
-  const day = d.getDay();
-  const diff = day === 0 ? -6 : 1 - day;
-  const monday = new Date(d);
-  monday.setDate(d.getDate() + diff);
-  return localDateKey(startOfLocalDay(monday));
+function monthDateKey(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  return `${y}-${m}`;
 }
 
 export async function generateNotificationsForUser(userId: string): Promise<void> {
@@ -193,10 +190,10 @@ export async function generateNotificationsForUser(userId: string): Promise<void
 
   if (premium && prefs.weeklySpendingSummary) {
     const now = new Date();
-    if (now.getDay() === 1) {
-      const weekKey = mondayDateKeyOfWeek(now);
-      const typeKey = `weekly:${weekKey}`;
-      const title = "Weekly spending summary";
+    if (now.getDate() === 1) {
+      const monthKey = monthDateKey(now);
+      const typeKey = `monthly:${monthKey}`;
+      const title = "Monthly spending summary";
 
       const allSubs = await prisma.subscription.findMany({
         where: { userId, status: "active" },
@@ -214,10 +211,10 @@ export async function generateNotificationsForUser(userId: string): Promise<void
       const renewingNames = allSubs
         .filter((s) => {
           const d = calendarDaysUntilRenewal(new Date(s.nextRenewal));
-          return d >= 0 && d <= 7;
+          return d >= 0 && d <= 31;
         })
         .map((s) => s.name);
-      const renewingThisWeekList =
+      const renewingThisMonthList =
         renewingNames.length > 0 ? renewingNames.join(", ") : "None";
 
       const budgets = await prisma.budget.findMany({ where: { userId } });
@@ -245,12 +242,12 @@ export async function generateNotificationsForUser(userId: string): Promise<void
           },
         });
 
-        await sendWeeklySummaryEmail({
+        await sendMonthlySummaryEmail({
           to: user.email,
           recipientName: user.name,
           totalMonthly,
           activeCount: allSubs.length,
-          renewingThisWeekList,
+          renewingThisMonthList,
           budgetStatusLine,
         });
       }

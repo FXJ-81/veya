@@ -73,8 +73,8 @@ const NOTIFICATION_SETTING_ROWS: {
   },
   {
     key: "weeklySpendingSummary",
-    label: "Weekly spending summary",
-    description: "Every Monday: your weekly subscription recap",
+    label: "Monthly spending summary",
+    description: "Every month: your subscription recap",
   },
   {
     key: "priceIncreaseAlerts",
@@ -91,6 +91,12 @@ function scanLabel(iso: string | null): string {
   if (d < 7) return `${d} days ago`;
   if (d < 30) return `${Math.floor(d / 7)} week${Math.floor(d / 7) > 1 ? "s" : ""} ago`;
   return `${Math.floor(d / 30)} month${Math.floor(d / 30) > 1 ? "s" : ""} ago`;
+}
+
+function bankConnectionLabel(bankName: string): string {
+  const clean = bankName.trim() || "Bank";
+  const withBank = /\bbank\b/i.test(clean) ? clean : `${clean} Bank`;
+  return `${withBank} connected`;
 }
 
 export default function SettingsPage() {
@@ -546,8 +552,8 @@ export default function SettingsPage() {
             ) : plaidAccounts.length === 0 ? (
               /* Empty state */
               <div className="flex flex-col items-center gap-4 rounded-xl border border-dashed border-border bg-background-secondary/20 py-10 text-center">
-                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-3xl">
-                  🏦
+                <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-accent/10 text-sm font-semibold text-accent">
+                  Bank
                 </div>
                 <div>
                   <p className="font-medium text-text-primary">No banks connected</p>
@@ -578,16 +584,17 @@ export default function SettingsPage() {
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         {/* Bank info */}
                         <div className="flex min-w-0 items-center gap-3">
-                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-xl">
-                            🏦
+                          <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-xs font-semibold text-accent">
+                            Bank
                           </div>
                           <div className="min-w-0">
                             <div className="flex flex-wrap items-center gap-2">
-                              <span className="font-medium text-text-primary">{acc.bankName}</span>
-                              <Badge variant="success">Connected</Badge>
+                              <span className="font-medium text-text-primary">
+                                {bankConnectionLabel(acc.bankName)}
+                              </span>
                             </div>
                             <p className="mt-0.5 text-xs text-text-tertiary">
-                              Last synced: {scanLabel(acc.lastSync)}
+                              Last checked: {scanLabel(acc.lastSync)}
                             </p>
                           </div>
                         </div>
@@ -603,10 +610,10 @@ export default function SettingsPage() {
                             {isSyncing ? (
                               <span className="flex items-center gap-1.5">
                                 <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                Syncing…
+                                Checking…
                               </span>
                             ) : (
-                              "Sync from bank"
+                              "Check bank"
                             )}
                           </Button>
                           <Button
