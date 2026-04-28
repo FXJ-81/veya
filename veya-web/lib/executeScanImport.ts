@@ -1,7 +1,3 @@
-/**
- * Client-side helper: runs Gmail import API and/or creates Plaid-backed subscriptions via REST,
- * using the same dedupe keys as the server. Clears declined-merchant keys after successful Plaid adds.
- */
 import { buildSubscriptionCreateFromPlaid } from "@/lib/plaidImportHelpers";
 import {
   keysForPlaidMerchant,
@@ -53,17 +49,53 @@ export async function executeScanImport(
 
   if (payload.plaidItems.length > 0) {
     const subsRes = await fetch("/api/subscriptions");
-    const subsBody = subsRes.ok ? await subsRes.json() : [];
-    const existingList = Array.isArray(subsBody)
-      ? (subsBody as { name: string }[])
-      : Array.isArray(subsBody.subscriptions)
-        ? (subsBody.subscriptions as { name: string }[])
-        : [];
-    const existingKeys = subscriptionNameKeySet(existingList);
+    type SubRow = { name: string; status?: string; id?: string };
+    let existingList: SubRow[] = [];
+    if (subsRes.ok) {
+      const raw: unknown = await subsRes.json();
+      if (Array.isArray(raw)) {
+        existingList = raw as SubRow[];
+      } else if (raw && typeof raw === "object" && Array.isArray((raw as { subscriptions?: unknown }).subscriptions)) {
+        existingList = (raw as { subscriptions: SubRow[] }).subscriptions;
+      }
+    }
+    const activePaused = existingList.filter(
+      (s) => (s.status ?? "active").toLowerCase() !== "cancelled",
+    );
+    const existingKeys = subscriptionNameKeySet(activePaused.map((s) => ({ name: s.name })));
     const batchSeen = new Set<string>();
     const importedKeys: string[] = [];
 
     for (const item of payload.plaidItems) {
+      if (item.resumeSubscriptionId) {
+        const body = buildSubscriptionCreateFromPlaid(item);
+        const res = await fetch(`/api/subscriptions/${encodeURIComponent(item.resumeSubscriptionId)}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            status: "active",
+            name: body.name,
+            category: body.category,
+            price: body.price,
+            billingCycle: body.billingCycle,
+            startDate: body.startDate,
+            nextRenewal: body.nextRenewal,
+            source: body.source,
+          }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          throw new Error((j as { error?: string }).error ?? `Failed to restore ${item.name}`);
+        }
+        plaidAdded++;
+        for (const k of keysForPlaidMerchant(item)) {
+          batchSeen.add(k);
+          existingKeys.add(k);
+          importedKeys.push(k);
+        }
+        continue;
+      }
+
       if (isPlaidMerchantDuplicateOfExisting(item, existingKeys, batchSeen)) {
         plaidSkipped++;
         continue;

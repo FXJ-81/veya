@@ -111,7 +111,6 @@ export default function SettingsPage() {
 
   // Per-operation busy states
   const [connectingBank, setConnectingBank] = useState(false);
-  const [resyncingId, setResyncingId] = useState<string | null>(null);
   const [disconnectingId, setDisconnectingId] = useState<string | null>(null);
 
   // Inline errors (no more alert())
@@ -302,26 +301,6 @@ export default function SettingsPage() {
     }
   };
 
-  // ── Manual bank sync (same pipeline as background job; review stays on Subscriptions) ──
-  const resyncBank = async (acc: PlaidAccountRow) => {
-    setBankError(null);
-    setResyncingId(acc.id);
-    try {
-      const det = await fetch("/api/plaid/detect-subscriptions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ plaidAccountId: acc.id }),
-      });
-      const dj = await det.json().catch(() => ({}));
-      if (!det.ok || !dj.ok) throw new Error(dj.error ?? "Could not sync bank data");
-      await loadBankAccounts();
-    } catch (e) {
-      setBankError(e instanceof Error ? e.message : "Could not sync bank data");
-    } finally {
-      setResyncingId(null);
-    }
-  };
-
   const runClearAllSubscriptions = async () => {
     if (!clearSubsAck) return;
     setClearSubsBusy(true);
@@ -437,7 +416,7 @@ export default function SettingsPage() {
     return <div className="min-h-screen flex items-center justify-center" />;
   }
 
-  const anyBankBusy = connectingBank || resyncingId !== null || disconnectingId !== null;
+  const anyBankBusy = connectingBank || disconnectingId !== null;
 
   return (
     <>
@@ -570,9 +549,7 @@ export default function SettingsPage() {
               /* Accounts list */
               <ul className="space-y-3">
                 {plaidAccounts.map((acc) => {
-                  const isSyncing = resyncingId === acc.id;
                   const isDisconnecting = disconnectingId === acc.id;
-                  const busy = isSyncing || isDisconnecting;
 
                   return (
                     <li
@@ -583,7 +560,7 @@ export default function SettingsPage() {
                     >
                       <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                         {/* Bank info */}
-                        <div className="flex min-w-0 items-center gap-3">
+                        <div className="flex min-w-0 flex-1 items-center gap-3">
                           <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-accent/10 text-xs font-semibold text-accent">
                             Bank
                           </div>
@@ -599,28 +576,12 @@ export default function SettingsPage() {
                           </div>
                         </div>
 
-                        {/* Actions */}
-                        <div className="flex flex-wrap gap-2 sm:shrink-0">
-                          <Button
-                            variant="secondary"
-                            className="flex-1 sm:flex-none"
-                            onClick={() => void resyncBank(acc)}
-                            disabled={anyBankBusy}
-                          >
-                            {isSyncing ? (
-                              <span className="flex items-center gap-1.5">
-                                <span className="inline-block h-3 w-3 animate-spin rounded-full border-2 border-current border-t-transparent" />
-                                Checking…
-                              </span>
-                            ) : (
-                              "Check bank"
-                            )}
-                          </Button>
+                        <div className="flex w-full shrink-0 sm:w-auto sm:justify-end">
                           <Button
                             variant="danger"
-                            className="flex-1 sm:flex-none"
+                            className="w-full sm:w-auto min-w-[8.5rem]"
                             onClick={() => confirmAndDisconnect(acc)}
-                            disabled={anyBankBusy || busy}
+                            disabled={anyBankBusy || isDisconnecting}
                           >
                             {isDisconnecting ? "Removing…" : "Disconnect"}
                           </Button>

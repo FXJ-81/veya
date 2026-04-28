@@ -3,7 +3,6 @@
  */
 export const QUERY_KEYS = {
   subscriptions: ["subscriptions"] as const,
-  pendingPlaidSubscriptions: ["pending-plaid-subscriptions"] as const,
 
   analytics: {
     /** Matches any query whose key starts with "analytics" */

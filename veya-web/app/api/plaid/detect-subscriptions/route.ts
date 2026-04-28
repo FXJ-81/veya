@@ -1,7 +1,3 @@
-/**
- * Manual Plaid sync from the app: pulls transactions, runs detection, and stores new candidates
- * as pending review items. Returns the pending review rows found during this run for the modal.
- */
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { runPlaidSubscriptionSyncForUser } from "@/lib/runPlaidSubscriptionSync";
@@ -23,7 +19,7 @@ export async function POST(req: Request) {
   try {
     const result = await runPlaidSubscriptionSyncForUser(authUser.id, {
       plaidAccountId,
-      mode: "store_pending",
+      mode: "return_only",
     });
 
     if (!result.ok) {
@@ -42,8 +38,6 @@ export async function POST(req: Request) {
       result.transactionsCount,
       "candidates",
       result.candidates?.length ?? 0,
-      "pending created",
-      result.pendingCreated,
     );
 
     return NextResponse.json({

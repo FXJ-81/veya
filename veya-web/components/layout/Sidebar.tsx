@@ -1,136 +1,109 @@
 "use client";
 
-import { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
-import { AnimatePresence, motion } from "framer-motion";
 import { cn } from "@/lib/utils";
 
-const links = [
+const NAV_LINKS = [
   { href: "/dashboard", label: "Dashboard", icon: "📊" },
   { href: "/subscriptions", label: "Subscriptions", icon: "📋" },
   { href: "/analytics", label: "Analytics", icon: "📈" },
   { href: "/coach", label: "AI Coach", icon: "💬" },
   { href: "/settings", label: "Settings", icon: "⚙️" },
-];
+] as const;
+
+function pathActive(pathname: string, href: string): boolean {
+  if (href === "/dashboard") return pathname === "/dashboard";
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
+function VeyaMark() {
+  return (
+    <Link
+      href="/dashboard"
+      className="inline-flex select-none items-baseline gap-0.5 font-bold tracking-tight text-text-primary transition-opacity hover:opacity-90"
+    >
+      <span className="text-2xl leading-none sm:text-[1.7rem] md:text-[1.75rem]">
+        Veya
+      </span>
+      <span
+        className="ml-0.5 h-2 w-2 shrink-0 rounded-full bg-accent shadow-[0_0_14px_rgba(91,110,245,0.6)]"
+        aria-hidden
+      />
+    </Link>
+  );
+}
 
 export function Sidebar() {
   const pathname = usePathname();
-  const [tabletMenuOpen, setTabletMenuOpen] = useState(false);
-
-  useEffect(() => {
-    setTabletMenuOpen(false);
-  }, [pathname]);
-
-  useEffect(() => {
-    document.body.style.overflow = tabletMenuOpen ? "hidden" : "";
-    return () => {
-      document.body.style.overflow = "";
-    };
-  }, [tabletMenuOpen]);
-
-  const navContent = (
-    <>
-      <div className="flex h-16 items-center justify-between px-4">
-        <Link href="/dashboard" className="text-2xl font-bold tracking-tight text-text-primary">
-          Veya
-        </Link>
-        <button
-          type="button"
-          onClick={() => setTabletMenuOpen(false)}
-          className="rounded-lg p-2 text-text-secondary hover:bg-surface hover:text-text-primary lg:hidden"
-          aria-label="Close menu"
-        >
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
-            <path d="M18 6L6 18" />
-            <path d="M6 6l12 12" />
-          </svg>
-        </button>
-      </div>
-      <nav className="mt-3 space-y-1 px-2">
-        {links.map((link) => (
-          <Link
-            key={link.href}
-            href={link.href}
-            className={cn(
-              "flex min-h-[48px] items-center gap-3 rounded-lg px-4 py-3 text-[15px] font-medium leading-snug transition-colors",
-              pathname === link.href
-                ? "bg-accent/20 text-accent"
-                : "text-text-secondary hover:bg-surface hover:text-text-primary",
-            )}
-          >
-            <span className="text-xl leading-none" aria-hidden>
-              {link.icon}
-            </span>
-            {link.label}
-          </Link>
-        ))}
-      </nav>
-      <div className="absolute bottom-0 left-0 right-0 border-t border-border p-2">
-        <button
-          type="button"
-          onClick={() => signOut({ callbackUrl: "/" })}
-          className="flex min-h-[48px] w-full items-center gap-3 rounded-lg px-4 py-3 text-[15px] text-text-secondary hover:bg-surface hover:text-danger"
-        >
-          Sign out
-        </button>
-      </div>
-    </>
-  );
 
   return (
     <>
-      {/* Tablet: top bar + hamburger (768px–1023px); hidden on mobile and on desktop */}
-      <div className="fixed left-0 right-0 top-0 z-40 hidden h-14 items-center justify-between border-b border-border bg-card/80 px-4 backdrop-blur-xl md:flex lg:hidden">
-        <button
-          type="button"
-          onClick={() => setTabletMenuOpen(true)}
-          className="min-h-[44px] min-w-[44px] rounded-lg text-xl leading-none text-text-secondary hover:bg-surface hover:text-text-primary"
-          aria-label="Open menu"
-        >
-          ☰
-        </button>
-        <Link href="/dashboard" className="text-xl font-bold tracking-tight text-text-primary">
-          Veya
-        </Link>
-        <span className="min-w-[44px]" aria-hidden />
-      </div>
-
-      {/* Desktop (1024px+): fixed rail */}
+      {/* Tablet + desktop (md+): floating rail; phone uses BottomNav only (<md, unchanged) */}
       <aside
-        className="fixed left-0 top-0 z-40 hidden h-screen shrink-0 border-r border-border bg-card/80 backdrop-blur-xl lg:block"
-        style={{ width: "var(--app-sidebar-width)" }}
+        className="pointer-events-none fixed left-0 top-0 z-40 hidden h-full w-[var(--app-sidebar-width)] md:flex md:flex-col"
+        aria-label="Main navigation"
       >
-        {navContent}
-      </aside>
+        <div className="pointer-events-auto flex shrink-0 flex-col px-6 pb-3 pt-8 md:pt-9">
+          <VeyaMark />
+        </div>
 
-      {/* Tablet drawer overlay */}
-      <AnimatePresence>
-        {tabletMenuOpen && (
-          <>
-            <motion.div
-              key="sidebar-backdrop"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              className="fixed inset-0 z-[45] bg-black/60 backdrop-blur-sm md:block lg:hidden"
-              onClick={() => setTabletMenuOpen(false)}
-            />
-            <motion.aside
-              key="sidebar-drawer"
-              initial={{ x: "-100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "-100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed left-0 top-0 z-50 h-screen max-w-[85vw] border-r border-border bg-card backdrop-blur-xl md:block lg:hidden"
-              style={{ width: "var(--app-sidebar-width)" }}
+        <div className="pointer-events-none flex min-h-0 flex-1 flex-col px-5 pb-8 pt-2 md:px-5 md:pb-10 md:pt-4">
+          <div className="pointer-events-auto flex h-full min-h-0 w-full flex-1 flex-col">
+            <nav
+              className={cn(
+                "flex min-h-0 flex-1 flex-col rounded-3xl border border-border/85 bg-card/90 p-3 md:p-3.5",
+                "md:min-h-[min(68dvh,34rem)] lg:min-h-[min(72dvh,38rem)]",
+                "shadow-[0_14px_48px_-10px_rgba(0,0,0,0.78)] backdrop-blur-xl",
+                "ring-1 ring-white/[0.06]",
+              )}
             >
-              {navContent}
-            </motion.aside>
-          </>
-        )}
-      </AnimatePresence>
+              <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 py-2 md:gap-2.5 md:py-3 lg:gap-3 lg:py-4">
+                {NAV_LINKS.map((link) => {
+                  const active = pathActive(pathname, link.href);
+                  return (
+                    <Link
+                      key={link.href}
+                      href={link.href}
+                      className={cn(
+                        "flex min-h-[52px] items-center gap-3.5 rounded-xl px-3.5 py-3 text-sm font-medium leading-snug transition-colors duration-200",
+                        "md:min-h-[54px] md:px-4 md:py-3.5 lg:min-h-[56px]",
+                        active
+                          ? "bg-accent/20 text-accent shadow-[inset_0_1px_0_rgba(255,255,255,0.08)]"
+                          : "text-text-secondary hover:bg-white/[0.06] hover:text-text-primary",
+                      )}
+                    >
+                      <span className="text-xl leading-none opacity-95 md:text-[1.35rem]" aria-hidden>
+                        {link.icon}
+                      </span>
+                      <span className="min-w-0 flex-1 truncate">{link.label}</span>
+                    </Link>
+                  );
+                })}
+              </div>
+
+              <div className="shrink-0 px-0.5 pb-1 pt-1 md:pt-2">
+                <div
+                  className="mb-3 h-px bg-gradient-to-r from-transparent via-border to-transparent md:mb-3.5"
+                  role="separator"
+                />
+
+                <button
+                  type="button"
+                  onClick={() => signOut({ callbackUrl: "/" })}
+                  className={cn(
+                    "flex min-h-[48px] w-full items-center rounded-xl px-3.5 py-2.5 text-left text-sm font-medium md:min-h-[50px] md:px-4",
+                    "text-text-tertiary transition-colors hover:bg-danger/10 hover:text-danger",
+                  )}
+                >
+                  Sign out
+                </button>
+              </div>
+            </nav>
+          </div>
+        </div>
+      </aside>
     </>
   );
 }

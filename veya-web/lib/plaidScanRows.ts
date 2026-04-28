@@ -4,6 +4,8 @@ import type { GmailScanRow } from "@/types/scan";
 
 type PlaidRowInput = (PlaidDetectedSubscription | PlaidSyncCandidate) & {
   defaultSelected?: boolean;
+  previouslyCanceled?: boolean;
+  resumeSubscriptionId?: string;
 };
 
 export function mapPlaidDetectToScanRows(subs: PlaidRowInput[]): GmailScanRow[] {
@@ -11,6 +13,8 @@ export function mapPlaidDetectToScanRows(subs: PlaidRowInput[]): GmailScanRow[] 
     rowId: `plaid-${i}-${s.name.replace(/[^\w]+/g, "-").slice(0, 48)}`,
     source: "plaid" as const,
     defaultSelected: s.defaultSelected !== false,
+    previouslyCanceled: !!s.previouslyCanceled,
+    resumeSubscriptionId: s.resumeSubscriptionId,
     name: s.name,
     merchantName: s.merchantName ?? s.name,
     category: s.category,

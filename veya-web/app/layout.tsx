@@ -13,9 +13,9 @@ const jetbrains = JetBrains_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Veya — Manage your subscriptions",
+  title: "Veya — Manage your money",
   description:
-    "Track, cancel, and save on subscriptions. AI-powered financial coaching.",
+    "Track spending and subscriptions, spot savings, and get AI-powered financial coaching.",
 };
 
 export default function RootLayout({

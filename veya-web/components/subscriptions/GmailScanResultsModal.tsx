@@ -15,7 +15,7 @@ type GmailScanResultsModalProps = {
   onClose: () => void;
   onSkip: () => void | Promise<void>;
   onImport: (payload: ScanImportPayload) => Promise<ScanImportResult>;
-  /** Called after a successful import when the modal should close (Gmail-only, or Plaid summary "Done"). */
+  /** Called after selections are applied when the modal should close (Gmail-only flow, or bank summary "Done"). */
   onAfterImportClose?: () => void;
   /** Persist unchecked bank-sourced rows as declined merchants (Settings / Subscriptions). */
   persistPlaidDeclinedMerchants?: (keys: string[]) => Promise<void>;
@@ -27,20 +27,58 @@ function rowKey(c: GmailScanRow, index: number): string {
   return c.rowId ?? c.messageId ?? `scan-${index}`;
 }
 
-function formatSubscriptionCount(count: number): string {
-  return `${count} subscription${count === 1 ? "" : "s"}`;
-}
-
 function sourceLabel(source?: SubscriptionScanSource): string {
-  if (source === "plaid") return "🏦 Found in bank";
-  if (source === "confirmed") return "✅ Confirmed";
-  return "📧 Found in Gmail";
+  if (source === "plaid") return "Found in bank";
+  if (source === "confirmed") return "Confirmed";
+  return "Found in Gmail";
 }
 
 function isPlaidLikeScanRow(c: GmailScanRow): boolean {
   if (c.source === "plaid") return true;
   if (c.source === "confirmed" && !c.messageId && c.lastCharged) return true;
   return false;
+}
+
+/** User-facing copy after bank-sourced rows are saved (no "import" wording). */
+function bankSubscriptionAddSummaryCopy(added: number, skipped: number): { headline: string; detail: string } {
+  if (added === 0 && skipped === 0) {
+    return {
+      headline: "You're all set",
+      detail: "No new subscriptions were added from your bank this time.",
+    };
+  }
+  if (added === 0 && skipped > 0) {
+    if (skipped === 1) {
+      return {
+        headline: "Nothing new to add",
+        detail: "That subscription was already on your list.",
+      };
+    }
+    return {
+      headline: "Nothing new to add",
+      detail: `${skipped} subscriptions were already on your list.`,
+    };
+  }
+  if (added > 0 && skipped === 0) {
+    if (added === 1) {
+      return {
+        headline: "Subscription added",
+        detail: "1 new subscription from your bank was saved to your list.",
+      };
+    }
+    return {
+      headline: "Subscriptions added",
+      detail: `${added} new subscriptions from your bank were saved to your list.`,
+    };
+  }
+  const addedPart =
+    added === 1 ? "1 new subscription was added" : `${added} new subscriptions were added`;
+  const skippedPart =
+    skipped === 1 ? "1 was already on your list" : `${skipped} were already on your list`;
+  return {
+    headline: "Subscriptions added",
+    detail: `${addedPart}. ${skippedPart}.`,
+  };
 }
 
 /** Unchecked bank-sourced rows → normalized merchant keys to remember as declined. */
@@ -76,14 +114,6 @@ export function GmailScanResultsModal({
     added: number;
     skipped: number;
   } | null>(null);
-  const plaidImportHeadline = plaidImportSummary
-    ? plaidImportSummary.added > 0
-      ? "Subscriptions added"
-      : "Subscriptions updated"
-    : null;
-  const plaidImportMessage = plaidImportSummary
-    ? `${formatSubscriptionCount(plaidImportSummary.added)} added. ${plaidImportSummary.skipped} already on your list.`
-    : null;
 
   useEffect(() => {
     if (!open) {
@@ -106,7 +136,21 @@ export function GmailScanResultsModal({
     [candidates, selected]
   );
 
+  const primaryActionLabel = useMemo(() => {
+    const nSel = selectedRows.length;
+    if (nSel === 0) return "Add subscriptions";
+    const onlyRestore = selectedRows.every((r) => r.previouslyCanceled);
+    if (onlyRestore) {
+      return nSel === 1 ? "Restore subscription" : "Restore subscriptions";
+    }
+    return `Add ${nSel} subscription${nSel === 1 ? "" : "s"}`;
+  }, [selectedRows]);
+
   const n = candidates.length;
+
+  const bankSummaryCopy = plaidImportSummary
+    ? bankSubscriptionAddSummaryCopy(plaidImportSummary.added, plaidImportSummary.skipped)
+    : null;
 
   const title = useMemo(() => {
     if (n === 0) return "We found no subscription candidates";
@@ -145,6 +189,9 @@ export function GmailScanResultsModal({
           billingCycle:
             c.billingCycle === "custom" ? "monthly" : c.billingCycle,
           lastCharged: c.lastCharged,
+          ...(c.resumeSubscriptionId
+            ? { resumeSubscriptionId: c.resumeSubscriptionId }
+            : {}),
         });
         continue;
       }
@@ -158,6 +205,9 @@ export function GmailScanResultsModal({
           billingCycle:
             c.billingCycle === "custom" ? "monthly" : c.billingCycle,
           lastCharged: c.lastCharged,
+          ...(c.resumeSubscriptionId
+            ? { resumeSubscriptionId: c.resumeSubscriptionId }
+            : {}),
         });
       }
     }
@@ -201,10 +251,10 @@ export function GmailScanResultsModal({
       title={title}
       className="max-w-lg"
     >
-      {plaidImportSummary && (
+      {bankSummaryCopy && (
         <div className="mb-4 rounded-xl border border-border bg-background-secondary/80 px-4 py-3 text-sm text-text-primary">
-          <p className="font-medium text-text-primary">{plaidImportHeadline}</p>
-          <p className="mt-1 text-text-secondary">{plaidImportMessage}</p>
+          <p className="font-medium text-text-primary">{bankSummaryCopy.headline}</p>
+          <p className="mt-1 text-text-secondary leading-relaxed">{bankSummaryCopy.detail}</p>
         </div>
       )}
 
@@ -226,9 +276,21 @@ export function GmailScanResultsModal({
                     disabled={busy || !!plaidImportSummary}
                   />
                   <span className="flex flex-1 min-w-0 flex-col gap-1">
-                    <span className="text-[11px] text-text-tertiary">
-                      {sourceLabel(c.source)}
-                    </span>
+                    <div className="flex flex-col gap-0.5">
+                      {c.previouslyCanceled ? (
+                        <span className="text-[11px] font-semibold tracking-wide text-amber-200/95">
+                          Previously canceled
+                        </span>
+                      ) : null}
+                      <span className="text-[11px] text-text-tertiary">
+                        {sourceLabel(c.source)}
+                      </span>
+                      {c.previouslyCanceled ? (
+                        <span className="text-[10px] leading-snug text-text-tertiary">
+                          Same charge pattern as before—you can restore it to your active list.
+                        </span>
+                      ) : null}
+                    </div>
                     <span className="flex items-center gap-2 font-medium text-text-primary">
                       {/* eslint-disable-next-line @next/next/no-img-element */}
                       <img
@@ -307,8 +369,7 @@ export function GmailScanResultsModal({
                 onClick={handleImport}
                 className="rounded-xl bg-accent px-4 py-3 text-sm font-semibold text-white hover:opacity-90 disabled:opacity-50"
               >
-                Add {selectedRows.length} subscription
-                {selectedRows.length === 1 ? "" : "s"}
+                {primaryActionLabel}
               </button>
             )}
           </>

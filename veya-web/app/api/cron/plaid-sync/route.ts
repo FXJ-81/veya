@@ -5,11 +5,7 @@ import { runPlaidSubscriptionSyncForUser } from "@/lib/runPlaidSubscriptionSync"
 export const dynamic = "force-dynamic";
 
 /**
- * Vercel Cron (see `vercel.json`).
- *
- * Secured with `Authorization: Bearer <CRON_SECRET>` so random clients cannot trigger syncs.
- * Iterates every user with at least one Plaid account and refreshes pending bank review
- * candidates without auto-adding subscriptions.
+ * Vercel Cron: every 5 minutes. Requires CRON_SECRET and Authorization: Bearer <CRON_SECRET>.
  */
 export async function GET(req: Request) {
   const secret = process.env.CRON_SECRET?.trim();
@@ -25,16 +21,14 @@ export async function GET(req: Request) {
 
   let processed = 0;
   let failures = 0;
-  let totalPendingCreated = 0;
-  let totalPendingUpdated = 0;
+  let totalAutoImported = 0;
 
   for (const { id } of users) {
     try {
-      const r = await runPlaidSubscriptionSyncForUser(id, { mode: "store_pending" });
+      const r = await runPlaidSubscriptionSyncForUser(id, { mode: "silent_auto" });
       if (r.ok) {
         processed++;
-        totalPendingCreated += r.pendingCreated;
-        totalPendingUpdated += r.pendingUpdated;
+        totalAutoImported += r.autoImported;
       } else {
         failures++;
       }
@@ -48,8 +42,7 @@ export async function GET(req: Request) {
     users: users.length,
     processed,
     failures,
-    totalPendingCreated,
-    totalPendingUpdated,
+    totalAutoImported,
   });
 
   return NextResponse.json({
@@ -57,7 +50,6 @@ export async function GET(req: Request) {
     usersWithPlaid: users.length,
     processedOk: processed,
     failures,
-    totalPendingCreated,
-    totalPendingUpdated,
+    totalAutoImported,
   });
 }
