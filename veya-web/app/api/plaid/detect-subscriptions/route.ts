@@ -2,6 +2,8 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { runPlaidSubscriptionSyncForUser } from "@/lib/runPlaidSubscriptionSync";
 
+export const dynamic = "force-dynamic";
+
 export async function POST(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
