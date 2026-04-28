@@ -3,6 +3,8 @@ import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { getPlaidClient } from "@/lib/plaidServer";
 
+export const dynamic = "force-dynamic";
+
 export async function DELETE(
   _req: Request,
   { params }: { params: { id: string } },
