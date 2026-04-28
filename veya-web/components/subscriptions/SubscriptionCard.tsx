@@ -196,7 +196,7 @@ export function SubscriptionCard({
               className="max-md:px-3 max-md:text-xs"
               onClick={() => onCancelRequest(subscription)}
             >
-              Cancel
+              Cancel in Veya
             </Button>
           )}
         </div>

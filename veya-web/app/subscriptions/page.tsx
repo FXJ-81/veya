@@ -391,6 +391,13 @@ function SubscriptionsContent() {
           </div>
         </motion.div>
 
+        <p className="mb-5 rounded-xl border border-border/70 bg-background-secondary/40 px-3.5 py-2.5 text-xs leading-relaxed text-text-tertiary sm:text-[13px]">
+          <span className="font-medium text-text-secondary">Note.</span> Edits here apply in Veya
+          only; they are not sent to the merchant and do not end billing—close the account with the
+          provider when you need charges to stop. In the future, we plan to extend Veya with
+          assisted cancellation, provider hand-offs, and clearer account management.
+        </p>
+
         <div className="mb-6 flex min-w-0 flex-col gap-3 sm:flex-row sm:gap-4">
           <input
             type="text"
@@ -484,20 +491,20 @@ function SubscriptionsContent() {
       <Modal
         open={!!cancelConfirmSub}
         onClose={() => setCancelConfirmSub(null)}
-        title="Cancel subscription?"
+        title="Remove from active list?"
         className="max-w-md"
       >
         <p className="text-sm text-text-secondary leading-relaxed">
-          Are you sure you want to cancel{" "}
+          This updates Veya only. Nothing is sent to{" "}
           <span className="font-semibold text-text-primary">
-            {cancelConfirmSub?.name ?? "this subscription"}
-          </span>{" "}
-          in Veya? It will leave your active list, but we keep the record so future bank checks can
-          match this charge again.
+            {cancelConfirmSub?.name ?? "the provider"}
+          </span>
+          , and recurring billing with them is unchanged. To end service or charges, complete
+          cancellation in their billing channels (website, app, or store subscription).
         </p>
         <p className="mt-3 text-sm text-text-secondary leading-relaxed">
-          If it shows up again from your bank, we&apos;ll label it as something you canceled before
-          so you can restore it when you want.
+          The subscription moves out of your active list here; we retain a record so bank-detected
+          activity can still be matched if it reappears.
         </p>
         <div className="mt-6 flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
           <Button
@@ -507,7 +514,7 @@ function SubscriptionsContent() {
             onClick={() => setCancelConfirmSub(null)}
             disabled={update.isPending}
           >
-            Keep subscription
+            Keep active
           </Button>
           <Button
             variant="danger"
@@ -516,7 +523,7 @@ function SubscriptionsContent() {
             onClick={() => void confirmCancelSubscription()}
             disabled={update.isPending}
           >
-            {update.isPending ? "Canceling…" : "Cancel subscription"}
+            {update.isPending ? "Saving…" : "Remove from active list"}
           </Button>
         </div>
       </Modal>
