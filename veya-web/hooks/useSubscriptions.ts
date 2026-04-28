@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import type { Subscription } from "@/types";
 import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
 import { QUERY_KEYS } from "@/lib/queryKeys";
-import type { PendingPlaidSubscriptionCandidate } from "@/types/plaidCandidate";
 
 export type SubscriptionListData = {
   subscriptions: Subscription[];
@@ -42,25 +41,10 @@ async function fetchSubscriptions(): Promise<SubscriptionListData> {
   };
 }
 
-async function fetchPendingPlaidSubscriptions(): Promise<PendingPlaidSubscriptionCandidate[]> {
-  const res = await fetch("/api/plaid/pending-subscriptions");
-  if (!res.ok) throw new Error("Failed to fetch pending bank subscriptions");
-  const body = (await res.json()) as { candidates?: PendingPlaidSubscriptionCandidate[] };
-  return Array.isArray(body.candidates) ? body.candidates : [];
-}
-
 export function useSubscriptions() {
   return useQuery({
     queryKey: QUERY_KEYS.subscriptions,
     queryFn: fetchSubscriptions,
-    staleTime: 0,
-  });
-}
-
-export function usePendingPlaidSubscriptions() {
-  return useQuery({
-    queryKey: QUERY_KEYS.pendingPlaidSubscriptions,
-    queryFn: fetchPendingPlaidSubscriptions,
     staleTime: 0,
   });
 }
@@ -184,23 +168,5 @@ export function useSubscriptionMutations() {
     },
   });
 
-  const resolvePendingPlaid = useMutation({
-    mutationFn: async (vars: { action: "add" | "dismiss"; ids: string[] }) => {
-      const res = await fetch("/api/plaid/pending-subscriptions", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(vars),
-      });
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({}));
-        throw new Error(err.error ?? "Failed to update pending bank subscriptions");
-      }
-      return res.json();
-    },
-    onSuccess: async () => {
-      await invalidateAfterSubscriptionChange(qc);
-    },
-  });
-
-  return { create, update, remove, resolvePendingPlaid };
+  return { create, update, remove };
 }

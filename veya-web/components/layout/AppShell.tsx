@@ -7,7 +7,7 @@ import { Sidebar } from "./Sidebar";
 export type AppShellVariant = "default" | "coach";
 
 /**
- * Authenticated shell: desktop sidebar (lg+), tablet hamburger (md–lg), mobile bottom nav (<md).
+ * Authenticated shell: floating sidebar (md+), mobile bottom nav only (<md).
  */
 export function AppShell({
   children,
@@ -26,8 +26,7 @@ export function AppShell({
       <div
         className={cn(
           "flex min-h-0 w-full min-w-0 max-w-[100vw] flex-1 flex-col",
-          isCoach &&
-            "min-h-[100dvh] lg:h-[100dvh] lg:max-h-screen lg:min-h-0",
+          isCoach && "min-h-[100dvh] md:h-[100dvh] md:max-h-screen md:min-h-0",
         )}
       >
         <main
@@ -38,11 +37,10 @@ export function AppShell({
             "max-md:px-6 max-md:pt-[max(1.5rem,env(safe-area-inset-top,0px))]",
             "max-md:pb-[calc(var(--app-bottom-nav-height)+env(safe-area-inset-bottom,0px)+1.5rem)]",
             isCoach && "max-md:overflow-hidden",
-            /* Tablet: 24px padding below top bar */
-            "md:px-6 md:pb-6 md:pt-16",
-            /* Desktop: 24px padding; offset past sidebar rail */
-            "lg:py-6 lg:pr-6 lg:pl-[calc(var(--app-sidebar-width)+1.5rem)] xl:pr-8",
-            isCoach && "lg:overflow-hidden",
+            /* Tablet + desktop: padding; offset past floating sidebar rail */
+            "md:px-6 md:py-6 md:pl-[calc(var(--app-sidebar-width)+1rem)] md:pr-6",
+            "xl:pr-8",
+            isCoach && "md:overflow-hidden",
           )}
         >
           <div

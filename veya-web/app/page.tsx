@@ -57,7 +57,7 @@ export default function LandingPage() {
             transition={{ duration: 0.5 }}
             className="text-3xl font-bold tracking-tight text-text-primary sm:text-5xl md:text-6xl"
           >
-            Take control of your subscriptions
+            Take control of your money
           </motion.h1>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
@@ -96,7 +96,8 @@ export default function LandingPage() {
             Everything you need to take control
           </h2>
           <p className="mx-auto mb-10 max-w-2xl text-center text-sm text-text-secondary sm:mb-16 sm:text-base">
-            Veya brings subscriptions, spending insights, and an AI coach into one app.
+            Veya helps you manage your money—subscription tracking, spending insights, and an AI coach
+            in one app.
           </p>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8 xl:grid-cols-3">
             {FEATURES.map((f, i) => (

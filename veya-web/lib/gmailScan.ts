@@ -13,7 +13,6 @@ import { scoreSubscription } from "@/lib/emailSubscription/scoreSubscription";
 import { normalizeEmailBody, stripHtmlToPlain } from "@/lib/emailSubscription/normalize";
 import { resolveServiceNameAndCategory } from "@/lib/emailSubscription/resolveMerchant";
 import { getGoogleOAuthRedirectUri } from "@/lib/googleOAuthCallback";
-import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
 
 export function normalizeSubName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -474,17 +473,20 @@ async function importGmailMessageIdsInternal(
     const internalMs = Date.parse(`${c.emailDate}T12:00:00Z`);
     const dates = parseDateFromEmail("", Number.isNaN(internalMs) ? undefined : internalMs);
 
-    await createSubscriptionForUser(userId, {
-      name: c.name,
-      category: c.category,
-      price: c.price,
-      billingCycle: c.billingCycle,
-      startDate: new Date(dates.startDate),
-      nextRenewal: new Date(dates.nextRenewal),
-      status: "active",
-      notes: "Added from Gmail",
-      logoUrl: c.logoUrl ?? null,
-      source: "gmail",
+    await prisma.subscription.create({
+      data: {
+        userId,
+        name: c.name,
+        category: c.category,
+        price: c.price,
+        billingCycle: c.billingCycle,
+        startDate: new Date(dates.startDate),
+        nextRenewal: new Date(dates.nextRenewal),
+        status: "active",
+        notes: "Added from Gmail",
+        logoUrl: c.logoUrl ?? null,
+        source: "gmail",
+      },
     });
     existingNorm.add(key);
     imported++;

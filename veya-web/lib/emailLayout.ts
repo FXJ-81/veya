@@ -19,7 +19,7 @@ import { getGoogleOAuthOrigin } from "@/lib/googleOAuthCallback";
 
 const BRAND = {
   name: "Veya",
-  tagline: "Manage your subscriptions",
+  tagline: "Manage your money",
   primary: "#5b6ef5",
   primaryHover: "#4554e0",
   ink: "#0f172a",

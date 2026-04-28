@@ -6,6 +6,10 @@ export type GmailScanRow = {
   source?: SubscriptionScanSource;
   /** When false, checkbox starts unchecked (e.g. previously declined Plaid merchant). */
   defaultSelected?: boolean;
+  /** Bank rescan matched a subscription the user canceled earlier. */
+  previouslyCanceled?: boolean;
+  /** When set, applying this row reactivates this subscription instead of creating a new one. */
+  resumeSubscriptionId?: string;
   name: string;
   /** Plaid: raw merchant / transaction label for dedup vs existing subs */
   merchantName?: string;
@@ -28,6 +32,8 @@ export type PlaidImportItem = {
   price: number;
   billingCycle: "monthly" | "yearly" | "weekly" | "custom";
   lastCharged: string;
+  /** Reactivate this row instead of POSTing a new subscription (previously canceled match). */
+  resumeSubscriptionId?: string;
 };
 
 export type ScanImportPayload = {

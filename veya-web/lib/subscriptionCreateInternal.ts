@@ -1,15 +1,9 @@
-/**
- * Central place to create a `Subscription` row and fire optional “new Plaid subscription” email.
- * Shared by `POST /api/subscriptions` and background Plaid import so behavior stays identical.
- */
 import { prisma } from "@/lib/prisma";
 import { mergeNotificationPrefs } from "@/lib/notificationPrefs";
 import { formatCurrency } from "@/lib/utils";
 import { pricePerMonth } from "@/lib/subscriptionBilling";
 import { hasDuplicateNotificationToday } from "@/lib/notificationDedupe";
 import { sendNewSubscriptionEmail } from "@/lib/notificationEmails";
-import { markPlaidCandidatesAddedByKeys } from "@/lib/plaidCandidateState";
-import { assertCanCreateSubscription } from "@/lib/planLimits";
 
 export type CreateSubscriptionInput = {
   name: string;
@@ -22,7 +16,6 @@ export type CreateSubscriptionInput = {
   notes?: string | null;
   isShared?: boolean;
   color?: string | null;
-  logoUrl?: string | null;
   source?: "manual" | "gmail" | "plaid";
 };
 
@@ -34,8 +27,6 @@ export async function createSubscriptionForUser(
   userId: string,
   data: CreateSubscriptionInput,
 ): Promise<Awaited<ReturnType<typeof prisma.subscription.create>>> {
-  await assertCanCreateSubscription(userId);
-
   const source = data.source ?? "manual";
   const sub = await prisma.subscription.create({
     data: {
@@ -50,21 +41,14 @@ export async function createSubscriptionForUser(
       notes: data.notes ?? undefined,
       isShared: data.isShared ?? false,
       color: data.color ?? undefined,
-      logoUrl: data.logoUrl ?? undefined,
       source,
     },
   });
 
-  await markPlaidCandidatesAddedByKeys(userId, [data.name]);
-
   if (source === "plaid") {
     const settings = await prisma.userSettings.findUnique({ where: { userId } });
     const prefs = mergeNotificationPrefs(settings?.notificationPrefs);
-    const user = await prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true, name: true, plan: true },
-    });
-    if (user?.plan === "premium" && prefs.newSubscriptionDetected) {
+    if (prefs.newSubscriptionDetected) {
       const typeKey = `new_subscription:${sub.id}`;
       const monthly = pricePerMonth(sub.price, sub.billingCycle);
       const title = `New subscription detected: ${sub.name} (${formatCurrency(monthly)}/mo)`;
@@ -77,6 +61,10 @@ export async function createSubscriptionForUser(
             body: "Added from your bank transactions.",
             read: false,
           },
+        });
+        const user = await prisma.user.findUnique({
+          where: { id: userId },
+          select: { email: true, name: true },
         });
         if (user?.email) {
           await sendNewSubscriptionEmail({

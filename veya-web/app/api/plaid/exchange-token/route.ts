@@ -2,18 +2,10 @@ import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { getPlaidClient } from "@/lib/plaidServer";
-import { rateLimitAllow } from "@/lib/rateLimitInMemory";
 
 export async function POST(req: Request) {
   const authUser = await getAuthUser(req);
   if (!authUser) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-
-  if (!rateLimitAllow(`plaid:exchange:${authUser.id}`, 60, 60 * 60 * 1000)) {
-    return NextResponse.json(
-      { error: "Too many link attempts. Try again later." },
-      { status: 429 },
-    );
-  }
 
   let body: { public_token?: string };
   try {
@@ -25,15 +17,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing public_token" }, { status: 400 });
   }
 
-  const publicToken = body.public_token.trim();
-  if (publicToken.length < 10 || publicToken.length > 4096) {
-    return NextResponse.json({ error: "Invalid public_token" }, { status: 400 });
-  }
-
   try {
     const plaid = getPlaidClient();
     const res = await plaid.itemPublicTokenExchange({
-      public_token: publicToken,
+      public_token: body.public_token,
     });
     const access_token = res.data.access_token;
     const item_id = res.data.item_id;

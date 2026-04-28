@@ -1,9 +1,3 @@
-/**
- * Plaid bank-scan deduplication and “declined merchant” handling.
- *
- * Shared helpers for Plaid scan deduplication, normalized merchant matching, and the
- * legacy modal classification path.
- */
 import type { PlaidDetectedSubscription } from "@/lib/plaidSubscriptionDetect";
 import {
   normalizeSubscriptionNameKey,
@@ -34,26 +28,53 @@ export function isPlaidMerchantDuplicateOfExisting(
   return false;
 }
 
-export type PlaidSyncCandidate = PlaidDetectedSubscription & { defaultSelected: boolean };
+export type SubscriptionDedupRow = {
+  name: string;
+  /** Defaults to active when omitted (tests / older callers). */
+  status?: string;
+  id: string;
+};
+
+export type PlaidSyncCandidate = PlaidDetectedSubscription & {
+  defaultSelected: boolean;
+  /** Matches a subscription the user canceled; user can restore from the scan modal. */
+  previouslyCanceled?: boolean;
+  resumeSubscriptionId?: string;
+};
+
+function isActiveOrPaused(status: string | undefined): boolean {
+  const s = (status ?? "active").toLowerCase();
+  return s === "active" || s === "paused";
+}
 
 /**
- * Classify raw Plaid detections: skip anything already saved as a subscription.
- * Declined merchants are still returned for manual review with defaultSelected: false.
- * New merchants get defaultSelected: true.
+ * Classify raw Plaid detections: skip active/paused matches; surface canceled matches as
+ * `previouslyCanceled` for the scan UI. Declined merchants stay in the modal unchecked.
+ * Auto-import never re-adds previously canceled rows without user confirmation.
  */
 export function classifyPlaidDetectionsForUser(
   detected: PlaidDetectedSubscription[],
-  existingSubs: { name: string }[],
+  existingSubs: SubscriptionDedupRow[],
   declinedKeys: Iterable<string>,
 ): {
-  /** Shown in scan modal (excludes rows already in subscription list). */
+  /** Shown in scan modal (excludes rows already matching active/paused subscriptions). */
   forModal: PlaidSyncCandidate[];
-  /** Safe to auto-import (not declined, not already a subscription). */
+  /** Safe to auto-import (not declined, not active/paused, not previously canceled). */
   forAutoImport: PlaidDetectedSubscription[];
   skippedExisting: number;
   skippedDeclinedOnly: number;
 } {
-  const existingKeys = subscriptionNameKeySet(existingSubs);
+  const activePaused = existingSubs.filter((s) => isActiveOrPaused(s.status));
+  const cancelled = existingSubs.filter((s) => (s.status ?? "").toLowerCase() === "cancelled");
+
+  const activePausedKeys = subscriptionNameKeySet(activePaused);
+  const cancelledByKey = new Map<string, string>();
+  for (const sub of cancelled) {
+    for (const k of keysForPlaidMerchant({ name: sub.name })) {
+      if (!cancelledByKey.has(k)) cancelledByKey.set(k, sub.id);
+    }
+  }
+
   const declined = new Set(
     [...declinedKeys].map((k) => normalizeSubscriptionNameKey(k)).filter(Boolean),
   );
@@ -67,18 +88,33 @@ export function classifyPlaidDetectionsForUser(
 
   for (const row of detected) {
     const keys = keysForPlaidMerchant(row);
-    if (keys.some((k) => existingKeys.has(k))) {
+    if (keys.some((k) => activePausedKeys.has(k))) {
       skippedExisting++;
       continue;
     }
+
+    let resumeSubscriptionId: string | undefined;
+    for (const k of keys) {
+      const sid = cancelledByKey.get(k);
+      if (sid) {
+        resumeSubscriptionId = sid;
+        break;
+      }
+    }
+    const previouslyCanceled = !!resumeSubscriptionId;
 
     const declinedHit = keys.some((k) => declined.has(k));
     const defaultSelected = !declinedHit;
     if (declinedHit) skippedDeclinedOnly++;
 
-    forModal.push({ ...row, defaultSelected });
+    forModal.push({
+      ...row,
+      defaultSelected,
+      previouslyCanceled,
+      resumeSubscriptionId,
+    });
 
-    if (!defaultSelected) continue;
+    if (!defaultSelected || previouslyCanceled) continue;
 
     if (keys.some((k) => batchSeen.has(k))) continue;
 

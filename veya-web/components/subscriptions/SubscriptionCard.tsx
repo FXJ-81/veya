@@ -36,7 +36,8 @@ interface SubscriptionCardProps {
   subscription: Subscription;
   index: number;
   onPause?: (id: string) => void;
-  onCancel?: (id: string) => void;
+  /** Opens cancel confirmation; subscription is not changed until the user confirms. */
+  onCancelRequest?: (sub: Subscription) => void;
   onEdit?: (sub: Subscription) => void;
   onSeeAlternative?: (sub: Subscription) => void;
   alternative?: { name: string; price: number; savings: number };
@@ -46,7 +47,7 @@ export function SubscriptionCard({
   subscription,
   index,
   onPause,
-  onCancel,
+  onCancelRequest,
   onEdit,
   onSeeAlternative,
   alternative,
@@ -188,12 +189,12 @@ export function SubscriptionCard({
               Pause
             </Button>
           )}
-          {onCancel && (
+          {onCancelRequest && (
             <Button
               variant="danger"
               size="sm"
               className="max-md:px-3 max-md:text-xs"
-              onClick={() => onCancel(subscription.id)}
+              onClick={() => onCancelRequest(subscription)}
             >
               Cancel
             </Button>
