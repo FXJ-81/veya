@@ -1,11 +1,52 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import Providers from "./providers";
+import { VEYA_ACCENT, VEYA_BG_ROOT, VEYA_SITE_DESCRIPTION } from "@/lib/brand/constants";
+import { getSiteUrl } from "@/lib/siteUrl";
+
+const defaultTitle = "Veya — Manage your money";
 
 export const metadata: Metadata = {
-  title: "Veya — Manage your money",
-  description:
-    "Track spending and subscriptions, spot savings, and get AI-powered financial coaching.",
+  metadataBase: getSiteUrl(),
+  title: {
+    default: defaultTitle,
+    template: "%s | Veya",
+  },
+  description: VEYA_SITE_DESCRIPTION,
+  applicationName: "Veya",
+  authors: [{ name: "Veya" }],
+  openGraph: {
+    type: "website",
+    locale: "en_US",
+    siteName: "Veya",
+    title: defaultTitle,
+    description: VEYA_SITE_DESCRIPTION,
+    url: "/",
+    images: [
+      {
+        url: "/opengraph-image",
+        width: 1200,
+        height: 630,
+        alt: "Veya — Manage your money",
+      },
+    ],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: defaultTitle,
+    description: VEYA_SITE_DESCRIPTION,
+    images: ["/opengraph-image"],
+  },
+  robots: {
+    index: true,
+    follow: true,
+  },
+  // Favicon + apple-touch-icon: `app/icon.tsx` and `app/apple-icon.tsx` (Next injects links).
+};
+
+export const viewport: Viewport = {
+  themeColor: VEYA_ACCENT,
+  colorScheme: "dark light",
 };
 
 export default function RootLayout({
