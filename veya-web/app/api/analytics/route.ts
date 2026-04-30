@@ -6,10 +6,12 @@ import {
   hasSubscriptionStarted,
   monthlySpendInCalendarMonth,
   pricePerMonth,
+  pricePerMonthAt,
 } from "@/lib/subscriptionBilling";
 import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
 import type { Subscription } from "@/types";
 import { requirePremiumFeature } from "@/lib/planLimits";
+import { readUpcomingPriceRowsForUser, upcomingPriceMap } from "@/lib/subscriptionUpcomingSql";
 
 const MONTH_SHORT = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
 
@@ -32,6 +34,8 @@ function prismaSubToType(s: {
   name: string;
   category: string;
   price: number;
+  upcomingPrice?: number | null;
+  upcomingPriceEffectiveAt?: Date | null;
   billingCycle: string;
   startDate: Date;
   nextRenewal: Date;
@@ -49,6 +53,8 @@ function prismaSubToType(s: {
     name: s.name,
     category: s.category,
     price: s.price,
+    upcomingPrice: s.upcomingPrice ?? null,
+    upcomingPriceEffectiveAt: s.upcomingPriceEffectiveAt?.toISOString() ?? null,
     billingCycle: s.billingCycle as Subscription["billingCycle"],
     startDate: s.startDate.toISOString(),
     nextRenewal: s.nextRenewal.toISOString(),
@@ -239,6 +245,9 @@ export async function GET(req: Request) {
       orderBy: { createdAt: "asc" },
     }),
   ]);
+  const upcoming = upcomingPriceMap(
+    await readUpcomingPriceRowsForUser(prisma, authUser.id, subsActive.map((s) => s.id)),
+  );
 
   const now = new Date();
   const year = now.getFullYear();
@@ -263,8 +272,15 @@ export async function GET(req: Request) {
     let total = 0;
 
     for (const s of subsActive) {
+      const u = upcoming.get(s.id);
       const raw = monthlySpendInCalendarMonth(
-        { startDate: s.startDate, price: s.price, billingCycle: s.billingCycle },
+        {
+          startDate: s.startDate,
+          price: s.price,
+          billingCycle: s.billingCycle,
+          upcomingPrice: u?.upcomingPrice ?? null,
+          upcomingPriceEffectiveAt: u?.upcomingPriceEffectiveAt ?? null,
+        },
         year,
         monthIndex,
       );
@@ -288,7 +304,16 @@ export async function GET(req: Request) {
 
   const categoryMap = new Map<string, { total: number; count: number }>();
   for (const s of subsActive) {
-    const perMonth = pricePerMonth(s.price, s.billingCycle);
+    const u = upcoming.get(s.id);
+    const perMonth = pricePerMonthAt(
+      {
+        price: s.price,
+        billingCycle: s.billingCycle,
+        upcomingPrice: u?.upcomingPrice ?? null,
+        upcomingPriceEffectiveAt: u?.upcomingPriceEffectiveAt ?? null,
+      },
+      now,
+    );
     const cur = categoryMap.get(s.category) ?? { total: 0, count: 0 };
     cur.total += perMonth;
     cur.count += 1;
@@ -311,7 +336,24 @@ export async function GET(req: Request) {
 
   /** All **active** subs: normalized $/mo (matches category card & score; avoids $0 when startDate is future). */
   const activeMonthlyTotal = round2(
-    subsActive.reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0),
+    subsActive.reduce(
+      (sum, s) => {
+        const u = upcoming.get(s.id);
+        return (
+          sum +
+          pricePerMonthAt(
+            {
+              price: s.price,
+              billingCycle: s.billingCycle,
+              upcomingPrice: u?.upcomingPrice ?? null,
+              upcomingPriceEffectiveAt: u?.upcomingPriceEffectiveAt ?? null,
+            },
+            now,
+          )
+        );
+      },
+      0,
+    ),
   );
 
   const yearlyProjection = round2(activeMonthlyTotal * 12);
@@ -319,14 +361,31 @@ export async function GET(req: Request) {
   const hasActiveSubscriptions = subsActive.length > 0;
 
   const activeSubsPricePerMonth = subsActive.map((s) =>
-    pricePerMonth(s.price, s.billingCycle),
+    pricePerMonthAt(
+      {
+        price: s.price,
+        billingCycle: s.billingCycle,
+        upcomingPrice: upcoming.get(s.id)?.upcomingPrice ?? null,
+        upcomingPriceEffectiveAt: upcoming.get(s.id)?.upcomingPriceEffectiveAt ?? null,
+      },
+      now,
+    ),
   );
 
   const spendByCategory = new Map<string, number>();
   let totalMonthlySpend = 0;
   for (const s of subsActive) {
     if (!hasSubscriptionStarted(s.startDate, now)) continue;
-    const monthly = pricePerMonth(s.price, s.billingCycle);
+    const u = upcoming.get(s.id);
+    const monthly = pricePerMonthAt(
+      {
+        price: s.price,
+        billingCycle: s.billingCycle,
+        upcomingPrice: u?.upcomingPrice ?? null,
+        upcomingPriceEffectiveAt: u?.upcomingPriceEffectiveAt ?? null,
+      },
+      now,
+    );
     spendByCategory.set(s.category, (spendByCategory.get(s.category) ?? 0) + monthly);
     totalMonthlySpend += monthly;
   }
@@ -352,7 +411,15 @@ export async function GET(req: Request) {
 
   const activeStarted = subsActive
     .filter((s) => hasSubscriptionStarted(s.startDate, now))
-    .map(prismaSubToType);
+    .map((s) => {
+      const base = prismaSubToType(s);
+      const u = upcoming.get(s.id);
+      return {
+        ...base,
+        upcomingPrice: u?.upcomingPrice ?? null,
+        upcomingPriceEffectiveAt: u?.upcomingPriceEffectiveAt?.toISOString() ?? null,
+      };
+    });
 
   const insightCards = buildInsightCards({
     currentMonthlyNormalized: activeMonthlyTotal,

@@ -21,7 +21,7 @@ function pathActive(pathname: string, href: string): boolean {
 function VeyaMark() {
   return (
     <Link
-      href="/dashboard"
+      href="/"
       className="inline-flex select-none items-baseline gap-0.5 font-bold tracking-tight text-text-primary transition-opacity hover:opacity-90"
     >
       <span className="text-2xl leading-none sm:text-[1.7rem] md:text-[1.75rem]">

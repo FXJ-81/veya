@@ -17,6 +17,10 @@ export interface Subscription {
   name: string;
   category: string;
   price: number;
+  /** Optional scheduled new price (keeps `price` until effective date). */
+  upcomingPrice?: number | null;
+  /** ISO date for when `upcomingPrice` takes effect. */
+  upcomingPriceEffectiveAt?: string | null;
   billingCycle: BillingCycle;
   startDate: string;
   nextRenewal: string;
@@ -72,6 +76,8 @@ export interface NotificationItem {
 export interface UserSettings {
   notificationPrefs?: Record<string, boolean>;
   budgetLimit?: number | null;
+  /** "brand" | "white" — persisted accent for signed-in UI */
+  accentPreference?: string;
 }
 
 export interface AIMessage {

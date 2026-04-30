@@ -7,14 +7,18 @@ import { useQueryClient } from "@tanstack/react-query";
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { AppShell } from "@/components/layout/AppShell";
-import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import { Badge } from "@/components/ui/Badge";
 import { Modal } from "@/components/ui/Modal";
 import { PlaidLinkHost } from "@/components/subscriptions/PlaidLinkHost";
 import { PlaidSecurityBadges } from "@/components/settings/PlaidSecurityBadges";
 import { SupportFeedbackForm } from "@/components/settings/SupportFeedbackForm";
+import { SettingsAccordionSection } from "@/components/settings/SettingsAccordionSection";
 import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
+import {
+  applyAccentPreferenceToDocument,
+  type AccentPreference,
+} from "@/lib/accentPreference";
 import { cn } from "@/lib/utils";
 import type { NotificationPrefKey } from "@/lib/notificationPrefs";
 
@@ -149,6 +153,13 @@ export default function SettingsPage() {
   const notifPrefsRef = useRef(notifPrefs);
   notifPrefsRef.current = notifPrefs;
 
+  const [accentPreference, setAccentPreference] = useState<AccentPreference>("brand");
+  const [accentPrefLoading, setAccentPrefLoading] = useState(true);
+  const [accentSaving, setAccentSaving] = useState(false);
+  const accentPreferenceRef = useRef(accentPreference);
+  accentPreferenceRef.current = accentPreference;
+  const accentSavingRef = useRef(false);
+
   const strength = useMemo(() => strengthScore(newPw), [newPw]);
 
   useEffect(() => {
@@ -230,6 +241,50 @@ export default function SettingsPage() {
       .catch(() => setNotifPrefs(null))
       .finally(() => setNotifPrefsLoading(false));
   }, [status]);
+
+  useEffect(() => {
+    if (status !== "authenticated") {
+      if (status === "unauthenticated") setAccentPrefLoading(false);
+      return;
+    }
+    setAccentPrefLoading(true);
+    void fetch("/api/settings/appearance")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d: { accentPreference?: unknown } | null) => {
+        const v: AccentPreference = d?.accentPreference === "white" ? "white" : "brand";
+        setAccentPreference(v);
+        applyAccentPreferenceToDocument(v);
+      })
+      .catch(() => {})
+      .finally(() => setAccentPrefLoading(false));
+  }, [status]);
+
+  const saveAccentPreference = useCallback(async (next: AccentPreference) => {
+    const prev = accentPreferenceRef.current;
+    if (next === prev || accentSavingRef.current) return;
+    accentSavingRef.current = true;
+    setAccentSaving(true);
+    setAccentPreference(next);
+    applyAccentPreferenceToDocument(next);
+    try {
+      const res = await fetch("/api/settings/appearance", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accentPreference: next }),
+      });
+      if (!res.ok) throw new Error("save failed");
+      const d = (await res.json()) as { accentPreference?: unknown };
+      const v: AccentPreference = d.accentPreference === "white" ? "white" : "brand";
+      setAccentPreference(v);
+      applyAccentPreferenceToDocument(v);
+    } catch {
+      setAccentPreference(prev);
+      applyAccentPreferenceToDocument(prev);
+    } finally {
+      accentSavingRef.current = false;
+      setAccentSaving(false);
+    }
+  }, []);
 
   const toggleNotifPref = useCallback(async (key: NotificationPrefKey) => {
     const snap = notifPrefsRef.current;
@@ -421,19 +476,24 @@ export default function SettingsPage() {
   return (
     <>
       <AppShell>
-        <motion.h1
+        <motion.header
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
-          className="mb-6 text-2xl font-bold text-text-primary sm:mb-8"
+          className="mb-5 sm:mb-6"
         >
-          Settings
-        </motion.h1>
+          <h1 className="text-2xl font-bold tracking-tight text-text-primary">Settings</h1>
+          <p className="mt-1.5 max-w-xl text-sm leading-relaxed text-text-secondary">
+            Open a section when you need it. Less clutter, same controls.
+          </p>
+        </motion.header>
 
-        <div className="mx-auto w-full min-w-0 max-w-2xl space-y-6">
-
-          {/* ── Profile ── */}
-          <Card>
-            <h2 className="mb-4 text-lg font-semibold text-text-primary">Profile</h2>
+        <div className="mx-auto w-full min-w-0 max-w-2xl space-y-3 sm:space-y-4 pb-2">
+          <SettingsAccordionSection
+            id="settings-account"
+            title="Account"
+            description="Profile and signing out of this device"
+            defaultOpen
+          >
             <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-full bg-accent/20 text-2xl font-bold text-accent">
                 {(session?.user?.name ?? session?.user?.email ?? "?").charAt(0).toUpperCase()}
@@ -445,11 +505,22 @@ export default function SettingsPage() {
                 <p className="text-sm text-text-secondary">{session?.user?.email}</p>
               </div>
             </div>
-          </Card>
+            <div className="mt-6 border-t border-border/60 pt-5">
+              <Button
+                className="w-full sm:w-auto"
+                variant="secondary"
+                onClick={() => signOut({ callbackUrl: "/" })}
+              >
+                Sign out
+              </Button>
+            </div>
+          </SettingsAccordionSection>
 
-          {/* ── Plan ── */}
-          <Card>
-            <h2 className="mb-4 text-lg font-semibold text-text-primary">Plan</h2>
+          <SettingsAccordionSection
+            id="settings-billing"
+            title="Billing & plan"
+            description="Your plan and tracked subscription data"
+          >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
               <Badge variant={plan === "premium" ? "accent" : "default"}>
                 {plan === "premium" ? "Premium" : "Free"}
@@ -467,28 +538,30 @@ export default function SettingsPage() {
                 ? "You have unlimited subscriptions, unlimited AI Coach, analytics, and notifications."
                 : "Free includes 10 subscriptions, bank linking, budget tracking, and 5 AI messages per day."}
             </p>
-          </Card>
+            <div className="mt-8 border-t border-border/60 pt-6">
+              <h3 className="mb-2 text-sm font-semibold text-text-primary">Tracked subscription data</h3>
+              <p className="mb-4 text-sm text-text-secondary">
+                Remove every subscription you track in Veya. Bank connections and your declined bank
+                detections are kept so sync behavior stays predictable.
+              </p>
+              <Button variant="danger" onClick={() => { setClearSubsAck(false); setClearSubsOpen(true); }}>
+                Clear all subscriptions
+              </Button>
+            </div>
+          </SettingsAccordionSection>
 
-          {/* ── Bank Accounts ── */}
-          <Card>
-            <div className="mb-5 flex items-start justify-between gap-3">
-              <div>
-                <h2 className="text-lg font-semibold text-text-primary">Bank Accounts</h2>
-                <p className="mt-1 text-sm text-text-secondary">
-                  Connect your banks so Veya can detect subscriptions from your transactions.
-                </p>
-              </div>
-              {plaidAccounts !== null && plaidAccounts.length > 0 && (
-                <Button
-                  variant="secondary"
-                  className="shrink-0"
-                  onClick={startPlaidLink}
-                  disabled={anyBankBusy}
-                >
+          <SettingsAccordionSection
+            id="settings-banks"
+            title="Banks & connected accounts"
+            description="Link accounts so Veya can detect subscriptions from your transactions"
+          >
+            {plaidAccounts !== null && plaidAccounts.length > 0 && (
+              <div className="mb-4 flex justify-end">
+                <Button variant="secondary" className="shrink-0" onClick={startPlaidLink} disabled={anyBankBusy}>
                   {connectingBank ? "Opening…" : "+ Add bank"}
                 </Button>
-              )}
-            </div>
+              </div>
+            )}
 
             {/* Error banner */}
             {bankError && (
@@ -613,23 +686,13 @@ export default function SettingsPage() {
             )}
 
             {!bankLoadError && <PlaidSecurityBadges className="mt-4" />}
-          </Card>
+          </SettingsAccordionSection>
 
-          {/* ── Subscription data ── */}
-          <Card>
-            <h2 className="mb-2 text-lg font-semibold text-text-primary">Subscriptions</h2>
-            <p className="mb-4 text-sm text-text-secondary">
-              Remove every subscription you track in Veya. Bank connections and your declined bank
-              detections are kept so sync behavior stays predictable.
-            </p>
-            <Button variant="danger" onClick={() => { setClearSubsAck(false); setClearSubsOpen(true); }}>
-              Clear all subscriptions
-            </Button>
-          </Card>
-
-          {/* ── Notifications ── */}
-          <Card>
-            <h2 className="mb-4 text-lg font-semibold text-text-primary">Notifications</h2>
+          <SettingsAccordionSection
+            id="settings-notifications"
+            title="Notifications"
+            description="Email and in-app alerts (Premium unlocks reminders)"
+          >
             {notifPrefsLoading ? (
               <p className="text-sm text-text-tertiary">Loading…</p>
             ) : !notifPrefs ? (
@@ -678,23 +741,70 @@ export default function SettingsPage() {
                 })}
               </ul>
             )}
-          </Card>
+          </SettingsAccordionSection>
 
-          {/* ── Support & Feedback ── */}
-          <Card>
-            <h2 className="mb-2 text-lg font-semibold text-text-primary">Support &amp; Feedback</h2>
-            <p className="mb-5 text-sm text-text-secondary">
-              Have a question, found a bug, or need help with Veya? Send us a message below.
-            </p>
-            <div className="rounded-xl border border-border bg-background-secondary/30 p-4 sm:p-5">
+          <SettingsAccordionSection
+            id="settings-appearance"
+            title="Appearance"
+            description="Choose between Veya Dark and White (Light)"
+          >
+            {accentPrefLoading ? (
+              <p className="text-sm text-text-tertiary">Loading…</p>
+            ) : (
+              <fieldset disabled={accentSaving} className="space-y-3">
+                <legend className="sr-only">Theme</legend>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <button
+                    type="button"
+                    aria-pressed={accentPreference === "brand"}
+                    onClick={() => void saveAccentPreference("brand")}
+                    className={cn(
+                      "rounded-xl border px-4 py-3.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      accentPreference === "brand"
+                        ? "border-accent bg-accent/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                        : "border-border bg-background-secondary/25 hover:border-border hover:bg-background-secondary/40",
+                    )}
+                  >
+                    <span className="mb-2 block h-9 w-full rounded-lg border border-border/80 bg-[#0b0b12]" aria-hidden />
+                    <span className="text-sm font-semibold text-text-primary">Veya Dark</span>
+                    <span className="mt-0.5 block text-xs text-text-tertiary">Current dark theme</span>
+                  </button>
+                  <button
+                    type="button"
+                    aria-pressed={accentPreference === "white"}
+                    onClick={() => void saveAccentPreference("white")}
+                    className={cn(
+                      "rounded-xl border px-4 py-3.5 text-left transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-accent focus-visible:ring-offset-2 focus-visible:ring-offset-card",
+                      accentPreference === "white"
+                        ? "border-accent bg-accent/10 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]"
+                        : "border-border bg-background-secondary/25 hover:border-border hover:bg-background-secondary/40",
+                    )}
+                  >
+                    <span className="mb-2 block h-9 w-full rounded-lg border border-border/80 bg-white" aria-hidden />
+                    <span className="text-sm font-semibold text-text-primary">White (Light)</span>
+                    <span className="mt-0.5 block text-xs text-text-tertiary">Full light theme</span>
+                  </button>
+                </div>
+              </fieldset>
+            )}
+          </SettingsAccordionSection>
+
+          <SettingsAccordionSection
+            id="settings-support"
+            title="Support & feedback"
+            description="Questions, bugs, or product ideas"
+          >
+            <div className="rounded-xl border border-border/80 bg-background-secondary/25 p-4 sm:p-5">
               <SupportFeedbackForm />
             </div>
-          </Card>
+          </SettingsAccordionSection>
 
-          {/* ── Security ── */}
-          <Card>
-            <h2 className="mb-6 text-lg font-semibold text-text-primary">Security</h2>
-            <div className="space-y-10">
+          <SettingsAccordionSection
+            id="settings-security"
+            title="Security"
+            description="Password and active sessions"
+          >
+            <div className="space-y-8">
               <div>
                 <h3 className="mb-3 text-sm font-semibold text-text-primary">Change password</h3>
                 {hasPassword === false ? (
@@ -766,7 +876,7 @@ export default function SettingsPage() {
                 )}
               </div>
 
-              <div className="border-t border-border pt-8">
+              <div className="border-t border-border/70 pt-6">
                 <h3 className="mb-3 text-sm font-semibold text-text-primary">Active sessions</h3>
                 <div className="flex max-w-md flex-col gap-3 rounded-xl border border-border bg-background-secondary/30 p-4 sm:flex-row sm:items-center sm:justify-between">
                   <div className="min-w-0">
@@ -785,14 +895,14 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-          </Card>
+          </SettingsAccordionSection>
 
-          {/* ── Danger zone ── */}
-          <Card className="border-danger/30">
-            <h2 className="mb-2 text-lg font-semibold text-danger">Danger zone</h2>
-            <p className="mb-4 text-sm text-text-secondary">
-              Delete your account and all data. This cannot be undone.
-            </p>
+          <SettingsAccordionSection
+            id="settings-danger"
+            title="Danger zone"
+            description="Permanently delete your account and all data"
+            className="border-danger/35 bg-card/60"
+          >
             <Button
               className="w-full sm:w-auto"
               variant="danger"
@@ -800,17 +910,7 @@ export default function SettingsPage() {
             >
               Delete account
             </Button>
-          </Card>
-
-          <div className="pt-4">
-            <Button
-              className="w-full sm:w-auto"
-              variant="secondary"
-              onClick={() => signOut({ callbackUrl: "/" })}
-            >
-              Sign out
-            </Button>
-          </div>
+          </SettingsAccordionSection>
         </div>
       </AppShell>
 

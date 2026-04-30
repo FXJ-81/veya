@@ -3,18 +3,22 @@
 @tailwind utilities;
 
 :root {
-  --background: #08080f;
-  --card: #111118;
-  --surface: #1a1a26;
-  --border: #2a2a3a;
-  --accent: #5b6ef5;
-  --accent-2: #a78bfa;
+  /* Space-separated RGB for Tailwind opacity modifiers */
+  --background: 8 8 15;
+  --background-secondary: 13 13 20;
+  --card: 17 17 24;
+  --surface: 26 26 38;
+  --border: 42 42 58;
+
+  --accent: 91 110 245;
+  --accent-2: 167 139 250;
+  --accent-foreground: 255 255 255;
   --success: #34d399;
   --warning: #fbbf24;
   --danger: #f87171;
-  --text-primary: #f8f8ff;
-  --text-secondary: #b0b0c8;
-  --text-tertiary: #9090aa;
+  --text-primary: 248 248 255;
+  --text-secondary: 176 176 200;
+  --text-tertiary: 144 144 170;
   /* Desktop: reserved left gutter for floating nav + brand (main padding-left uses this) */
   --app-sidebar-width: 19rem;
   --app-content-offset: var(--app-sidebar-width);
@@ -23,9 +27,21 @@
   --app-bottom-nav-height: 3.75rem;
 }
 
+html[data-theme="light"] {
+  --background: 255 255 255;
+  --background-secondary: 246 247 251;
+  --card: 255 255 255;
+  --surface: 250 250 255;
+  --border: 220 223 232;
+
+  --text-primary: 16 16 24;
+  --text-secondary: 64 64 84;
+  --text-tertiary: 108 108 132;
+}
+
 body {
-  background: var(--background);
-  color: var(--text-primary);
+  background: rgb(var(--background));
+  color: rgb(var(--text-primary));
   overflow-x: hidden;
 }
 

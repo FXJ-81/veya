@@ -362,17 +362,15 @@ export default function CoachPage() {
                       animate={{ opacity: 1, y: 0, scale: 1 }}
                       exit={{ opacity: 0, y: -6, scale: 0.98 }}
                       transition={{ duration: 0.15 }}
-                      className="absolute right-0 mt-2 w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border z-50"
-                      style={{ background: "#111118", borderColor: "#2a2a3a" }}
+                      className="absolute right-0 mt-2 z-50 w-[320px] max-w-[calc(100vw-2rem)] rounded-xl border border-border bg-card shadow-[0_18px_60px_-18px_rgba(0,0,0,0.55)]"
                     >
                       <div
-                        className="flex items-center justify-between border-b px-4 py-3"
-                        style={{ borderColor: "#2a2a3a" }}
+                        className="flex items-center justify-between border-b border-border px-4 py-3"
                       >
                         <span className="text-sm font-semibold text-text-primary">Previous Chats</span>
                         <button
                           onClick={createNewChat}
-                          className="rounded-md bg-accent px-2.5 py-2 text-sm font-medium text-white hover:opacity-90"
+                          className="rounded-md bg-accent px-2.5 py-2 text-sm font-medium text-accent-foreground hover:opacity-90"
                         >
                           New Chat
                         </button>

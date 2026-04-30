@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { formatCurrency } from "@/lib/utils";
-import { pricePerMonth } from "@/lib/subscriptionBilling";
+import { pricePerMonthAt } from "@/lib/subscriptionBilling";
 import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
 import {
   accentHueForName,
@@ -74,7 +74,7 @@ export function SubscriptionCard({
           ? "warning"
           : "success";
 
-  const perMo = pricePerMonth(subscription.price, subscription.billingCycle);
+  const perMo = pricePerMonthAt(subscription, new Date());
   const showMonthlyHint =
     subscription.billingCycle === "weekly" || subscription.billingCycle === "yearly";
 

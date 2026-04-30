@@ -4,6 +4,7 @@ import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
 import { getSubscriptionLimitStatus, planLimitResponse } from "@/lib/planLimits";
+import { readUpcomingPriceRowsForUser, upcomingPriceMap } from "@/lib/subscriptionUpcomingSql";
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -26,12 +27,15 @@ export async function GET(req: Request) {
     where: { userId: authUser.id },
     orderBy: { nextRenewal: "asc" },
   });
+  const upcoming = upcomingPriceMap(await readUpcomingPriceRowsForUser(prisma, authUser.id, subs.map((s) => s.id)));
   const limitStatus = await getSubscriptionLimitStatus(authUser.id);
   return NextResponse.json({
     subscriptions: subs.map((s) => ({
       ...s,
       startDate: s.startDate.toISOString(),
       nextRenewal: s.nextRenewal.toISOString(),
+      upcomingPrice: upcoming.get(s.id)?.upcomingPrice ?? null,
+      upcomingPriceEffectiveAt: upcoming.get(s.id)?.upcomingPriceEffectiveAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
       updatedAt: s.updatedAt.toISOString(),
     })),

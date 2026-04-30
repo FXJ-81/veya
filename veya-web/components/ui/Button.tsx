@@ -13,7 +13,7 @@ const Button = forwardRef<HTMLButtonElement, ButtonProps>(
   ({ className, variant = "primary", size = "md", isLoading, children, disabled, ...props }, ref) => {
     const base = "inline-flex items-center justify-center font-semibold rounded-xl transition-all focus:outline-none focus:ring-2 focus:ring-accent focus:ring-offset-2 focus:ring-offset-background disabled:opacity-50 disabled:pointer-events-none active:scale-[0.98]";
     const variants = {
-      primary: "bg-accent text-white hover:opacity-90",
+      primary: "bg-accent text-accent-foreground hover:opacity-90",
       secondary: "border border-border bg-surface text-text-primary hover:bg-border/50",
       ghost: "text-text-secondary hover:bg-surface hover:text-text-primary",
       danger: "bg-danger/20 text-danger hover:bg-danger/30",

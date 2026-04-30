@@ -1,7 +1,8 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
-import { pricePerMonth, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
+import { pricePerMonthAt, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
+import { readUpcomingPriceRowsForUser, upcomingPriceMap } from "@/lib/subscriptionUpcomingSql";
 
 export type BudgetStatus = {
   id: string;
@@ -22,16 +23,27 @@ export async function GET(req: Request) {
     prisma.budget.findMany({ where: { userId: authUser.id }, orderBy: { createdAt: "asc" } }),
     prisma.subscription.findMany({
       where: { userId: authUser.id, status: "active" },
-      select: { category: true, price: true, billingCycle: true, startDate: true },
+      select: { id: true, category: true, price: true, billingCycle: true, startDate: true },
     }),
   ]);
 
   // Monthly spend per category for active subscriptions that have started
+  const upcoming = upcomingPriceMap(
+    await readUpcomingPriceRowsForUser(prisma, authUser.id, subs.map((s) => s.id)),
+  );
   const spendByCategory = new Map<string, number>();
   let totalMonthlySpend = 0;
   for (const sub of subs) {
     if (!hasSubscriptionStarted(new Date(sub.startDate))) continue;
-    const monthly = pricePerMonth(sub.price, sub.billingCycle);
+    const u = upcoming.get(sub.id);
+    const monthly = pricePerMonthAt(
+      {
+        ...sub,
+        upcomingPrice: u?.upcomingPrice ?? null,
+        upcomingPriceEffectiveAt: u?.upcomingPriceEffectiveAt ?? null,
+      },
+      new Date(),
+    );
     spendByCategory.set(sub.category, (spendByCategory.get(sub.category) ?? 0) + monthly);
     totalMonthlySpend += monthly;
   }

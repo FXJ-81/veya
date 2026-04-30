@@ -106,6 +106,9 @@ model Subscription {
   name        String
   category    String
   price       Float
+  /// Optional scheduled future price change (keeps `price` until effectiveAt).
+  upcomingPrice Float?
+  upcomingPriceEffectiveAt DateTime?
   billingCycle String
   startDate   DateTime
   nextRenewal DateTime
@@ -199,6 +202,8 @@ model Budget {
 model UserSettings {
   id                 String   @id @default(cuid())
   userId             String   @unique
+  /// UI accent: "brand" (default purple) or "white"
+  accentPreference   String   @default("brand")
   notificationPrefs  Json?
   /// Normalized merchant keys the user declined from Plaid scan (do not auto-add or pre-select).
   plaidDeclinedMerchantKeys String[] @default([])

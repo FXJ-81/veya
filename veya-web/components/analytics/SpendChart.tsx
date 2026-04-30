@@ -1,6 +1,14 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import {
+  useState,
+  useEffect,
+  useRef,
+  useLayoutEffect,
+  useCallback,
+  type RefObject,
+} from "react";
+import { createPortal } from "react-dom";
 import {
   BarChart,
   Bar,
@@ -19,14 +27,16 @@ interface SpendChartProps {
   data: MonthlySpend[];
 }
 
-const INDIGO = "#5b6ef5";
-const INDIGO_DIM = "#3a4aaa";
-const INDIGO_CURRENT = "#8b9fff";
-const INDIGO_CURRENT_DIM = "#5560bb";
-const INDIGO_FUTURE = "rgba(91, 110, 245, 0.4)";
-const INDIGO_FUTURE_DIM = "rgba(91, 110, 245, 0.18)";
-const INDIGO_SELECTED = "#c4d0ff";
-const ACCENT_TICK = "#8b9fff";
+const C_BAR_PAST = "rgb(var(--accent) / 0.95)";
+const C_BAR_CURRENT = "rgb(var(--accent) / 0.72)";
+const C_BAR_FUTURE = "rgb(var(--accent) / 0.28)";
+const C_BAR_DIM = "rgb(var(--accent) / 0.22)";
+const C_BAR_SELECTED = "rgb(var(--accent) / 0.22)";
+const C_STROKE_FUTURE = "rgb(var(--accent) / 0.85)";
+const C_STROKE_SELECTED = "rgb(var(--accent) / 0.9)";
+const C_AXIS = "rgb(var(--text-tertiary) / 1)";
+const C_GRID = "rgb(var(--border) / 1)";
+const C_CURSOR = "rgb(var(--accent) / 0.08)";
 
 type ChartRow = MonthlySpend & { fill: string; stroke: string; strokeDasharray: string };
 
@@ -46,46 +56,130 @@ function buildRows(data: MonthlySpend[]): ChartRow[] {
   return data.map((raw) => {
     const d = normalizeMonth(raw);
     if (d.period === "current") {
-      return { ...d, fill: INDIGO_CURRENT, stroke: INDIGO_CURRENT, strokeDasharray: "0" };
+      return { ...d, fill: C_BAR_CURRENT, stroke: "transparent", strokeDasharray: "0" };
     }
     if (d.period === "future") {
-      return { ...d, fill: INDIGO_FUTURE, stroke: INDIGO, strokeDasharray: "4 4" };
+      return { ...d, fill: C_BAR_FUTURE, stroke: C_STROKE_FUTURE, strokeDasharray: "4 4" };
     }
-    return { ...d, fill: INDIGO, stroke: "transparent", strokeDasharray: "0" };
+    return { ...d, fill: C_BAR_PAST, stroke: "transparent", strokeDasharray: "0" };
   });
 }
 
 function cellFill(entry: ChartRow, selected: ChartRow | null): string {
   if (!selected) return entry.fill;
   const isSelected = entry.label === selected.label && entry.year === selected.year;
-  if (isSelected) return INDIGO_SELECTED;
-  if (entry.period === "future") return INDIGO_FUTURE_DIM;
-  if (entry.period === "current") return INDIGO_CURRENT_DIM;
-  return INDIGO_DIM;
+  if (isSelected) return C_BAR_SELECTED;
+  return C_BAR_DIM;
 }
 
-function HoverTooltip({
+/** Chart (SVG) coordinates → viewport pixels; respects scroll, zoom, and margins. */
+function svgDataPointToClient(svg: SVGSVGElement, x: number, y: number): { x: number; y: number } {
+  const ctm = svg.getScreenCTM();
+  if (!ctm) return { x, y };
+  const p = new DOMPoint(x, y).matrixTransform(ctm);
+  return { x: p.x, y: p.y };
+}
+
+const TOOLTIP_VIEWPORT_PAD = 8;
+const TOOLTIP_ANCHOR_GAP = 10;
+const TOOLTIP_MAX_WIDTH = "min(18rem, calc(100vw - 2rem))";
+
+function SpendTooltipPortal({
   active,
   payload,
+  coordinate,
+  chartRootRef,
 }: {
   active?: boolean;
   payload?: { payload: ChartRow }[];
+  coordinate?: { x?: number; y?: number };
+  chartRootRef: RefObject<HTMLDivElement | null>;
 }) {
-  if (!active || !payload?.length) return null;
+  const tipRef = useRef<HTMLDivElement>(null);
+  const [pos, setPos] = useState<{ left: number; top: number } | null>(null);
+
+  const updatePosition = useCallback(() => {
+    if (
+      !active ||
+      !coordinate ||
+      typeof coordinate.x !== "number" ||
+      typeof coordinate.y !== "number"
+    ) {
+      setPos(null);
+      return;
+    }
+    const svg = chartRootRef.current?.querySelector(".recharts-surface") as SVGSVGElement | null;
+    if (!svg) {
+      setPos(null);
+      return;
+    }
+    const anchor = svgDataPointToClient(svg, coordinate.x, coordinate.y);
+    const el = tipRef.current;
+    const vw = window.innerWidth;
+    const vh = window.innerHeight;
+    const pad = TOOLTIP_VIEWPORT_PAD;
+    const gap = TOOLTIP_ANCHOR_GAP;
+
+    const tw = el?.offsetWidth ?? 0;
+    const th = el?.offsetHeight ?? 0;
+    const w = tw > 0 ? tw : Math.min(288, vw - 2 * pad);
+    const h = th > 0 ? th : 72;
+
+    let left = anchor.x - w / 2;
+    let top = anchor.y - h - gap;
+    if (top < pad) top = anchor.y + gap;
+
+    left = Math.min(Math.max(left, pad), vw - pad - w);
+    top = Math.min(Math.max(top, pad), vh - pad - h);
+
+    setPos({ left, top });
+  }, [active, chartRootRef, coordinate?.x, coordinate?.y]);
+
+  useLayoutEffect(() => {
+    if (!active || !payload?.length) {
+      setPos(null);
+      return;
+    }
+    updatePosition();
+    const raf = requestAnimationFrame(() => updatePosition());
+    const onWin = () => updatePosition();
+    window.addEventListener("resize", onWin);
+    window.addEventListener("scroll", onWin, true);
+    const el = tipRef.current;
+    const ro = typeof ResizeObserver !== "undefined" ? new ResizeObserver(() => updatePosition()) : null;
+    if (el) ro?.observe(el);
+    return () => {
+      cancelAnimationFrame(raf);
+      window.removeEventListener("resize", onWin);
+      window.removeEventListener("scroll", onWin, true);
+      ro?.disconnect();
+    };
+  }, [active, payload, updatePosition]);
+
+  if (!active || !payload?.length || typeof document === "undefined") return null;
+
   const row = normalizeMonth(payload[0]!.payload as MonthlySpend);
   const total = Number(row.total) || 0;
   const kind = row.period === "future" ? "Projected" : "Actual";
-  return (
+
+  return createPortal(
     <div
-      className="pointer-events-none max-w-[min(18rem,calc(100vw-2rem))] rounded-lg border px-3 py-1.5 shadow-lg"
-      style={{ background: "#111118", borderColor: "#2a2a3a" }}
+      ref={tipRef}
+      className="pointer-events-none fixed z-[1000] rounded-lg border border-border bg-card px-3 py-1.5 shadow-lg"
+      style={{
+        maxWidth: TOOLTIP_MAX_WIDTH,
+        left: pos?.left ?? -9999,
+        top: pos?.top ?? -9999,
+        visibility: pos ? "visible" : "hidden",
+      }}
     >
       <p className="text-sm font-medium text-text-primary">
         {row.label} {row.year}:{" "}
         <span className="font-mono text-accent">${total.toFixed(2)}</span>
       </p>
       <p className="mt-0.5 text-sm text-text-tertiary">{kind} · tap bar for breakdown</p>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -108,10 +202,9 @@ function BreakdownPanel({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, y: -6 }}
       transition={{ duration: 0.2, ease: "easeOut" }}
-      className="mt-4 overflow-hidden rounded-xl border"
-      style={{ background: "#111118", borderColor: "#2a2a3a" }}
+      className="mt-4 overflow-hidden rounded-xl border border-border bg-card"
     >
-      <div className="flex items-center justify-between border-b px-4 py-3" style={{ borderColor: "#2a2a3a" }}>
+      <div className="flex items-center justify-between border-b border-border px-4 py-3">
         <p className="min-w-0 text-sm font-semibold text-text-primary">
           {normalized.label} {normalized.year}
           <span className="mx-1 font-normal text-text-tertiary">—</span>
@@ -130,7 +223,7 @@ function BreakdownPanel({
 
       <div style={{ maxHeight: "260px", overflowY: "auto" }}>
         {contributors.length > 0 ? (
-          <ul className="divide-y" style={{ borderColor: "#1e1e2a" }}>
+          <ul className="divide-y divide-border">
             {contributors.map((c) => (
               <li
                 key={c.name}
@@ -158,6 +251,7 @@ export function SpendChart({ data }: SpendChartProps) {
   const year = data[0]?.year ?? new Date().getFullYear();
   const [selected, setSelected] = useState<ChartRow | null>(null);
   const [narrow, setNarrow] = useState(false);
+  const chartPortalRootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     const mq = window.matchMedia("(max-width: 767px)");
@@ -176,6 +270,7 @@ export function SpendChart({ data }: SpendChartProps) {
   };
 
   const chartMinWidth = narrow && rows.length > 6 ? Math.max(320, rows.length * 36) : 280;
+  const needsHorizontalScroll = narrow && rows.length > 8;
 
   return (
     <motion.div
@@ -198,13 +293,13 @@ export function SpendChart({ data }: SpendChartProps) {
           )}
         >
           <span className="flex items-center gap-1.5">
-            <span className="text-[#5b6ef5]" aria-hidden>
+            <span className="text-accent" aria-hidden>
               ■
             </span>
             Actual
           </span>
           <span className="flex items-center gap-1.5">
-            <span className="text-[#5b6ef5] opacity-90" aria-hidden>
+            <span className="text-accent opacity-90" aria-hidden>
               □
             </span>
             Projected
@@ -212,10 +307,16 @@ export function SpendChart({ data }: SpendChartProps) {
         </div>
       </div>
 
-      <div className="min-w-0 w-full overflow-x-auto [-webkit-overflow-scrolling:touch]">
+      <div
+        className={cn(
+          "min-w-0 w-full [-webkit-overflow-scrolling:touch]",
+          needsHorizontalScroll ? "overflow-x-auto" : "overflow-x-hidden",
+        )}
+      >
         <div
+          ref={chartPortalRootRef}
           className={cn("cursor-pointer", narrow ? "h-[250px]" : "h-72")}
-          style={{ minWidth: chartMinWidth }}
+          style={{ minWidth: needsHorizontalScroll ? chartMinWidth : undefined }}
         >
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
@@ -228,10 +329,10 @@ export function SpendChart({ data }: SpendChartProps) {
               }}
               onClick={handleBarClick}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#2a2a3a" />
+              <CartesianGrid strokeDasharray="3 3" stroke={C_GRID} />
               <XAxis
                 dataKey="label"
-                stroke="#9090aa"
+                stroke={C_AXIS}
                 fontSize={narrow ? 10 : 12}
                 tickLine={false}
                 interval={0}
@@ -241,7 +342,7 @@ export function SpendChart({ data }: SpendChartProps) {
                   const item = rows.find((r) => r.label === label);
                   const isCurrent = item?.period === "current";
                   const isSelected = selected?.label === label;
-                  const fill = isSelected ? INDIGO_SELECTED : isCurrent ? ACCENT_TICK : "#9090aa";
+                  const fill = isSelected || isCurrent ? "rgb(var(--accent) / 0.95)" : C_AXIS;
                   const fw = isSelected || isCurrent ? 600 : 400;
                   if (narrow) {
                     return (
@@ -273,20 +374,21 @@ export function SpendChart({ data }: SpendChartProps) {
                 }}
               />
               <YAxis
-                stroke="#9090aa"
+                stroke={C_AXIS}
                 fontSize={narrow ? 10 : 12}
                 tickLine={false}
                 tickFormatter={(v) => `$${v}`}
                 width={narrow ? 36 : undefined}
               />
               <Tooltip
-                cursor={{ fill: "rgba(255,255,255,0.04)" }}
-                allowEscapeViewBox={{ x: true, y: true }}
-                wrapperStyle={{ outline: "none", maxWidth: "min(18rem, calc(100vw - 2rem))" }}
+                cursor={{ fill: C_CURSOR }}
+                wrapperStyle={{ display: "none" }}
                 content={(props) => (
-                  <HoverTooltip
+                  <SpendTooltipPortal
+                    chartRootRef={chartPortalRootRef}
                     active={props.active}
                     payload={props.payload as { payload: ChartRow }[] | undefined}
+                    coordinate={props.coordinate}
                   />
                 )}
               />
@@ -297,7 +399,7 @@ export function SpendChart({ data }: SpendChartProps) {
                     fill={cellFill(entry, selected)}
                     stroke={
                       selected?.label === entry.label && selected?.year === entry.year
-                        ? INDIGO_SELECTED
+                        ? C_STROKE_SELECTED
                         : entry.stroke
                     }
                     strokeWidth={

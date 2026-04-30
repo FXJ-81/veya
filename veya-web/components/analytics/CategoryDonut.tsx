@@ -26,7 +26,7 @@ function DonutTooltip({ active, payload }: DonutTooltipProps) {
   const row = payload[0]?.payload;
   if (!row) return null;
   return (
-    <div className="max-w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-[#111118] px-3 py-2 shadow-lg">
+    <div className="max-w-[min(18rem,calc(100vw-2rem))] rounded-xl border border-border bg-card px-3 py-2 shadow-lg">
       <p className="text-sm font-medium text-text-primary">{row.category}</p>
       <p className="font-mono text-accent font-mono-nums">
         ${row.value.toFixed(2)}

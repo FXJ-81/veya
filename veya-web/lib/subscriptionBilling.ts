@@ -28,6 +28,33 @@ export function pricePerMonth(price: number, billingCycle: string): number {
   }
 }
 
+export type PriceChangeSchedule = {
+  price: number;
+  billingCycle: string;
+  upcomingPrice?: number | null;
+  upcomingPriceEffectiveAt?: Date | string | null;
+};
+
+/**
+ * Price effective at `asOf`.
+ * - Uses `price` until `upcomingPriceEffectiveAt` (inclusive of that calendar instant).
+ * - When an upcoming price exists and the effective time is reached, uses `upcomingPrice`.
+ */
+export function subscriptionPriceAt(sub: PriceChangeSchedule, asOf: Date = new Date()): number {
+  const base = typeof sub.price === "number" ? sub.price : 0;
+  const next = sub.upcomingPrice;
+  const eff = sub.upcomingPriceEffectiveAt;
+  if (next == null || !Number.isFinite(next)) return base;
+  if (!eff) return base;
+  const effDate = eff instanceof Date ? eff : new Date(eff);
+  if (Number.isNaN(effDate.getTime()) || Number.isNaN(asOf.getTime())) return base;
+  return asOf.getTime() >= effDate.getTime() ? next : base;
+}
+
+export function pricePerMonthAt(sub: PriceChangeSchedule, asOf: Date = new Date()): number {
+  return pricePerMonth(subscriptionPriceAt(sub, asOf), sub.billingCycle);
+}
+
 /** Start of local calendar day */
 export function startOfLocalDay(d: Date): Date {
   return new Date(d.getFullYear(), d.getMonth(), d.getDate());
@@ -99,12 +126,14 @@ export function hasSubscriptionStarted(subStart: Date, asOf: Date = new Date()):
  * Monthly-equivalent spend from this sub for the given calendar month, or 0 if not active yet.
  */
 export function monthlySpendInCalendarMonth(
-  sub: { startDate: Date; price: number; billingCycle: string },
+  sub: { startDate: Date } & PriceChangeSchedule,
   year: number,
   monthIndex: number
 ): number {
   if (!isSubscriptionActiveInMonth(sub.startDate, year, monthIndex)) return 0;
-  return pricePerMonth(sub.price, sub.billingCycle);
+  // Use price effective by the end of the month for projections.
+  const asOf = endOfLocalMonth(year, monthIndex);
+  return pricePerMonthAt(sub, asOf);
 }
 
 export type SubscriptionHealthScoreInput = {

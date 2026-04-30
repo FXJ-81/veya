@@ -13,7 +13,7 @@ import { CategoryDonut } from "@/components/analytics/CategoryDonut";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { getGreeting, formatCurrency } from "@/lib/utils";
-import { hasSubscriptionStarted, pricePerMonth } from "@/lib/subscriptionBilling";
+import { hasSubscriptionStarted, pricePerMonthAt } from "@/lib/subscriptionBilling";
 import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BudgetAlerts } from "@/components/dashboard/BudgetAlerts";
@@ -80,7 +80,7 @@ export default function DashboardPage() {
   const activeSubs = subs.filter((s) => s.status === "active");
   const monthlyTotal = activeSubs
     .filter((s) => hasSubscriptionStarted(new Date(s.startDate)))
-    .reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0);
+    .reduce((sum, s) => sum + pricePerMonthAt(s, new Date()), 0);
   const renewals = activeSubs
     .sort((a, b) => nextRenewalSortKey(a) - nextRenewalSortKey(b))
     .slice(0, 6);

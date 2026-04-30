@@ -6,6 +6,7 @@
     "clean": "node -e \"const f=require('fs');if(f.existsSync('.next'))f.rmSync('.next',{recursive:true,force:true});\"",
     "dev": "next dev -p 3000 -H 0.0.0.0",
     "postinstall": "prisma generate",
+    "prebuild": "prisma generate",
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
@@ -13,6 +14,7 @@
     "test:renewal-reminders": "npx tsx lib/run-renewal-reminder-tests.ts",
     "test:plaid-sync-dedup": "npx tsx lib/run-plaid-sync-dedup-tests.ts",
     "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",
     "db:studio": "prisma studio"
   },

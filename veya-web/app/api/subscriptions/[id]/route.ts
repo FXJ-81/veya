@@ -3,11 +3,14 @@ import type { Prisma } from "@prisma/client";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
+import { readUpcomingPriceRowsForUser, writeUpcomingPriceForUserSubscription } from "@/lib/subscriptionUpcomingSql";
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
   category: z.string().min(1).optional(),
   price: z.number().positive().optional(),
+  upcomingPrice: z.union([z.number().positive(), z.null()]).optional(),
+  upcomingPriceEffectiveAt: z.union([z.string().min(1), z.null()]).optional(),
   billingCycle: z.enum(["monthly", "yearly", "weekly", "custom"]).optional(),
   startDate: z.string().optional(),
   nextRenewal: z.string().optional(),
@@ -28,10 +31,13 @@ export async function GET(
     where: { id, userId: authUser.id },
   });
   if (!sub) return NextResponse.json({ error: "Not found" }, { status: 404 });
+  const upcoming = (await readUpcomingPriceRowsForUser(prisma, authUser.id, [id]))[0];
   return NextResponse.json({
     ...sub,
     startDate: sub.startDate.toISOString(),
     nextRenewal: sub.nextRenewal.toISOString(),
+    upcomingPrice: upcoming?.upcomingPrice ?? null,
+    upcomingPriceEffectiveAt: upcoming?.upcomingPriceEffectiveAt?.toISOString() ?? null,
     createdAt: sub.createdAt.toISOString(),
     updatedAt: sub.updatedAt.toISOString(),
   });
@@ -74,10 +80,48 @@ export async function PATCH(
     where: { id },
     data,
   });
+  // Upcoming price change: allow setting or clearing via raw SQL (works even if local Prisma client is stale).
+  const wantsUpcomingPrice = "upcomingPrice" in p || "upcomingPriceEffectiveAt" in p;
+  if (wantsUpcomingPrice) {
+    const nextPrice = p.upcomingPrice ?? undefined;
+    const nextEff = p.upcomingPriceEffectiveAt ?? undefined;
+    let upcomingPrice: number | null | undefined;
+    let upcomingPriceEffectiveAt: Date | null | undefined;
+
+    if (nextPrice === null || nextEff === null) {
+      upcomingPrice = null;
+      upcomingPriceEffectiveAt = null;
+    } else if (typeof nextPrice === "number" && typeof nextEff === "string") {
+      const effDate = new Date(nextEff);
+      if (Number.isNaN(effDate.getTime())) {
+        return NextResponse.json({ error: "Invalid upcomingPriceEffectiveAt" }, { status: 400 });
+      }
+      upcomingPrice = nextPrice;
+      upcomingPriceEffectiveAt = effDate;
+    } else if (nextPrice !== undefined || nextEff !== undefined) {
+      return NextResponse.json(
+        { error: "Provide both upcomingPrice and upcomingPriceEffectiveAt, or set both to null to remove." },
+        { status: 400 },
+      );
+    }
+
+    if (upcomingPrice !== undefined && upcomingPriceEffectiveAt !== undefined) {
+      await writeUpcomingPriceForUserSubscription(prisma, {
+        userId: authUser.id,
+        subscriptionId: id,
+        upcomingPrice,
+        upcomingPriceEffectiveAt,
+      });
+    }
+  }
+
+  const upcoming = (await readUpcomingPriceRowsForUser(prisma, authUser.id, [id]))[0];
   return NextResponse.json({
     ...sub,
     startDate: sub.startDate.toISOString(),
     nextRenewal: sub.nextRenewal.toISOString(),
+    upcomingPrice: upcoming?.upcomingPrice ?? null,
+    upcomingPriceEffectiveAt: upcoming?.upcomingPriceEffectiveAt?.toISOString() ?? null,
     createdAt: sub.createdAt.toISOString(),
     updatedAt: sub.updatedAt.toISOString(),
   });

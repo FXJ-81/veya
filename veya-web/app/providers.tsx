@@ -4,6 +4,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { SessionProvider } from "next-auth/react";
 import { type ReactNode, useState } from "react";
 import { RefetchingBar } from "@/components/ui/RefetchingBar";
+import { AccentPreferenceSync } from "@/components/settings/AccentPreferenceSync";
 
 export default function Providers({ children }: { children: ReactNode }) {
   const [client] = useState(
@@ -22,6 +23,7 @@ export default function Providers({ children }: { children: ReactNode }) {
   return (
     <SessionProvider>
       <QueryClientProvider client={client}>
+        <AccentPreferenceSync />
         <RefetchingBar />
         {children}
       </QueryClientProvider>

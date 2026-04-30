@@ -301,15 +301,21 @@ function SubscriptionsContent() {
       name: string;
       category: string;
       price: number;
+      hasUpcomingPriceChange?: boolean;
+      upcomingPrice?: number;
+      upcomingPriceEffectiveAt?: string;
       billingCycle: "monthly" | "yearly" | "weekly" | "custom";
       startDate: string;
       nextRenewal: string;
       notes?: string;
     }
   ) => {
+    const wantsUpcoming = !!data.hasUpcomingPriceChange;
     await update.mutateAsync({
       id,
       ...data,
+      upcomingPrice: wantsUpcoming ? data.upcomingPrice : null,
+      upcomingPriceEffectiveAt: wantsUpcoming ? data.upcomingPriceEffectiveAt : null,
     });
   };
 

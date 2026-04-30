@@ -6,7 +6,7 @@ import { motion } from "framer-motion";
 import type { BudgetStatus } from "@/app/api/budgets/status/route";
 import type { Subscription } from "@/types";
 import { formatCurrency } from "@/lib/utils";
-import { hasSubscriptionStarted, pricePerMonth } from "@/lib/subscriptionBilling";
+import { hasSubscriptionStarted, pricePerMonthAt } from "@/lib/subscriptionBilling";
 import { useBudgetStatuses } from "@/hooks/useBudgetStatus";
 
 type Suggestion = {
@@ -48,9 +48,9 @@ export function SavingsOpportunitiesCard({
     if (activeStarted.length > 0) {
       const top = [...activeStarted].sort(
         (a, b) =>
-          pricePerMonth(b.price, b.billingCycle) - pricePerMonth(a.price, a.billingCycle),
+          pricePerMonthAt(b, new Date()) - pricePerMonthAt(a, new Date()),
       )[0]!;
-      const mo = pricePerMonth(top.price, top.billingCycle);
+      const mo = pricePerMonthAt(top, new Date());
       out.push({
         id: "expensive",
         monthlyImpact: mo,
@@ -66,7 +66,7 @@ export function SavingsOpportunitiesCard({
     }
 
     if (paused.length > 0) {
-      const mo = paused.reduce((sum, s) => sum + pricePerMonth(s.price, s.billingCycle), 0);
+      const mo = paused.reduce((sum, s) => sum + pricePerMonthAt(s, new Date()), 0);
       const yr = mo * 12;
       out.push({
         id: "paused",
@@ -103,15 +103,15 @@ export function SavingsOpportunitiesCard({
         !bestList ||
         arr.length > bestList.length ||
         (arr.length === bestList.length &&
-          arr.reduce((s, x) => s + pricePerMonth(x.price, x.billingCycle), 0) >
-            bestList.reduce((s, x) => s + pricePerMonth(x.price, x.billingCycle), 0))
+          arr.reduce((s, x) => s + pricePerMonthAt(x, new Date()), 0) >
+            bestList.reduce((s, x) => s + pricePerMonthAt(x, new Date()), 0))
       ) {
         bestCat = cat;
         bestList = arr;
       }
     }
     if (bestCat && bestList && bestList.length >= 3) {
-      const perSub = bestList.map((s) => pricePerMonth(s.price, s.billingCycle));
+      const perSub = bestList.map((s) => pricePerMonthAt(s, new Date()));
       const total = perSub.reduce((a, b) => a + b, 0);
       const minSingle = Math.min(...perSub);
       const saveMo = Math.max(0, total - minSingle);

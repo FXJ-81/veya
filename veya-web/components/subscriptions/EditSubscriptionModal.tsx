@@ -15,10 +15,21 @@ const schema = z.object({
   name: z.string().min(1, "Name required"),
   category: z.string().min(1, "Category required"),
   price: z.number().positive("Must be positive"),
+  hasUpcomingPriceChange: z.boolean().optional(),
+  upcomingPrice: z.number().positive("Must be positive").optional(),
+  upcomingPriceEffectiveAt: z.string().optional(),
   billingCycle: z.enum(["monthly", "yearly", "weekly", "custom"]),
   startDate: z.string().min(1),
   nextRenewal: z.string().min(1),
   notes: z.string().optional(),
+}).superRefine((val, ctx) => {
+  if (!val.hasUpcomingPriceChange) return;
+  if (!(typeof val.upcomingPrice === "number" && Number.isFinite(val.upcomingPrice))) {
+    ctx.addIssue({ code: "custom", path: ["upcomingPrice"], message: "New price required" });
+  }
+  if (!val.upcomingPriceEffectiveAt?.trim()) {
+    ctx.addIssue({ code: "custom", path: ["upcomingPriceEffectiveAt"], message: "Effective date required" });
+  }
 });
 
 type FormData = z.infer<typeof schema>;
@@ -51,6 +62,9 @@ export function EditSubscriptionModal({
       startDate: "",
       nextRenewal: "",
       notes: "",
+      hasUpcomingPriceChange: false,
+      upcomingPrice: undefined,
+      upcomingPriceEffectiveAt: "",
     },
   });
 
@@ -65,6 +79,13 @@ export function EditSubscriptionModal({
       name: subscription.name,
       category: subscription.category,
       price: subscription.price,
+      hasUpcomingPriceChange:
+        typeof subscription.upcomingPrice === "number" && !!subscription.upcomingPriceEffectiveAt,
+      upcomingPrice:
+        typeof subscription.upcomingPrice === "number" ? subscription.upcomingPrice : undefined,
+      upcomingPriceEffectiveAt: subscription.upcomingPriceEffectiveAt
+        ? toDateInputValue(subscription.upcomingPriceEffectiveAt)
+        : "",
       billingCycle,
       startDate: toDateInputValue(subscription.startDate),
       nextRenewal: toDateInputValue(subscription.nextRenewal),
@@ -74,7 +95,12 @@ export function EditSubscriptionModal({
 
   const handleFormSubmit = async (data: FormData) => {
     if (!subscription) return;
-    await onSubmit(subscription.id, data);
+    const patch: FormData = { ...data };
+    if (!data.hasUpcomingPriceChange) {
+      patch.upcomingPrice = undefined;
+      patch.upcomingPriceEffectiveAt = undefined;
+    }
+    await onSubmit(subscription.id, patch);
     onClose();
   };
 
@@ -137,6 +163,49 @@ export function EditSubscriptionModal({
               <option value="weekly">Weekly</option>
               <option value="custom">Custom (price = /mo)</option>
             </select>
+          </div>
+        </div>
+
+        <div className="rounded-xl border border-border bg-background-secondary/20 p-4">
+          <label className="flex cursor-pointer items-start gap-3 text-sm text-text-primary">
+            <input
+              type="checkbox"
+              className="mt-1 rounded border-border"
+              {...register("hasUpcomingPriceChange")}
+            />
+            <span className="min-w-0">
+              <span className="block font-medium">Upcoming price change</span>
+              <span className="mt-0.5 block text-xs text-text-tertiary">
+                Keep current price until the effective date, then switch automatically.
+              </span>
+            </span>
+          </label>
+
+          {/* Future price inputs */}
+          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">
+                New price
+              </label>
+              <Input
+                type="number"
+                step="0.01"
+                {...register("upcomingPrice", { valueAsNumber: true })}
+                placeholder="12.99"
+              />
+              {errors.upcomingPrice && (
+                <p className="mt-1 text-sm text-danger">{errors.upcomingPrice.message}</p>
+              )}
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-text-secondary mb-1">
+                Effective date
+              </label>
+              <Input type="date" {...register("upcomingPriceEffectiveAt")} />
+              {errors.upcomingPriceEffectiveAt && (
+                <p className="mt-1 text-sm text-danger">{errors.upcomingPriceEffectiveAt.message}</p>
+              )}
+            </div>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-4">
