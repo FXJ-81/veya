@@ -3,6 +3,8 @@
 @tailwind utilities;
 
 :root {
+  /* Primary UI font (all pages, components, and font-mono map here for consistency) */
+  --font-ui: Arial, "Helvetica Neue", Helvetica, sans-serif;
   /* Space-separated RGB for Tailwind opacity modifiers */
   --background: 8 8 15;
   --background-secondary: 13 13 20;
@@ -43,11 +45,13 @@ body {
   background: rgb(var(--background));
   color: rgb(var(--text-primary));
   overflow-x: hidden;
+  font-family: var(--font-ui);
 }
 
 html {
   overflow-x: hidden;
   min-width: 320px;
+  font-family: var(--font-ui);
 }
 
 @layer utilities {

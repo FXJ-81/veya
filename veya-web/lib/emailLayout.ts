@@ -33,8 +33,8 @@ const BRAND = {
   cardSoft: "#f8fafc",
 } as const;
 
-const FONT_STACK =
-  "-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,'Helvetica Neue',Arial,sans-serif";
+/** Transactional email text — match app UI (Arial-first). */
+const FONT_STACK = "Arial,Helvetica Neue,Helvetica,sans-serif";
 
 export interface EmailCta {
   href: string;

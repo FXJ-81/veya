@@ -1,16 +1,6 @@
 import type { Metadata } from "next";
-import { Inter, JetBrains_Mono } from "next/font/google";
 import "./globals.css";
 import Providers from "./providers";
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-});
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains",
-});
 
 export const metadata: Metadata = {
   title: "Veya — Manage your money",
@@ -25,9 +15,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="en" data-theme="dark">
-      <body
-        className={`${inter.variable} ${jetbrains.variable} font-sans bg-background text-text-primary antialiased`}
-      >
+      <body className="font-sans bg-background text-text-primary antialiased">
         <script
           // Apply theme ASAP. Light is only used when the user explicitly chose Light in Settings
           // (we persist both veya_accent_preference and veya_theme together). Otherwise default to Veya dark.

@@ -24,8 +24,9 @@ const config: Config = {
         "text-tertiary": "rgb(var(--text-tertiary) / <alpha-value>)",
       },
       fontFamily: {
-        sans: ["var(--font-inter)", "system-ui", "sans-serif"],
-        mono: ["var(--font-jetbrains)", "monospace"],
+        // UI-wide Arial: sans + mono use the same stack so prices, stats, and code-styled spans match.
+        sans: ["var(--font-ui)", "Arial", "Helvetica", "sans-serif"],
+        mono: ["var(--font-ui)", "Arial", "Helvetica", "sans-serif"],
       },
       backdropBlur: {
         xs: "2px",

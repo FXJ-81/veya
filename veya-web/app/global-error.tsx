@@ -9,7 +9,14 @@ export default function GlobalError({
 }) {
   return (
     <html lang="en">
-      <body style={{ background: "#08080f", color: "#f8f8ff", fontFamily: "system-ui", padding: 24 }}>
+      <body
+        style={{
+          background: "#08080f",
+          color: "#f8f8ff",
+          fontFamily: 'Arial, "Helvetica Neue", Helvetica, sans-serif',
+          padding: 24,
+        }}
+      >
         <h1 style={{ color: "#f87171" }}>Application error</h1>
         <pre style={{ background: "rgba(0,0,0,0.4)", padding: 16, borderRadius: 8, overflow: "auto" }}>
           {error.message}
