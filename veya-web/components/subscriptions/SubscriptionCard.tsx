@@ -7,7 +7,7 @@ import { pricePerMonthAt } from "@/lib/subscriptionBilling";
 import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
 import {
   accentHueForName,
-  resolveSubscriptionLogoUrl,
+  resolveSubscriptionLogoDisplay,
 } from "@/lib/subscriptionLogo";
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -78,7 +78,7 @@ export function SubscriptionCard({
   const showMonthlyHint =
     subscription.billingCycle === "weekly" || subscription.billingCycle === "yearly";
 
-  const logoSrc = resolveSubscriptionLogoUrl(
+  const logo = resolveSubscriptionLogoDisplay(
     subscription.name,
     subscription.logoUrl
   );
@@ -86,9 +86,9 @@ export function SubscriptionCard({
 
   useEffect(() => {
     setLogoFailed(false);
-  }, [subscription.id, subscription.name, subscription.logoUrl, logoSrc]);
+  }, [subscription.id, subscription.name, subscription.logoUrl, logo.url]);
 
-  const showImg = logoSrc && !logoFailed;
+  const showImg = logo.url && !logoFailed;
   const initial = subscription.name.trim().charAt(0).toUpperCase() || "?";
   const hue = accentHueForName(subscription.name);
 
@@ -114,10 +114,10 @@ export function SubscriptionCard({
             {showImg ? (
               // eslint-disable-next-line @next/next/no-img-element
               <img
-                src={logoSrc}
+                src={logo.url!}
                 alt=""
                 referrerPolicy="no-referrer"
-                className="h-full w-full max-h-9 max-w-9 object-contain p-1.5"
+                className={logo.imgClassName}
                 onError={() => setLogoFailed(true)}
               />
             ) : (

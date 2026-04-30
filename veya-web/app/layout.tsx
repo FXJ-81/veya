@@ -29,7 +29,7 @@ export default function RootLayout({
         className={`${inter.variable} ${jetbrains.variable} font-sans bg-background text-text-primary antialiased`}
       >
         <script
-          // Apply theme ASAP. Light is only used when the user explicitly chose White (Light) in Settings
+          // Apply theme ASAP. Light is only used when the user explicitly chose Light in Settings
           // (we persist both veya_accent_preference and veya_theme together). Otherwise default to Veya dark.
           dangerouslySetInnerHTML={{
             __html:

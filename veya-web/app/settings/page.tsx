@@ -540,7 +540,11 @@ export default function SettingsPage() {
             description="Your plan and tracked subscription data"
           >
             <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-              <Badge variant={plan === "premium" ? "accent" : "default"}>
+              {/* In column layout, flex children default to stretch — without w-fit/self-start the badge reads as a full-width bar */}
+              <Badge
+                className="w-fit shrink-0 self-start sm:self-auto"
+                variant={plan === "premium" ? "accent" : "default"}
+              >
                 {plan === "premium" ? "Premium" : "Free"}
               </Badge>
               <Button
@@ -551,7 +555,7 @@ export default function SettingsPage() {
                 {plan === "premium" ? "Switch to Free" : "Upgrade to Premium"}
               </Button>
             </div>
-            <p className="mt-2 text-sm text-text-secondary">
+            <p className="mt-2 text-sm text-text-secondary max-md:mt-3">
               {plan === "premium"
                 ? "You have unlimited subscriptions, unlimited AI Coach, analytics, and notifications."
                 : "Free includes 10 subscriptions, bank linking, budget tracking, and 5 AI messages per day."}
@@ -764,7 +768,7 @@ export default function SettingsPage() {
           <SettingsAccordionSection
             id="settings-appearance"
             title="Appearance"
-            description="Choose between Veya Dark and White (Light)"
+            description="Choose between Dark and Light"
           >
             {accentPrefLoading ? (
               <p className="text-sm text-text-tertiary">Loading…</p>
@@ -784,8 +788,8 @@ export default function SettingsPage() {
                     )}
                   >
                     <span className="mb-2 block h-9 w-full rounded-lg border border-border/80 bg-[#0b0b12]" aria-hidden />
-                    <span className="text-sm font-semibold text-text-primary">Veya Dark</span>
-                    <span className="mt-0.5 block text-xs text-text-tertiary">Current dark theme</span>
+                    <span className="text-sm font-semibold text-text-primary">Dark</span>
+                    <span className="mt-0.5 block text-xs text-text-tertiary">Dark theme</span>
                   </button>
                   <button
                     type="button"
@@ -799,8 +803,8 @@ export default function SettingsPage() {
                     )}
                   >
                     <span className="mb-2 block h-9 w-full rounded-lg border border-border/80 bg-white" aria-hidden />
-                    <span className="text-sm font-semibold text-text-primary">White (Light)</span>
-                    <span className="mt-0.5 block text-xs text-text-tertiary">Full light theme</span>
+                    <span className="text-sm font-semibold text-text-primary">Light</span>
+                    <span className="mt-0.5 block text-xs text-text-tertiary">Light theme</span>
                   </button>
                 </div>
               </fieldset>

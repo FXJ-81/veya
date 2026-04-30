@@ -13,6 +13,7 @@
     "test:email-score": "npx tsx lib/emailSubscription/run-score-tests.ts",
     "test:renewal-reminders": "npx tsx lib/run-renewal-reminder-tests.ts",
     "test:plaid-sync-dedup": "npx tsx lib/run-plaid-sync-dedup-tests.ts",
+    "test:subscription-brand": "npx tsx lib/subscriptionBrand/run-brand-resolver-tests.ts",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:push": "prisma db push",

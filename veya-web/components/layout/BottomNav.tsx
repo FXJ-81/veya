@@ -5,39 +5,61 @@ import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
 import { MAIN_NAV } from "@/components/layout/navConfig";
 
+/**
+ * Mobile-only tab bar (`md:hidden` on root). Tablet/desktop use `Sidebar` unchanged.
+ */
 export function BottomNav() {
   const pathname = usePathname();
 
   return (
     <nav
-      className="fixed bottom-0 left-0 right-0 z-[55] border-t border-border bg-card/95 backdrop-blur-xl md:hidden"
-      style={{ paddingBottom: "max(0.5rem, env(safe-area-inset-bottom))" }}
+      className="pointer-events-none fixed inset-x-0 bottom-0 z-[55] md:hidden"
       aria-label="Main navigation"
     >
-      <div className="mx-auto flex max-w-lg items-stretch justify-between gap-0 px-0.5 pt-1 sm:gap-0.5 sm:px-1">
-        {MAIN_NAV.map((item) => {
-          const active =
-            pathname === item.href ||
-            (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
-          const Icon = item.Icon;
-          return (
-            <Link
-              key={item.href}
-              href={item.href}
-              className={cn(
-                "flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center rounded-lg px-0.5 py-1 text-[11px] font-medium leading-tight sm:text-xs",
-                active
-                  ? "bg-accent/15 text-accent"
-                  : "text-text-secondary hover:text-text-primary",
-              )}
-            >
-              <Icon className="h-[1.125rem] w-[1.125rem] shrink-0 sm:h-5 sm:w-5" aria-hidden />
-              <span className="mt-0.5 max-w-full truncate px-0.5 text-center leading-tight">
-                {item.label}
-              </span>
-            </Link>
-          );
-        })}
+      {/* Outer safe-area + horizontal inset so the bar reads as a floating pill, not edge-to-edge slab */}
+      <div className="pointer-events-auto px-3 pb-[max(0.35rem,env(safe-area-inset-bottom,0px))] pt-2">
+        <div
+          className={cn(
+            "mx-auto max-w-lg overflow-hidden rounded-2xl border border-border/70",
+            "bg-card/95 shadow-[0_-10px_36px_-14px_rgba(0,0,0,0.55)] backdrop-blur-xl",
+            "px-0.5 py-1",
+          )}
+        >
+          <div className="flex w-full items-stretch justify-evenly gap-0.5">
+            {MAIN_NAV.map((item) => {
+              const active =
+                pathname === item.href ||
+                (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+              const Icon = item.Icon;
+              return (
+                <Link
+                  key={item.href}
+                  href={item.href}
+                  className={cn(
+                    "flex min-h-[44px] min-w-0 flex-1 flex-col items-center justify-center gap-1 rounded-xl px-1 py-1.5",
+                    "text-center text-[11px] font-semibold leading-tight text-text-tertiary",
+                    "transition-colors duration-150",
+                    active
+                      ? "bg-accent/20 text-accent shadow-[inset_0_0_0_1px_rgba(91,110,245,0.28)]"
+                      : "hover:bg-surface/70 hover:text-text-primary active:bg-surface/90",
+                  )}
+                >
+                  <Icon
+                    className={cn(
+                      "h-5 w-5 shrink-0 transition-colors",
+                      active ? "text-accent" : "text-text-tertiary",
+                    )}
+                    strokeWidth={active ? 2.25 : 2}
+                    aria-hidden
+                  />
+                  <span className="line-clamp-2 w-full max-w-[5.25rem] break-words hyphens-auto">
+                    {item.label}
+                  </span>
+                </Link>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </nav>
   );

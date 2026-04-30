@@ -23,8 +23,8 @@
   --app-sidebar-width: 19rem;
   --app-content-offset: var(--app-sidebar-width);
   --app-workspace-max: 80rem;
-  /* Mobile bottom tab bar content height (touch targets ≥44px including label) */
-  --app-bottom-nav-height: 3.75rem;
+  /* Mobile bottom tab bar: floating pill + labels (used by main / FAB bottom offsets) */
+  --app-bottom-nav-height: 4.25rem;
 }
 
 html[data-theme="light"] {
