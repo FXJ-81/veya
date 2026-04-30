@@ -19,6 +19,7 @@ import {
   applyAccentPreferenceToDocument,
   type AccentPreference,
 } from "@/lib/accentPreference";
+import { TriangleAlert, X } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { NotificationPrefKey } from "@/lib/notificationPrefs";
 
@@ -134,6 +135,7 @@ export default function SettingsPage() {
   // Account deletion
   const [deleteOpen, setDeleteOpen] = useState(false);
   const [deleteConfirm, setDeleteConfirm] = useState("");
+  const [deleteAccountPassword, setDeleteAccountPassword] = useState("");
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [deleteToast, setDeleteToast] = useState<string | null>(null);
 
@@ -455,11 +457,27 @@ export default function SettingsPage() {
 
   const runDeleteAccount = async () => {
     setDeleteToast(null);
+    if (deleteConfirm.trim() !== "DELETE") {
+      setDeleteToast("Type DELETE exactly to confirm.");
+      return;
+    }
+    if (hasPassword === true && !deleteAccountPassword.trim()) {
+      setDeleteToast("Enter your current account password to continue.");
+      return;
+    }
     setDeleteBusy(true);
     try {
-      const res = await fetch("/api/user/account", { method: "DELETE" });
-      const json = await res.json().catch(() => ({}));
+      const res = await fetch("/api/user/account", {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          confirmationPhrase: deleteConfirm.trim(),
+          ...(hasPassword === true ? { currentPassword: deleteAccountPassword } : {}),
+        }),
+      });
+      const json = (await res.json().catch(() => ({}))) as { error?: string };
       if (!res.ok) throw new Error(json.error ?? "Delete failed");
+      setDeleteOpen(false);
       await signOut({ callbackUrl: "/" });
     } catch (e) {
       setDeleteToast(e instanceof Error ? e.message : "Failed to delete account");
@@ -566,7 +584,7 @@ export default function SettingsPage() {
             {/* Error banner */}
             {bankError && (
               <div className="mb-4 flex items-start gap-3 rounded-xl border border-danger/30 bg-danger/10 px-4 py-3">
-                <span className="mt-0.5 text-danger">⚠️</span>
+                <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden />
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-danger">Something went wrong</p>
                   <p className="text-sm text-text-secondary">{bankError}</p>
@@ -576,7 +594,7 @@ export default function SettingsPage() {
                   className="shrink-0 text-text-tertiary hover:text-text-primary"
                   aria-label="Dismiss"
                 >
-                  ✕
+                  <X className="h-4 w-4" strokeWidth={2} />
                 </button>
               </div>
             )}
@@ -898,15 +916,20 @@ export default function SettingsPage() {
           </SettingsAccordionSection>
 
           <SettingsAccordionSection
-            id="settings-danger"
-            title="Danger zone"
-            description="Permanently delete your account and all data"
+            id="settings-delete-account"
+            title="Delete account"
+            description="Permanently delete your account and all associated data."
             className="border-danger/35 bg-card/60"
           >
             <Button
               className="w-full sm:w-auto"
               variant="danger"
-              onClick={() => { setDeleteOpen(true); setDeleteConfirm(""); setDeleteToast(null); }}
+              onClick={() => {
+                setDeleteOpen(true);
+                setDeleteConfirm("");
+                setDeleteAccountPassword("");
+                setDeleteToast(null);
+              }}
             >
               Delete account
             </Button>
@@ -925,39 +948,73 @@ export default function SettingsPage() {
       {/* ── Delete account modal ── */}
       <Modal
         open={deleteOpen}
-        onClose={() => { if (!deleteBusy) setDeleteOpen(false); }}
-        title="Delete your account?"
+        onClose={() => {
+          if (!deleteBusy) setDeleteOpen(false);
+        }}
+        title="Permanently delete your account?"
         className="max-w-md"
       >
-        <p className="mb-4 text-sm text-text-secondary">
-          This will permanently delete your account and all data including subscriptions, chat
-          history, and settings. This cannot be undone.
-        </p>
+        <div className="mb-4 space-y-2 text-sm text-text-secondary">
+          <p>This action is permanent and cannot be undone.</p>
+          <ul className="list-disc space-y-1 pl-5">
+            <li>Your profile, subscriptions, budgets, and analytics history in Veya will be removed.</li>
+            <li>AI conversations, notifications, and linked bank connections for this account will be removed.</li>
+            <li>Families you created as admin will be deleted along with their membership data.</li>
+          </ul>
+        </div>
         <div className="mb-4">
           <label className="mb-2 block text-sm text-text-tertiary">
-            Type <span className="font-semibold text-text-primary">DELETE</span> to confirm
+            Type <span className="font-mono font-semibold text-text-primary">DELETE</span> to confirm
           </label>
           <input
             value={deleteConfirm}
             onChange={(e) => setDeleteConfirm(e.target.value)}
             placeholder="DELETE"
+            autoComplete="off"
             disabled={deleteBusy}
             className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40"
           />
         </div>
+        {hasPassword === true ? (
+          <div className="mb-4">
+            <label className="mb-2 block text-sm text-text-tertiary">Current password</label>
+            <input
+              type="password"
+              autoComplete="current-password"
+              value={deleteAccountPassword}
+              onChange={(e) => setDeleteAccountPassword(e.target.value)}
+              disabled={deleteBusy}
+              className="w-full rounded-xl border border-border bg-surface px-3 py-2 text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-accent/40"
+            />
+            <p className="mt-1.5 text-xs text-text-tertiary">
+              Required because this account uses email and password sign-in.
+            </p>
+          </div>
+        ) : null}
         <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">
-          <Button variant="secondary" className="w-full sm:w-auto" onClick={() => setDeleteOpen(false)} disabled={deleteBusy}>
+          <Button
+            variant="secondary"
+            className="w-full sm:w-auto"
+            onClick={() => setDeleteOpen(false)}
+            disabled={deleteBusy}
+          >
             Cancel
           </Button>
-          <button
+          <Button
             type="button"
-            onClick={runDeleteAccount}
-            disabled={deleteBusy || deleteConfirm !== "DELETE"}
-            className="min-h-[44px] w-full rounded-xl px-4 py-2 text-sm font-medium text-background transition-colors disabled:opacity-50 sm:min-h-0 sm:w-auto"
-            style={{ background: "#f87171" }}
+            variant="danger"
+            className="w-full sm:w-auto"
+            onClick={() => void runDeleteAccount()}
+            disabled={
+              deleteBusy ||
+              hasPassword === null ||
+              deleteConfirm.trim() !== "DELETE" ||
+              (hasPassword === true && !deleteAccountPassword.trim())
+            }
+            isLoading={deleteBusy}
           >
-            {deleteBusy ? "Deleting…" : "Delete Account"}
-          </button>
+            Delete account
+          </Button>
         </div>
       </Modal>
 

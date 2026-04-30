@@ -23,6 +23,7 @@ function round2(n: number) {
 }
 
 export type AnalyticsInsightCard = {
+  /** Semantic key rendered as a Lucide icon on the client */
   icon: string;
   title: string;
   description: string;
@@ -92,7 +93,7 @@ function buildInsightCards(params: {
   // 1 — Monthly total vs U.S. average (~$219/mo)
   if (currentMonthlyNormalized <= 0) {
     cards.push({
-      icon: "🇺🇸",
+      icon: "globe",
       title: "Monthly spend vs U.S. average",
       description: `You’re at $0/mo tracked; typical U.S. subscription spend is ~$${US_AVG_MONTHLY_SUBS}/mo.`,
     });
@@ -102,19 +103,19 @@ function buildInsightCards(params: {
       US_AVG_MONTHLY_SUBS > 0 ? Math.round((Math.abs(diff) / US_AVG_MONTHLY_SUBS) * 100) : 0;
     if (diff > 1) {
       cards.push({
-        icon: "📈",
+        icon: "trend-up",
         title: "Monthly spend vs U.S. average",
         description: `~$${currentMonthlyNormalized.toFixed(2)}/mo — about ${absPct}% above the ~$${US_AVG_MONTHLY_SUBS}/mo benchmark.`,
       });
     } else if (diff < -1) {
       cards.push({
-        icon: "✅",
+        icon: "check",
         title: "Monthly spend vs U.S. average",
         description: `~$${currentMonthlyNormalized.toFixed(2)}/mo — ${absPct}% under the ~$${US_AVG_MONTHLY_SUBS}/mo benchmark.`,
       });
     } else {
       cards.push({
-        icon: "⚖️",
+        icon: "scale",
         title: "Monthly spend vs U.S. average",
         description: `~$${currentMonthlyNormalized.toFixed(2)}/mo — aligned with the ~$${US_AVG_MONTHLY_SUBS}/mo typical.`,
       });
@@ -124,7 +125,7 @@ function buildInsightCards(params: {
   // 2 — Top spending category + amount
   if (categoryBreakdown.length === 0) {
     cards.push({
-      icon: "🏷️",
+      icon: "tag",
       title: "Top spending category",
       description: "Add subscriptions to see your #1 category and its monthly total.",
     });
@@ -133,7 +134,7 @@ function buildInsightCards(params: {
     const catSum = categoryBreakdown.reduce((a, c) => a + c.total, 0);
     const share = catSum > 0 ? Math.round((top.total / catSum) * 100) : 0;
     cards.push({
-      icon: "🏷️",
+      icon: "tag",
       title: `${top.category} leads spending`,
       description: `~$${top.total.toFixed(2)}/mo — ${share}% of categorized spend.`,
     });
@@ -145,7 +146,7 @@ function buildInsightCards(params: {
   );
   if (byMonthly.length === 0) {
     cards.push({
-      icon: "💰",
+      icon: "wallet",
       title: "Most expensive subscription",
       description: "Add active subscriptions to see your highest monthly line item.",
     });
@@ -153,7 +154,7 @@ function buildInsightCards(params: {
     const m = byMonthly[0];
     const pm = pricePerMonth(m.price, m.billingCycle);
     cards.push({
-      icon: "💰",
+      icon: "wallet",
       title: `${m.name} is priciest`,
       description: `~$${pm.toFixed(2)}/mo (${m.billingCycle}, normalized).`,
     });
@@ -194,7 +195,7 @@ function buildInsightCards(params: {
   let fourth: AnalyticsInsightCard;
   if (worst) {
     fourth = {
-      icon: "⚠️",
+      icon: "alert",
       title: `Over budget: ${worst.label}`,
       description: `$${worst.spent.toFixed(2)} of $${worst.limit.toFixed(2)}/mo — you’re above limit.`,
     };
@@ -205,19 +206,19 @@ function buildInsightCards(params: {
       .join(", ");
     const more = soon.length > 3 ? ` +${soon.length - 3} more` : "";
     fourth = {
-      icon: "⏰",
+      icon: "clock",
       title: `${soon.length} renewal${soon.length === 1 ? "" : "s"} this week`,
       description: `${list}${more}.`,
     };
   } else if (yearlyProjection > 0) {
     fourth = {
-      icon: "📅",
+      icon: "calendar",
       title: "Yearly projection",
       description: `~$${yearlyProjection.toFixed(0)}/yr at your current ~$${currentMonthlyNormalized.toFixed(2)}/mo run rate.`,
     };
   } else {
     fourth = {
-      icon: "📅",
+      icon: "calendar",
       title: "Yearly projection",
       description: "Add active subscriptions to estimate yearly subscription cost.",
     };

@@ -4,6 +4,7 @@ import Link from "next/link";
 import { useQuery } from "@tanstack/react-query";
 import { motion } from "framer-motion";
 import { Skeleton } from "@/components/ui/Skeleton";
+import { AppIcons } from "@/lib/icons";
 
 async function fetchTip(): Promise<{ tip: string }> {
   const res = await fetch("/api/ai/daily-tip");
@@ -26,7 +27,10 @@ export function AITipCard() {
     >
       <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-accent/5 to-transparent pointer-events-none" />
       <div className="relative">
-        <p className="text-sm font-medium text-accent mb-2">Veya AI Tip</p>
+        <p className="mb-2 flex items-center gap-2 text-sm font-medium text-accent">
+          <AppIcons.tip className="h-4 w-4 shrink-0" aria-hidden />
+          Veya AI tip
+        </p>
         {isLoading ? (
           <Skeleton className="h-12 w-full" />
         ) : (

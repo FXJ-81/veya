@@ -3,14 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { cn } from "@/lib/utils";
-
-const items = [
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/subscriptions", label: "Subscriptions", icon: "📋" },
-  { href: "/analytics", label: "Analytics", icon: "📈" },
-  { href: "/coach", label: "AI Coach", icon: "💬" },
-  { href: "/settings", label: "Settings", icon: "⚙️" },
-];
+import { MAIN_NAV } from "@/components/layout/navConfig";
 
 export function BottomNav() {
   const pathname = usePathname();
@@ -22,10 +15,11 @@ export function BottomNav() {
       aria-label="Main navigation"
     >
       <div className="mx-auto flex max-w-lg items-stretch justify-between gap-0 px-0.5 pt-1 sm:gap-0.5 sm:px-1">
-        {items.map((item) => {
+        {MAIN_NAV.map((item) => {
           const active =
             pathname === item.href ||
             (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`));
+          const Icon = item.Icon;
           return (
             <Link
               key={item.href}
@@ -37,9 +31,7 @@ export function BottomNav() {
                   : "text-text-secondary hover:text-text-primary",
               )}
             >
-              <span className="text-[1.125rem] leading-none sm:text-[1.2rem]" aria-hidden>
-                {item.icon}
-              </span>
+              <Icon className="h-[1.125rem] w-[1.125rem] shrink-0 sm:h-5 sm:w-5" aria-hidden />
               <span className="mt-0.5 max-w-full truncate px-0.5 text-center leading-tight">
                 {item.label}
               </span>

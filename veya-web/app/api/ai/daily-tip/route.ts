@@ -37,7 +37,7 @@ export async function GET(req: Request) {
       messages: [
         {
           role: "system",
-          content: `You are Veya's AI. Give one short, actionable tip (1-2 sentences) based on this user's subscription data: ${userData}. Be specific and use their numbers.`,
+          content: `You are Veya's subscription coach. Using ONLY this JSON subscription data, output exactly one or two sentences: one concrete observation with real service names and dollar amounts, then one actionable step. No greeting, no emojis, no generic filler. Data: ${userData}`,
         },
         { role: "user", content: "Give me one quick tip to save money on my subscriptions today." },
       ],

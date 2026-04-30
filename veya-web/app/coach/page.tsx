@@ -333,7 +333,7 @@ export default function CoachPage() {
                 Veya AI Coach
               </h1>
               <p className="mt-1 hidden text-sm text-text-secondary md:block">
-                Ask anything about your subscriptions. I have full context.
+                Ask about spend, renewals, budgets, and cancellations. Answers use your Veya subscription data.
               </p>
             </div>
             <div className="flex shrink-0 flex-nowrap items-center gap-1.5 sm:gap-2">

@@ -118,7 +118,7 @@ export default function DashboardPage() {
         >
           <div>
             <h1 className="text-2xl font-bold text-text-primary">
-              {getGreeting()} {session?.user?.name?.split(" ")[0] ?? "there"} 👋
+              {getGreeting()}, {session?.user?.name?.split(" ")[0] ?? "there"}
             </h1>
             <p className="text-text-secondary text-sm mt-1">
               {new Date().toLocaleDateString("en-US", {

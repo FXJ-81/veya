@@ -3,6 +3,7 @@
 import { useMemo, type ReactNode } from "react";
 import Link from "next/link";
 import { motion } from "framer-motion";
+import { AppIcons } from "@/lib/icons";
 import type { BudgetStatus } from "@/app/api/budgets/status/route";
 import type { Subscription } from "@/types";
 import { formatCurrency } from "@/lib/utils";
@@ -179,15 +180,18 @@ export function SavingsOpportunitiesCard({
       transition={{ delay: 0.15 }}
       className="flex h-full min-h-0 w-full min-w-0 flex-col rounded-2xl border border-border bg-card p-4 sm:p-6"
     >
-      <h3 className="text-lg font-semibold text-text-primary">💡 Savings Opportunities</h3>
+      <h3 className="flex items-center gap-2 text-lg font-semibold text-text-primary">
+        <AppIcons.tip className="h-5 w-5 shrink-0 text-accent" aria-hidden />
+        Savings opportunities
+      </h3>
       <p className="mt-1 text-sm text-text-secondary">Subscriptions you could review</p>
 
       <div className="mt-4 flex min-h-0 flex-1 flex-col gap-3">
         {suggestions.length === 0 ? (
           <div className="flex flex-1 flex-col justify-center rounded-xl border border-success/25 bg-success/5 px-4 py-6 text-center">
-            <p className="text-lg" aria-hidden>
-              ✅
-            </p>
+            <div className="flex justify-center" aria-hidden>
+              <AppIcons.success className="h-8 w-8 text-success" />
+            </div>
             <p className="mt-2 text-sm font-semibold text-text-primary">
               Your subscriptions look optimized!
             </p>

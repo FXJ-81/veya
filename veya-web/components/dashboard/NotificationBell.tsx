@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { NotificationItem } from "@/types";
 import { formatNotificationTimeAgo } from "@/lib/notificationTime";
 import { notificationIconForType } from "@/lib/notificationIcon";
+import { AppIcons } from "@/lib/icons";
 import { cn } from "@/lib/utils";
 
 async function fetchNotifications(): Promise<NotificationItem[]> {
@@ -73,13 +74,13 @@ export function NotificationBell() {
           setOpen((v) => !v);
           if (!open) void refresh();
         }}
-        className="relative flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-text-secondary transition-colors hover:text-text-primary"
+        className="relative flex h-10 w-10 items-center justify-center rounded-full border border-border bg-card text-text-secondary outline-none transition-colors hover:border-border hover:bg-background-secondary/80 hover:text-text-primary focus-visible:ring-2 focus-visible:ring-accent/50 focus-visible:ring-offset-2 focus-visible:ring-offset-card"
         aria-label="Notifications"
         aria-expanded={open}
       >
-        🔔
+        <AppIcons.bell className="h-[1.125rem] w-[1.125rem]" strokeWidth={2} aria-hidden />
         {unreadCount > 0 ? (
-          <span className="absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-500 px-1 text-[10px] font-bold text-white">
+          <span className="pointer-events-none absolute -right-0.5 -top-0.5 flex h-[18px] min-w-[18px] translate-x-px items-center justify-center rounded-full border-2 border-card bg-red-600 px-1 text-[10px] font-semibold tabular-nums leading-none text-white shadow-sm">
             {unreadCount > 99 ? "99+" : unreadCount}
           </span>
         ) : null}
@@ -108,7 +109,7 @@ export function NotificationBell() {
               <p className="px-3 py-6 text-center text-sm text-text-tertiary">Loading…</p>
             ) : items.length === 0 ? (
               <p className="px-3 py-8 text-center text-sm text-text-secondary">
-                No notifications yet 🎉
+                You&apos;re all caught up. No notifications yet.
               </p>
             ) : (
               <ul className="divide-y divide-border">
@@ -124,7 +125,7 @@ export function NotificationBell() {
                         n.read ? "border-transparent" : "border-accent",
                       )}
                     >
-                      <span className="shrink-0 text-lg leading-none" aria-hidden>
+                      <span className="flex shrink-0 items-center justify-center text-text-tertiary" aria-hidden>
                         {notificationIconForType(n.type)}
                       </span>
                       <div className="min-w-0 flex-1">

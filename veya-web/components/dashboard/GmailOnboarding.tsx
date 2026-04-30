@@ -13,6 +13,7 @@ import {
 import { mapPlaidDetectToScanRows } from "@/lib/plaidScanRows";
 import { executeScanImport } from "@/lib/executeScanImport";
 import { invalidateAfterSubscriptionChange } from "@/lib/invalidateSubscriptionQueries";
+import { AppIcons } from "@/lib/icons";
 import type { ScanImportPayload } from "@/types/scan";
 
 type ConnectionSettings = {
@@ -142,17 +143,22 @@ export function GmailOnboarding() {
   return (
     <>
       {banner === "scanning" && (
-        <div className="mb-4 rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-text-secondary backdrop-blur-sm">
-          🔍 Finding subscriptions from your bank…
+        <div className="mb-4 flex items-center gap-2 rounded-xl border border-border bg-card/80 px-4 py-3 text-sm text-text-secondary backdrop-blur-sm">
+          <AppIcons.search className="h-4 w-4 shrink-0 text-text-tertiary" aria-hidden />
+          <span>Finding subscriptions from your bank…</span>
         </div>
       )}
       {banner === "success" && (
         <div className="mb-4 flex flex-col gap-2 rounded-xl border border-success/30 bg-success/10 px-4 py-3 text-sm text-text-primary sm:flex-row sm:flex-wrap sm:items-center sm:justify-between">
-          <span>
-            ✅ Found {foundCount} subscription{foundCount === 1 ? "" : "s"}! View them{" "}
-            <Link href="/subscriptions" className="font-medium text-accent hover:underline">
-              here
-            </Link>
+          <span className="flex items-start gap-2">
+            <AppIcons.success className="mt-0.5 h-4 w-4 shrink-0 text-success" aria-hidden />
+            <span>
+              Found {foundCount} subscription{foundCount === 1 ? "" : "s"}. View them{" "}
+              <Link href="/subscriptions" className="font-medium text-accent hover:underline">
+                in Subscriptions
+              </Link>
+              .
+            </span>
           </span>
         </div>
       )}

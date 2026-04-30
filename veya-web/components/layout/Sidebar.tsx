@@ -4,14 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { signOut } from "next-auth/react";
 import { cn } from "@/lib/utils";
-
-const NAV_LINKS = [
-  { href: "/dashboard", label: "Dashboard", icon: "📊" },
-  { href: "/subscriptions", label: "Subscriptions", icon: "📋" },
-  { href: "/analytics", label: "Analytics", icon: "📈" },
-  { href: "/coach", label: "AI Coach", icon: "💬" },
-  { href: "/settings", label: "Settings", icon: "⚙️" },
-] as const;
+import { MAIN_NAV } from "@/components/layout/navConfig";
 
 function pathActive(pathname: string, href: string): boolean {
   if (href === "/dashboard") return pathname === "/dashboard";
@@ -60,8 +53,9 @@ export function Sidebar() {
               )}
             >
               <div className="flex min-h-0 flex-1 flex-col justify-center gap-2 py-2 md:gap-2.5 md:py-3 lg:gap-3 lg:py-4">
-                {NAV_LINKS.map((link) => {
+                {MAIN_NAV.map((link) => {
                   const active = pathActive(pathname, link.href);
+                  const Icon = link.Icon;
                   return (
                     <Link
                       key={link.href}
@@ -74,9 +68,7 @@ export function Sidebar() {
                           : "text-text-secondary hover:bg-white/[0.06] hover:text-text-primary",
                       )}
                     >
-                      <span className="text-xl leading-none opacity-95 md:text-[1.35rem]" aria-hidden>
-                        {link.icon}
-                      </span>
+                      <Icon className="h-[1.25rem] w-[1.25rem] shrink-0 opacity-95 md:h-[1.35rem] md:w-[1.35rem]" aria-hidden />
                       <span className="min-w-0 flex-1 truncate">{link.label}</span>
                     </Link>
                   );

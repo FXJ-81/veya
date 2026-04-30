@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { motion, AnimatePresence } from "framer-motion";
+import { CircleAlert, TriangleAlert } from "lucide-react";
 import { useBudgetStatuses } from "@/hooks/useBudgetStatus";
 
 export function BudgetAlerts() {
@@ -25,7 +26,7 @@ export function BudgetAlerts() {
             className="flex items-center justify-between gap-3 rounded-xl border border-red-500/30 bg-red-950/40 px-4 py-3"
           >
             <div className="flex items-start gap-2.5">
-              <span className="shrink-0 text-lg">🚨</span>
+              <CircleAlert className="mt-0.5 h-5 w-5 shrink-0 text-red-300" aria-hidden />
               <div>
                 <p className="text-sm font-semibold text-red-300">Budget exceeded</p>
                 <p className="mt-0.5 text-xs text-red-400">
@@ -52,7 +53,7 @@ export function BudgetAlerts() {
             className="flex items-center justify-between gap-3 rounded-xl border border-yellow-500/30 bg-yellow-950/40 px-4 py-3"
           >
             <div className="flex items-start gap-2.5">
-              <span className="shrink-0 text-lg">⚠️</span>
+              <TriangleAlert className="mt-0.5 h-5 w-5 shrink-0 text-yellow-300" aria-hidden />
               <div>
                 <p className="text-sm font-semibold text-yellow-300">Approaching budget limit</p>
                 <p className="mt-0.5 text-xs text-yellow-400">

@@ -5,6 +5,7 @@ import type { MonthlySpend, SpendingBreakdown } from "@/types";
 import { QUERY_KEYS } from "@/lib/queryKeys";
 
 export type AnalyticsInsightCard = {
+  /** Semantic icon key (see `InsightCardIcon`) */
   icon: string;
   title: string;
   description: string;

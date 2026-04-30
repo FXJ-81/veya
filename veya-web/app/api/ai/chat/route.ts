@@ -7,6 +7,8 @@ import { pricePerMonth, hasSubscriptionStarted } from "@/lib/subscriptionBilling
 import { SUBSCRIPTION_CATEGORIES } from "@/lib/categories";
 import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
 import { consumeAiMessageForPlan, planLimitResponse } from "@/lib/planLimits";
+import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
+import type { Subscription } from "@/types";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -95,24 +97,114 @@ function chatMsg(content: string, meta?: Record<string, unknown>) {
   };
 }
 
+// ─── Coach context (deterministic facts for grounding) ───────────────────────
+
+type SubRow = Awaited<ReturnType<typeof prisma.subscription.findMany>>[number];
+
+function prismaSubscriptionToSubscription(s: SubRow): Subscription {
+  return {
+    id: s.id,
+    userId: s.userId,
+    name: s.name,
+    category: s.category,
+    price: s.price,
+    upcomingPrice: s.upcomingPrice,
+    upcomingPriceEffectiveAt: s.upcomingPriceEffectiveAt?.toISOString() ?? null,
+    billingCycle: s.billingCycle as Subscription["billingCycle"],
+    startDate: s.startDate.toISOString(),
+    nextRenewal: s.nextRenewal.toISOString(),
+    status: s.status as Subscription["status"],
+    logoUrl: s.logoUrl,
+    notes: s.notes,
+    isShared: s.isShared,
+    color: s.color,
+    createdAt: s.createdAt.toISOString(),
+    updatedAt: s.updatedAt.toISOString(),
+  };
+}
+
+function buildCoachFacts(params: {
+  plan: string;
+  monthlyTotal: number;
+  subs: SubRow[];
+  budgets: Awaited<ReturnType<typeof prisma.budget.findMany>>;
+  byCat: Map<string, number>;
+}): string {
+  const { plan, monthlyTotal, subs, budgets, byCat } = params;
+  const activeStarted = subs.filter(
+    (s) => s.status === "active" && hasSubscriptionStarted(new Date(s.startDate)),
+  );
+  const paused = subs.filter((s) => s.status === "paused");
+
+  const renew7: string[] = [];
+  for (const s of activeStarted) {
+    const er = getEffectiveRenewal(prismaSubscriptionToSubscription(s));
+    if (er.isPaused) continue;
+    if (Number.isFinite(er.daysUntil) && er.daysUntil >= 0 && er.daysUntil <= 7) {
+      const pm = pricePerMonth(s.price, s.billingCycle);
+      renew7.push(
+        `${s.name} on ${s.nextRenewal.toISOString().slice(0, 10)} (~$${pm.toFixed(2)}/mo, id=${s.id})`,
+      );
+    }
+  }
+  renew7.sort();
+
+  const top5 = [...activeStarted]
+    .sort((a, b) => pricePerMonth(b.price, b.billingCycle) - pricePerMonth(a.price, a.billingCycle))
+    .slice(0, 5)
+    .map(
+      (s) =>
+        `${s.name}: ~$${pricePerMonth(s.price, s.billingCycle).toFixed(2)}/mo, ${s.category}, id=${s.id}`,
+    );
+
+  const totalSpendAllActiveStarted = activeStarted.reduce(
+    (sum, s) => sum + pricePerMonth(s.price, s.billingCycle),
+    0,
+  );
+
+  const budgetLines = budgets.map((b) => {
+    const spent =
+      b.category === "__total__" ? totalSpendAllActiveStarted : (byCat.get(b.category) ?? 0);
+    return `${b.id}: ${b.category} limit=$${b.limit.toFixed(2)}/mo spent~=$${spent.toFixed(2)}`;
+  });
+
+  return JSON.stringify({
+    plan,
+    activeStartedCount: activeStarted.length,
+    pausedCount: paused.length,
+    normalizedMonthlyTotal: monthlyTotal,
+    renewalsNext7Days: renew7,
+    topSubscriptionsByMonthlyCost: top5,
+    budgets: budgetLines,
+  });
+}
+
 // ─── System prompt ────────────────────────────────────────────────────────────
 
 function buildSystemPrompt(
   userName: string,
+  plan: string,
   subscriptionData: string,
   budgetData: string,
   monthlyTotal: number,
-  categoryBreakdown: string
+  categoryBreakdown: string,
+  coachFacts: string,
 ): string {
-  return `You are Veya's AI Financial Coach. You have FULL control over ${userName}'s Veya account. You can perform any action they can do manually.
+  return `You are Veya's AI Financial Coach — a subscription-focused assistant inside the Veya product. You can perform account actions the same way ${userName} can in the app.
 
-CURRENT DATA:
+VEYA_ACCOUNT:
+- Plan: ${plan} (premium unlocks advanced analytics and higher limits; do not invent premium-only data.)
+
+CURRENT_DATA (full records + ids):
 Subscriptions: ${subscriptionData}
 Budgets: ${budgetData}
-Monthly total: $${monthlyTotal.toFixed(2)}
-Spending by category: ${categoryBreakdown}
+Monthly total (active, normalized to monthly): $${monthlyTotal.toFixed(2)}
+Spending by category (normalized monthly): ${categoryBreakdown}
 
-AVAILABLE ACTIONS — append ONE JSON block at the very end of your response (no text after it):
+COACH_FACTS (deterministic summary; use for direct answers about totals, renewals this week, and top spenders):
+${coachFacts}
+
+AVAILABLE_ACTIONS — append ONE JSON block at the very end of your response (no text after it):
 
 Subscription actions (execute immediately):
 {"action":"createSubscription","data":{"name":"","price":0,"category":"","billingCycle":"monthly","startDate":"YYYY-MM-DD","nextRenewal":"YYYY-MM-DD","notes":""}}
@@ -130,19 +222,25 @@ Destructive actions (MUST ask for confirmation first — include JSON so it's st
 {"action":"bulkPause","data":{"category":""}}
 {"action":"bulkCancel","data":{"ids":[]}}
 
-RULES:
+SCOPE:
+You are the in-app assistant for Veya (subscription tracking, budgets, renewals, and spending visibility). You can answer subscription questions, spending/budget questions, renewal timing, savings ideas, simple comparisons, and how to use the product. You are not a licensed financial advisor—give practical, educational guidance, not personalized investment advice.
+
+RESPONSE_RULES:
+- Answer the user's *latest* message first. Match their intent: be brief for narrow factual questions; go deeper when they ask for a plan, comparison, or "what should I do".
+- Whenever the topic touches this user's Veya data, ground answers in CURRENT_DATA and COACH_FACTS (real names, $ amounts, dates, ids). If something is not in the data, say so plainly—never invent subscriptions or ids.
+- For general or app-navigation questions, respond naturally without forcing a subscription list into every reply.
+- Prefer concrete numbers up front when the user asks "how much", "what renews", "what should I cancel", or similar.
+- You may discuss tradeoffs, prioritization, and realistic next steps (including non-destructive ideas) when helpful, as long as you stay honest about what you can see in Veya.
+- Tone: professional, clear, helpful, human—no emojis, no hype, and avoid stock filler ("Happy to help", "Great question", repetitive disclaimers).
 - Valid subscription and budget category names (use exactly): ${SUBSCRIPTION_CATEGORIES.join(", ")}
-- Always use the EXACT ids from the data above, never make up ids
-- Be proactive: when answering a question, also suggest an action
-- Be specific: use real names and real dollar amounts
-- For destructive actions: describe what you'll do, ask for confirmation, include the action JSON
-- For immediate actions: just do it and explain what you did
-- For "help me save $X/month": find specific subscriptions totaling that amount, list them, ask if you should cancel
-- For "pause all [category]": use bulkPause with the category name, ask for confirmation first
-- For "cancel everything over $X": use bulkCancel with the ids of matching subs, ask for confirmation
-- For "set budgets for all my categories": create ONE createBudget per category using current spend as the limit
-- For "what should I cancel": rank by price, look for category duplicates, suggest specific ones with reasoning
-- Format currency as $X.XX, be concise`;
+- Always use EXACT ids from CURRENT_DATA for actions; never invent ids.
+- For destructive actions: describe what you'll do, ask for confirmation, include the action JSON.
+- For immediate actions: do it and briefly confirm what changed.
+- For "help me save $X/month": pick specific subscriptions that sum toward X, list them, ask before destructive cancel.
+- For "pause all [category]": bulkPause with category, confirmation first.
+- For "cancel everything over $X": bulkCancel with matching ids, confirmation first.
+- For "set budgets for all my categories": one createBudget per category using current spend as limit.
+- Format currency as $X.XX.`;
 }
 
 // ─── Main handler ─────────────────────────────────────────────────────────────
@@ -226,6 +324,14 @@ export async function POST(req: Request) {
       .map(([cat, amt]) => ({ category: cat, monthly: Number(amt.toFixed(2)) }))
   );
 
+  const coachFacts = buildCoachFacts({
+    plan: user.plan ?? "free",
+    monthlyTotal: Number(monthlyTotal.toFixed(2)),
+    subs,
+    budgets,
+    byCat,
+  });
+
   const userName = user.name?.split(" ")[0] ?? "there";
 
   // ─── Load / create conversation ──────────────────────────────────────────────
@@ -283,10 +389,12 @@ export async function POST(req: Request) {
       role: "system",
       content: buildSystemPrompt(
         userName,
+        user.plan ?? "free",
         subscriptionData,
         budgetData,
         Number(monthlyTotal.toFixed(2)),
-        categoryBreakdown
+        categoryBreakdown,
+        coachFacts,
       ),
     },
     ...historyForModel,
@@ -304,13 +412,14 @@ export async function POST(req: Request) {
     const action = extracted.action;
 
     if (!action) {
-      const msg = chatMsg(rawReply);
+      const visible = (extracted.text || rawReply).trim() || rawReply.trim();
+      const msg = chatMsg(visible);
       const final = [...withUser, msg];
       await prisma.aIConversation.update({
         where: { id: convo.id },
         data: { messages: toConversationJson(final) },
       });
-      return NextResponse.json({ reply: rawReply, messages: final, conversationId: convo.id });
+      return NextResponse.json({ reply: visible, messages: final, conversationId: convo.id });
     }
 
     return await executeAction(action, replyText, user.id, withUser, convo.id, subs, budgets);
@@ -345,9 +454,9 @@ async function executePendingAction(
       return NextResponse.json({ reply: msg.content, messages: final, conversationId: convoId });
     }
     await prisma.subscription.delete({ where: { id: target.id } });
-    const confirm = chatMsg(`${target.name} has been cancelled ✅`);
+    const confirm = chatMsg(`${target.name} has been cancelled.`);
     const success = actionMsg(
-      `✅ Cancelled **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
+      `Cancelled **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
@@ -373,9 +482,9 @@ async function executePendingAction(
       return NextResponse.json({ reply: msg.content, messages: final, conversationId: convoId });
     }
     await prisma.budget.delete({ where: { id: target.id } });
-    const confirm = chatMsg(`Budget for **${target.category}** deleted ✅`);
+    const confirm = chatMsg(`Budget for **${target.category}** deleted.`);
     const success = actionMsg(
-      `✅ Deleted **${target.category}** budget (was $${target.limit.toFixed(2)}/month)\n\n[View in analytics →](/analytics)`,
+      `Deleted **${target.category}** budget (was $${target.limit.toFixed(2)}/month)\n\n[View in analytics →](/analytics)`,
       "/analytics"
     );
     const final = [...withUser, confirm, success];
@@ -406,9 +515,9 @@ async function executePendingAction(
       targets.map((t) => prisma.subscription.update({ where: { id: t.id }, data: { status: "paused" } }))
     );
     const names = targets.map((t) => t.name).join(", ");
-    const confirm = chatMsg(`Paused ${targets.length} subscription(s) in **${category}**: ${names} ✅`);
+    const confirm = chatMsg(`Paused ${targets.length} subscription(s) in **${category}**: ${names}.`);
     const success = actionMsg(
-      `✅ Paused ${targets.length} **${category}** subscription(s)\n\n[View in subscriptions →](/subscriptions)`,
+      `Paused ${targets.length} **${category}** subscription(s)\n\n[View in subscriptions →](/subscriptions)`,
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
@@ -437,10 +546,10 @@ async function executePendingAction(
     const names = targets.map((t) => t.name).join(", ");
     const saved = targets.reduce((sum, t) => sum + pricePerMonth(t.price, t.billingCycle), 0);
     const confirm = chatMsg(
-      `Cancelled ${targets.length} subscription(s): ${names}. You'll save $${saved.toFixed(2)}/month ✅`
+      `Cancelled ${targets.length} subscription(s): ${names}. You'll save $${saved.toFixed(2)}/month.`,
     );
     const success = actionMsg(
-      `✅ Cancelled ${targets.length} subscription(s) — saving **$${saved.toFixed(2)}/month**\n\n[View in subscriptions →](/subscriptions)`,
+      `Cancelled ${targets.length} subscription(s) — saving **$${saved.toFixed(2)}/month**\n\n[View in subscriptions →](/subscriptions)`,
       "/subscriptions"
     );
     const final = [...withUser, confirm, success];
@@ -527,9 +636,9 @@ async function executeAction(
       if (limit) return limit;
       throw e;
     }
-    const chat = chatMsg(replyText || `Added **${created.name}** ✅`);
+    const chat = chatMsg(replyText || `Added **${created.name}**.`);
     const success = actionMsg(
-      `✅ Added **${created.name}** ($${created.price.toFixed(2)}/${created.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
+      `Added **${created.name}** ($${created.price.toFixed(2)}/${created.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
       "/subscriptions"
     );
     const final = [...withUser, chat, success];
@@ -558,9 +667,9 @@ async function executeAction(
     if (updates.notes !== undefined) updateData.notes = String(updates.notes);
     if (updates.nextRenewal)  updateData.nextRenewal = new Date(updates.nextRenewal as string);
     const updated = await prisma.subscription.update({ where: { id: target.id }, data: updateData });
-    const chat = chatMsg(replyText || `Updated **${updated.name}** ✅`);
+    const chat = chatMsg(replyText || `Updated **${updated.name}**.`);
     const success = actionMsg(
-      `✅ Updated **${updated.name}**\n\n[View in subscriptions →](/subscriptions)`,
+      `Updated **${updated.name}**\n\n[View in subscriptions →](/subscriptions)`,
       "/subscriptions"
     );
     const final = [...withUser, chat, success];
@@ -581,9 +690,9 @@ async function executeAction(
       return save([...withUser, msg]);
     }
     await prisma.subscription.update({ where: { id: target.id }, data: { status: "paused" } });
-    const chat = chatMsg(replyText || `Paused **${target.name}** ✅`);
+    const chat = chatMsg(replyText || `Paused **${target.name}**.`);
     const success = actionMsg(
-      `✅ Paused **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
+      `Paused **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
       "/subscriptions"
     );
     const final = [...withUser, chat, success];
@@ -604,9 +713,9 @@ async function executeAction(
       return save([...withUser, msg]);
     }
     await prisma.subscription.update({ where: { id: target.id }, data: { status: "active" } });
-    const chat = chatMsg(replyText || `Resumed **${target.name}** ✅`);
+    const chat = chatMsg(replyText || `Resumed **${target.name}**.`);
     const success = actionMsg(
-      `✅ Resumed **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
+      `Resumed **${target.name}** ($${target.price.toFixed(2)}/${target.billingCycle})\n\n[View in subscriptions →](/subscriptions)`,
       "/subscriptions"
     );
     const final = [...withUser, chat, success];
@@ -626,9 +735,9 @@ async function executeAction(
     if (existing) {
       // Update instead of duplicate
       await prisma.budget.update({ where: { id: existing.id }, data: { limit } });
-      const chat = chatMsg(replyText || `Updated **${category}** budget to $${limit.toFixed(2)}/month ✅`);
+      const chat = chatMsg(replyText || `Updated **${category}** budget to $${limit.toFixed(2)}/month.`);
       const success = actionMsg(
-        `✅ Updated **${category}** budget → $${limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
+        `Updated **${category}** budget → $${limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
         "/analytics"
       );
       return save([...withUser, chat, success], true);
@@ -636,9 +745,9 @@ async function executeAction(
     const created = await prisma.budget.create({
       data: { userId, category, limit, period: "monthly" },
     });
-    const chat = chatMsg(replyText || `Created **${created.category}** budget at $${created.limit.toFixed(2)}/month ✅`);
+    const chat = chatMsg(replyText || `Created **${created.category}** budget at $${created.limit.toFixed(2)}/month.`);
     const success = actionMsg(
-      `✅ Created **${created.category}** budget — $${created.limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
+      `Created **${created.category}** budget — $${created.limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
       "/analytics"
     );
     const final = [...withUser, chat, success];
@@ -660,9 +769,9 @@ async function executeAction(
       return save([...withUser, msg]);
     }
     const updated = await prisma.budget.update({ where: { id: target.id }, data: { limit } });
-    const chat = chatMsg(replyText || `Updated **${updated.category}** budget to $${updated.limit.toFixed(2)}/month ✅`);
+    const chat = chatMsg(replyText || `Updated **${updated.category}** budget to $${updated.limit.toFixed(2)}/month.`);
     const success = actionMsg(
-      `✅ Updated **${updated.category}** budget → $${updated.limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
+      `Updated **${updated.category}** budget → $${updated.limit.toFixed(2)}/month\n\n[View in analytics →](/analytics)`,
       "/analytics"
     );
     const final = [...withUser, chat, success];

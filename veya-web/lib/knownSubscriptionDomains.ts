@@ -1,4 +1,6 @@
-/** Root domains we treat as known subscription senders (Clearbit logos use apex domain). */
+import { brandLogoUrlForDomain } from "@/lib/subscriptionLogo";
+
+/** Root domains we treat as known subscription senders (logo URLs use apex domain). */
 export const KNOWN_SUBSCRIPTION_DOMAINS = [
   "openai.com",
   "apple.com",
@@ -113,5 +115,5 @@ export function normalizeSenderDomain(raw: string): string | null {
 
 export function clearbitLogoUrl(domain: string): string {
   const apex = normalizeSenderDomain(domain) ?? domain;
-  return `https://logo.clearbit.com/${apex}`;
+  return brandLogoUrlForDomain(apex);
 }

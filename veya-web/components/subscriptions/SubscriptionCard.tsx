@@ -102,13 +102,13 @@ export function SubscriptionCard({
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-start gap-4 min-w-0 flex-1">
           <div
-            className="h-12 w-12 rounded-xl shrink-0 flex items-center justify-center overflow-hidden"
+            className="flex h-12 w-12 shrink-0 items-center justify-center overflow-hidden rounded-xl border border-border/40 bg-background-secondary/50"
             style={
               subscription.color && !showImg
-                ? { backgroundColor: subscription.color + "55" }
+                ? { backgroundColor: subscription.color + "55", borderColor: "transparent" }
                 : showImg
-                  ? { backgroundColor: "rgba(255,255,255,0.06)" }
-                  : { backgroundColor: `hsl(${hue} 55% 32%)` }
+                  ? { backgroundColor: "rgba(255,255,255,0.04)" }
+                  : { backgroundColor: `hsl(${hue} 55% 32%)`, borderColor: "transparent" }
             }
           >
             {showImg ? (
@@ -116,7 +116,8 @@ export function SubscriptionCard({
               <img
                 src={logoSrc}
                 alt=""
-                className="h-8 w-8 object-contain"
+                referrerPolicy="no-referrer"
+                className="h-full w-full max-h-9 max-w-9 object-contain p-1.5"
                 onError={() => setLogoFailed(true)}
               />
             ) : (

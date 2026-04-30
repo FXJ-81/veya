@@ -11,6 +11,7 @@ import { CategoryDonut } from "@/components/analytics/CategoryDonut";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BudgetLimitsSection } from "@/components/analytics/BudgetLimitsSection";
+import { InsightCardIcon } from "@/components/analytics/InsightCardIcon";
 
 export default function AnalyticsPage() {
   const { status } = useSession();
@@ -127,8 +128,8 @@ export default function AnalyticsPage() {
                       className="rounded-xl border border-border/80 bg-background-secondary/40 p-3 sm:p-4"
                     >
                       <div className="flex gap-3">
-                        <span className="shrink-0 text-xl leading-none" aria-hidden>
-                          {card.icon}
+                        <span className="flex shrink-0 items-center justify-center" aria-hidden>
+                          <InsightCardIcon name={card.icon} />
                         </span>
                         <div className="min-w-0 flex-1">
                           <p className="text-sm font-bold text-text-primary">{card.title}</p>

@@ -1,9 +1,10 @@
+import { Eye, Lock, ShieldCheck } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const BADGES = [
-  { icon: "🔒", label: "Bank-level encryption" },
-  { icon: "👁", label: "Read-only access" },
-  { icon: "🛡", label: "Never stores credentials" },
+  { Icon: Lock, label: "Bank-level encryption" },
+  { Icon: Eye, label: "Read-only access" },
+  { Icon: ShieldCheck, label: "Never stores credentials" },
 ] as const;
 
 export function PlaidSecurityBadges({ className }: { className?: string }) {
@@ -16,9 +17,7 @@ export function PlaidSecurityBadges({ className }: { className?: string }) {
             className="flex max-w-full items-center gap-1.5 rounded-full border px-2.5 py-1.5 text-[12px] leading-tight text-text-secondary"
             style={{ backgroundColor: "#1a1a26", borderColor: "#2a2a3a" }}
           >
-            <span className="shrink-0 text-sm leading-none" aria-hidden>
-              {b.icon}
-            </span>
+            <b.Icon className="h-3.5 w-3.5 shrink-0 text-text-tertiary" aria-hidden />
             <span className="min-w-0">{b.label}</span>
           </div>
         ))}

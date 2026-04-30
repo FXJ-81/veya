@@ -5,7 +5,9 @@ import { useQueryClient } from "@tanstack/react-query";
 import { motion, AnimatePresence } from "framer-motion";
 import type { BudgetStatus } from "@/app/api/budgets/status/route";
 import { Modal } from "@/components/ui/Modal";
-import { SUBSCRIPTION_CATEGORIES, categoryIcon, categorySelectLabel } from "@/lib/categories";
+import { SUBSCRIPTION_CATEGORIES, categorySelectLabel } from "@/lib/categories";
+import { CategoryIcon } from "@/components/ui/CategoryIcon";
+import { Pencil, Trash2, Wallet } from "lucide-react";
 import { useBudgetStatuses } from "@/hooks/useBudgetStatus";
 import { invalidateAfterBudgetChange } from "@/lib/invalidateSubscriptionQueries";
 
@@ -56,7 +58,7 @@ function BudgetCard({
     >
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <span className="shrink-0 text-base">{categoryIcon(bs.category)}</span>
+          <CategoryIcon category={bs.category} className="h-4 w-4 text-text-tertiary" />
           <span className="truncate text-sm font-medium text-text-primary">{label}</span>
         </div>
         <div className="flex shrink-0 items-center gap-1">
@@ -76,9 +78,7 @@ function BudgetCard({
             className="ml-1 flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-border text-sm text-text-secondary transition-colors hover:border-accent hover:text-accent md:min-h-0 md:min-w-0 md:px-2 md:py-0.5"
           >
             <span className="hidden md:inline">Edit</span>
-            <span className="text-base md:hidden" aria-hidden>
-              ✎
-            </span>
+            <Pencil className="h-4 w-4 md:hidden" aria-hidden />
           </button>
           <button
             type="button"
@@ -87,9 +87,7 @@ function BudgetCard({
             className="flex min-h-[44px] min-w-[44px] items-center justify-center rounded border border-border text-sm text-text-secondary transition-colors hover:border-danger hover:text-danger md:min-h-0 md:min-w-0 md:px-2 md:py-0.5"
           >
             <span className="hidden md:inline">Delete</span>
-            <span className="text-base md:hidden" aria-hidden>
-              🗑
-            </span>
+            <Trash2 className="h-4 w-4 md:hidden" aria-hidden />
           </button>
         </div>
       </div>
@@ -180,7 +178,7 @@ function BudgetModal({
               <option value="">Select category…</option>
               {available.map((c) => (
                 <option key={c} value={c}>
-                  {c === "__total__" ? "💰 Total subscriptions" : categorySelectLabel(c)}
+                  {categorySelectLabel(c)}
                 </option>
               ))}
             </select>
@@ -353,7 +351,9 @@ export function BudgetLimitsSection() {
           </div>
         ) : statuses.length === 0 ? (
           <div className="py-10 text-center">
-            <p className="text-3xl mb-3">💰</p>
+            <div className="mb-3 flex justify-center" aria-hidden>
+              <Wallet className="h-10 w-10 text-text-tertiary" />
+            </div>
             <p className="text-sm font-medium text-text-primary mb-1">No budget limits set</p>
             <p className="text-xs text-text-secondary">
               Set monthly spending limits per category to track your budget.

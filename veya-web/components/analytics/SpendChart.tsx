@@ -21,6 +21,7 @@ import {
 } from "recharts";
 import { motion, AnimatePresence } from "framer-motion";
 import type { MonthlySpend } from "@/types";
+import { X } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface SpendChartProps {
@@ -217,7 +218,7 @@ function BreakdownPanel({
           aria-label="Close breakdown"
           className="min-h-[44px] min-w-[44px] shrink-0 rounded-lg p-2 text-lg leading-none text-text-tertiary transition-colors hover:bg-surface hover:text-text-primary md:min-h-0 md:min-w-0 md:p-1"
         >
-          ✕
+          <X className="h-5 w-5" strokeWidth={2} />
         </button>
       </div>
 

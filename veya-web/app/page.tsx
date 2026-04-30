@@ -1,39 +1,42 @@
 "use client";
 
+import type { LucideIcon } from "lucide-react";
+import { BarChart3, Bell, ChevronDown, Search, Wallet } from "lucide-react";
 import Link from "next/link";
 import { Navbar } from "@/components/layout/Navbar";
 import { motion } from "framer-motion";
+import { AppIcons } from "@/lib/icons";
 
-const FEATURES = [
+const FEATURES: { title: string; desc: string; Icon: LucideIcon }[] = [
   {
     title: "Track Everything",
     desc: "Connect accounts or add manually. We find and track every subscription in one place.",
-    icon: "📋",
+    Icon: AppIcons.navSubscriptions,
   },
   {
     title: "Cancel Unused",
     desc: "We identify unused subs and help you negotiate better rates or cancel with one tap.",
-    icon: "💰",
+    Icon: Wallet,
   },
   {
     title: "Find Alternatives",
     desc: "See cheaper alternatives for each subscription and how much you could save.",
-    icon: "🔍",
+    Icon: Search,
   },
   {
     title: "Smart insights",
     desc: "See where your money goes and get alerts before renewals sneak up on you.",
-    icon: "📊",
+    Icon: BarChart3,
   },
   {
     title: "AI Coach",
     desc: "Get personalized tips and answers based on your real subscription data.",
-    icon: "🤖",
+    Icon: AppIcons.navCoach,
   },
   {
     title: "Smart Alerts",
     desc: "Premium renewal reminders, price changes, and spending alerts so nothing surprises you.",
-    icon: "🔔",
+    Icon: Bell,
   },
 ];
 
@@ -100,22 +103,25 @@ export default function LandingPage() {
             in one app.
           </p>
           <div className="grid grid-cols-1 gap-6 md:grid-cols-2 md:gap-8 xl:grid-cols-3">
-            {FEATURES.map((f, i) => (
-              <motion.div
-                key={f.title}
-                initial={{ opacity: 0, y: 16 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true }}
-                transition={{ delay: i * 0.08 }}
-                className="rounded-2xl border border-border bg-card/80 backdrop-blur-xl p-6"
-              >
-                <span className="text-3xl">{f.icon}</span>
-                <h3 className="text-xl font-semibold text-text-primary mt-4">
-                  {f.title}
-                </h3>
-                <p className="mt-2 text-text-secondary">{f.desc}</p>
-              </motion.div>
-            ))}
+            {FEATURES.map((f, i) => {
+              const Icon = f.Icon;
+              return (
+                <motion.div
+                  key={f.title}
+                  initial={{ opacity: 0, y: 16 }}
+                  whileInView={{ opacity: 1, y: 0 }}
+                  viewport={{ once: true }}
+                  transition={{ delay: i * 0.08 }}
+                  className="rounded-2xl border border-border bg-card/80 backdrop-blur-xl p-6"
+                >
+                  <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-border/80 bg-surface text-accent">
+                    <Icon className="h-5 w-5" strokeWidth={2} aria-hidden />
+                  </span>
+                  <h3 className="mt-4 text-xl font-semibold text-text-primary">{f.title}</h3>
+                  <p className="mt-2 text-text-secondary">{f.desc}</p>
+                </motion.div>
+              );
+            })}
           </div>
         </div>
       </section>
@@ -199,9 +205,10 @@ export default function LandingPage() {
               >
                 <summary className="flex min-h-[44px] cursor-pointer list-none items-center justify-between gap-2 font-semibold text-text-primary">
                   {item.q}
-                  <span className="text-text-tertiary group-open:rotate-180 transition-transform">
-                    ▼
-                  </span>
+                  <ChevronDown
+                    className="h-4 w-4 shrink-0 text-text-tertiary transition-transform group-open:rotate-180"
+                    aria-hidden
+                  />
                 </summary>
                 <p className="mt-1 text-sm text-text-secondary">{item.a}</p>
               </motion.details>
