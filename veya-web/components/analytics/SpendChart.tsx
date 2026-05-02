@@ -32,7 +32,6 @@ const C_BAR_PAST = "rgb(var(--accent) / 0.95)";
 const C_BAR_CURRENT = "rgb(var(--accent) / 0.72)";
 const C_BAR_FUTURE = "rgb(var(--accent) / 0.28)";
 const C_BAR_DIM = "rgb(var(--accent) / 0.22)";
-const C_BAR_SELECTED = "rgb(var(--accent) / 0.22)";
 const C_STROKE_FUTURE = "rgb(var(--accent) / 0.85)";
 const C_STROKE_SELECTED = "rgb(var(--accent) / 0.9)";
 const C_AXIS = "rgb(var(--text-tertiary) / 1)";
@@ -69,7 +68,8 @@ function buildRows(data: MonthlySpend[]): ChartRow[] {
 function cellFill(entry: ChartRow, selected: ChartRow | null): string {
   if (!selected) return entry.fill;
   const isSelected = entry.label === selected.label && entry.year === selected.year;
-  if (isSelected) return C_BAR_SELECTED;
+  // Keep the selected bar visually truthful (same height + readable fill).
+  if (isSelected) return entry.fill;
   return C_BAR_DIM;
 }
 

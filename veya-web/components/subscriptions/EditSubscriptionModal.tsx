@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SUBSCRIPTION_CATEGORIES, categorySelectLabel } from "@/lib/categories";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { DateInput } from "@/components/ui/DateInput";
 import { toDateInputValue } from "@/lib/utils";
 import type { Subscription } from "@/types";
 import { parseSubscriptionCalendarDateInput, utcCalendarDateKey } from "@/lib/subscriptionBilling";
@@ -85,6 +86,7 @@ export function EditSubscriptionModal({
   onClose,
   onSubmit,
 }: EditSubscriptionModalProps) {
+  const [submitError, setSubmitError] = useState<string | null>(null);
   const {
     register,
     handleSubmit,
@@ -110,9 +112,15 @@ export function EditSubscriptionModal({
   });
 
   const hasUpcomingPriceChange = watch("hasUpcomingPriceChange");
+  const startDate = watch("startDate");
+  const nextRenewal = watch("nextRenewal");
+  const upcomingEff = watch("upcomingPriceEffectiveAt");
+  const planEndsAt = watch("planEndsAt");
+  const upcomingToggle = register("hasUpcomingPriceChange");
 
   useEffect(() => {
     if (!open || !subscription) return;
+    setSubmitError(null);
     const bc = subscription.billingCycle;
     const billingCycle =
       bc === "monthly" || bc === "yearly" || bc === "weekly" || bc === "custom"
@@ -139,18 +147,29 @@ export function EditSubscriptionModal({
 
   const handleFormSubmit = async (data: FormData) => {
     if (!subscription) return;
+    setSubmitError(null);
     const patch: FormData = { ...data };
     if (!data.hasUpcomingPriceChange) {
       patch.upcomingPrice = undefined;
       patch.upcomingPriceEffectiveAt = undefined;
     }
-    await onSubmit(subscription.id, patch);
-    onClose();
+    try {
+      await onSubmit(subscription.id, patch);
+      onClose();
+    } catch (e) {
+      setSubmitError(e instanceof Error ? e.message : "Could not save changes.");
+    }
   };
 
   return (
     <Modal open={open} onClose={onClose} title="Edit subscription">
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+        {/* Hidden registrations for portal-based date inputs (ensures values are submitted reliably). */}
+        <input type="hidden" {...register("startDate")} />
+        <input type="hidden" {...register("nextRenewal")} />
+        <input type="hidden" {...register("upcomingPriceEffectiveAt")} />
+        <input type="hidden" {...register("planEndsAt")} />
+
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">
             Name
@@ -215,13 +234,11 @@ export function EditSubscriptionModal({
             <input
               type="checkbox"
               className="mt-1 rounded border-border"
+              name={upcomingToggle.name}
+              ref={upcomingToggle.ref}
               checked={!!hasUpcomingPriceChange}
-              onChange={(e) =>
-                setValue("hasUpcomingPriceChange", e.target.checked, {
-                  shouldDirty: true,
-                  shouldValidate: true,
-                })
-              }
+              onChange={(e) => upcomingToggle.onChange(e)}
+              onBlur={upcomingToggle.onBlur}
             />
             <span className="min-w-0">
               <span className="block font-medium">Upcoming price change</span>
@@ -251,7 +268,15 @@ export function EditSubscriptionModal({
                 <label className="block text-sm font-medium text-text-secondary mb-1">
                   Effective date
                 </label>
-                <Input type="date" {...register("upcomingPriceEffectiveAt")} />
+                <DateInput
+                  value={upcomingEff ?? ""}
+                  onChange={(v) =>
+                    setValue("upcomingPriceEffectiveAt", v, {
+                      shouldDirty: true,
+                      shouldValidate: true,
+                    })
+                  }
+                />
                 {errors.upcomingPriceEffectiveAt && (
                   <p className="mt-1 text-sm text-danger">{errors.upcomingPriceEffectiveAt.message}</p>
                 )}
@@ -264,13 +289,23 @@ export function EditSubscriptionModal({
             <label className="block text-sm font-medium text-text-secondary mb-1">
               Start date
             </label>
-            <Input type="date" {...register("startDate")} />
+            <DateInput
+              value={startDate}
+              onChange={(v) =>
+                setValue("startDate", v, { shouldDirty: true, shouldValidate: true })
+              }
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">
               Next renewal
             </label>
-            <Input type="date" {...register("nextRenewal")} />
+            <DateInput
+              value={nextRenewal}
+              onChange={(v) =>
+                setValue("nextRenewal", v, { shouldDirty: true, shouldValidate: true })
+              }
+            />
             {errors.nextRenewal && (
               <p className="mt-1 text-sm text-danger">{errors.nextRenewal.message}</p>
             )}
@@ -280,7 +315,10 @@ export function EditSubscriptionModal({
           <label className="block text-sm font-medium text-text-secondary mb-1">
             Plan ends on (optional)
           </label>
-          <Input type="date" {...register("planEndsAt")} />
+          <DateInput
+            value={planEndsAt ?? ""}
+            onChange={(v) => setValue("planEndsAt", v, { shouldDirty: true, shouldValidate: true })}
+          />
           <p className="mt-1 text-xs text-text-tertiary">
             Leave blank if this subscription has no fixed end date.
           </p>
@@ -306,6 +344,11 @@ export function EditSubscriptionModal({
             Save changes
           </Button>
         </div>
+        {submitError && (
+          <p className="rounded-xl border border-danger/30 bg-danger/10 px-3 py-2 text-sm text-danger">
+            {submitError}
+          </p>
+        )}
       </form>
     </Modal>
   );

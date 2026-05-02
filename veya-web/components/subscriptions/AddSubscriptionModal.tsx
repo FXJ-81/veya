@@ -8,6 +8,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SUBSCRIPTION_CATEGORIES, categorySelectLabel } from "@/lib/categories";
 import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
+import { DateInput } from "@/components/ui/DateInput";
 
 const schema = z.object({
   name: z.string().min(1, "Name required"),
@@ -39,6 +40,8 @@ export function AddSubscriptionModal({
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
     reset,
   } = useForm<FormData>({
@@ -49,6 +52,9 @@ export function AddSubscriptionModal({
       nextRenewal: today,
     },
   });
+
+  const startDate = watch("startDate");
+  const nextRenewal = watch("nextRenewal");
 
   const handleFormSubmit = async (data: FormData) => {
     setSubmitError(null);
@@ -64,6 +70,10 @@ export function AddSubscriptionModal({
   return (
     <Modal open={open} fullScreenMobile onClose={onClose} title="Add subscription">
       <form onSubmit={handleSubmit(handleFormSubmit)} className="space-y-4">
+        {/* Hidden registrations for portal-based date inputs (ensures values are submitted reliably). */}
+        <input type="hidden" {...register("startDate")} />
+        <input type="hidden" {...register("nextRenewal")} />
+
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">
             Name
@@ -127,13 +137,19 @@ export function AddSubscriptionModal({
             <label className="block text-sm font-medium text-text-secondary mb-1">
               Start date
             </label>
-            <Input type="date" {...register("startDate")} />
+            <DateInput
+              value={startDate}
+              onChange={(v) => setValue("startDate", v, { shouldDirty: true, shouldValidate: true })}
+            />
           </div>
           <div>
             <label className="block text-sm font-medium text-text-secondary mb-1">
               Next renewal
             </label>
-            <Input type="date" {...register("nextRenewal")} />
+            <DateInput
+              value={nextRenewal}
+              onChange={(v) => setValue("nextRenewal", v, { shouldDirty: true, shouldValidate: true })}
+            />
             {errors.nextRenewal && (
               <p className="mt-1 text-sm text-danger">{errors.nextRenewal.message}</p>
             )}

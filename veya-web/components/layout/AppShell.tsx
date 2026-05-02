@@ -19,7 +19,7 @@ export function AppShell({
   const isCoach = variant === "coach";
 
   return (
-    <div className="flex min-h-screen min-w-[320px] flex-col bg-background">
+    <div className="flex h-[100dvh] min-w-[320px] flex-col bg-background overflow-hidden">
       <Sidebar />
       <BottomNav />
 
@@ -31,7 +31,7 @@ export function AppShell({
       >
         <main
           className={cn(
-            "flex min-w-0 flex-1 flex-col",
+            "flex min-w-0 flex-1 flex-col overflow-y-auto overscroll-contain",
             isCoach && "min-h-0",
             /* Mobile: 24px horizontal padding; clear bottom tab bar */
             "max-md:px-6 max-md:pt-[max(1.5rem,env(safe-area-inset-top,0px))]",
