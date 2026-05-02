@@ -13,7 +13,7 @@ import { CategoryDonut } from "@/components/analytics/CategoryDonut";
 import { useSubscriptions } from "@/hooks/useSubscriptions";
 import { useAnalytics } from "@/hooks/useAnalytics";
 import { getGreeting, formatCurrency } from "@/lib/utils";
-import { hasSubscriptionStarted, pricePerMonthAt } from "@/lib/subscriptionBilling";
+import { hasPlanEnded, hasSubscriptionStarted, pricePerMonthAt } from "@/lib/subscriptionBilling";
 import { nextRenewalSortKey } from "@/lib/subscriptionRenewal";
 import { Skeleton } from "@/components/ui/Skeleton";
 import { BudgetAlerts } from "@/components/dashboard/BudgetAlerts";
@@ -79,7 +79,11 @@ export default function DashboardPage() {
     analyticsErrorValue instanceof Error && analyticsErrorValue.message === "PREMIUM_REQUIRED";
   const activeSubs = subs.filter((s) => s.status === "active");
   const monthlyTotal = activeSubs
-    .filter((s) => hasSubscriptionStarted(new Date(s.startDate)))
+    .filter(
+      (s) =>
+        hasSubscriptionStarted(new Date(s.startDate)) &&
+        !hasPlanEnded(s.planEndsAt ? new Date(s.planEndsAt) : null, new Date()),
+    )
     .reduce((sum, s) => sum + pricePerMonthAt(s, new Date()), 0);
   const renewals = activeSubs
     .sort((a, b) => nextRenewalSortKey(a) - nextRenewalSortKey(b))

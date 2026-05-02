@@ -9,6 +9,7 @@ import { prisma } from "@/lib/prisma";
 import { formatCurrency } from "@/lib/utils";
 import { mergeNotificationPrefs } from "@/lib/notificationPrefs";
 import {
+  hasPlanEnded,
   hasSubscriptionStarted,
   pricePerMonth,
   startOfLocalDay,
@@ -140,14 +141,18 @@ export async function generateNotificationsForUser(userId: string): Promise<void
       prisma.budget.findMany({ where: { userId } }),
       prisma.subscription.findMany({
         where: { userId, status: "active" },
-        select: { category: true, price: true, billingCycle: true, startDate: true },
+        select: { category: true, price: true, billingCycle: true, startDate: true, planEndsAt: true },
       }),
     ]);
 
     const spendByCategory = new Map<string, number>();
     let totalMonthlySpend = 0;
     for (const sub of subs) {
-      if (!hasSubscriptionStarted(new Date(sub.startDate))) continue;
+      if (
+        !hasSubscriptionStarted(new Date(sub.startDate)) ||
+        hasPlanEnded(sub.planEndsAt, new Date())
+      )
+        continue;
       const monthly = pricePerMonth(sub.price, sub.billingCycle);
       spendByCategory.set(sub.category, (spendByCategory.get(sub.category) ?? 0) + monthly);
       totalMonthlySpend += monthly;
@@ -202,7 +207,7 @@ export async function generateNotificationsForUser(userId: string): Promise<void
       const spendByCategory = new Map<string, number>();
       let totalMonthly = 0;
       for (const s of allSubs) {
-        if (!hasSubscriptionStarted(new Date(s.startDate))) continue;
+        if (!hasSubscriptionStarted(new Date(s.startDate)) || hasPlanEnded(s.planEndsAt, now)) continue;
         const m = pricePerMonth(s.price, s.billingCycle);
         spendByCategory.set(s.category, (spendByCategory.get(s.category) ?? 0) + m);
         totalMonthly += m;

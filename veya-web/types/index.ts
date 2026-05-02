@@ -24,6 +24,8 @@ export interface Subscription {
   billingCycle: BillingCycle;
   startDate: string;
   nextRenewal: string;
+  /** Optional last active day (UTC calendar); null/omit = ongoing. */
+  planEndsAt?: string | null;
   status: SubscriptionStatus;
   logoUrl?: string | null;
   notes?: string | null;

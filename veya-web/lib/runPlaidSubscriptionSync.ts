@@ -12,6 +12,7 @@ import {
 import { subscriptionNameKeySet } from "@/lib/subscriptionDedup";
 import { fetchAllPlaidTransactions } from "@/lib/plaidFetchTransactions";
 import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
+import { parseSubscriptionCalendarDateInput } from "@/lib/subscriptionBilling";
 
 export type PlaidSyncRunMode = "return_only" | "silent_auto";
 
@@ -149,8 +150,8 @@ export async function runPlaidSubscriptionSyncForUser(
           category: body.category,
           price: body.price,
           billingCycle: body.billingCycle,
-          startDate: new Date(body.startDate),
-          nextRenewal: new Date(body.nextRenewal),
+          startDate: parseSubscriptionCalendarDateInput(body.startDate),
+          nextRenewal: parseSubscriptionCalendarDateInput(body.nextRenewal),
           status: body.status,
           isShared: body.isShared,
           source: "plaid",

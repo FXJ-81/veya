@@ -4,6 +4,7 @@ import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import { z } from "zod";
 import { readUpcomingPriceRowsForUser, writeUpcomingPriceForUserSubscription } from "@/lib/subscriptionUpcomingSql";
+import { parseSubscriptionCalendarDateInput } from "@/lib/subscriptionBilling";
 
 const updateSchema = z.object({
   name: z.string().min(1).optional(),
@@ -14,6 +15,7 @@ const updateSchema = z.object({
   billingCycle: z.enum(["monthly", "yearly", "weekly", "custom"]).optional(),
   startDate: z.string().optional(),
   nextRenewal: z.string().optional(),
+  planEndsAt: z.union([z.string(), z.null()]).optional(),
   status: z.enum(["active", "paused", "cancelled"]).optional(),
   notes: z.string().optional(),
   isShared: z.boolean().optional(),
@@ -36,6 +38,7 @@ export async function GET(
     ...sub,
     startDate: sub.startDate.toISOString(),
     nextRenewal: sub.nextRenewal.toISOString(),
+    planEndsAt: sub.planEndsAt?.toISOString() ?? null,
     upcomingPrice: upcoming?.upcomingPrice ?? null,
     upcomingPriceEffectiveAt: upcoming?.upcomingPriceEffectiveAt?.toISOString() ?? null,
     createdAt: sub.createdAt.toISOString(),
@@ -70,48 +73,52 @@ export async function PATCH(
   if (p.category !== undefined) data.category = p.category;
   if (p.price !== undefined) data.price = p.price;
   if (p.billingCycle !== undefined) data.billingCycle = p.billingCycle;
-  if (p.startDate !== undefined) data.startDate = new Date(p.startDate);
-  if (p.nextRenewal !== undefined) data.nextRenewal = new Date(p.nextRenewal);
+  if (p.startDate !== undefined) data.startDate = parseSubscriptionCalendarDateInput(p.startDate);
+  if (p.nextRenewal !== undefined) data.nextRenewal = parseSubscriptionCalendarDateInput(p.nextRenewal);
+  if ("planEndsAt" in p) {
+    if (p.planEndsAt === null || (typeof p.planEndsAt === "string" && !p.planEndsAt.trim())) {
+      data.planEndsAt = null;
+    } else if (typeof p.planEndsAt === "string") {
+      data.planEndsAt = parseSubscriptionCalendarDateInput(p.planEndsAt.trim());
+    }
+  }
   if (p.status !== undefined) data.status = p.status;
   if (p.notes !== undefined) data.notes = p.notes;
   if (p.isShared !== undefined) data.isShared = p.isShared;
   if (p.color !== undefined) data.color = p.color;
-  const sub = await prisma.subscription.update({
-    where: { id },
-    data,
-  });
+  const sub =
+    Object.keys(data).length > 0
+      ? await prisma.subscription.update({ where: { id }, data })
+      : await prisma.subscription.findFirstOrThrow({ where: { id, userId: authUser.id } });
   // Upcoming price change: allow setting or clearing via raw SQL (works even if local Prisma client is stale).
   const wantsUpcomingPrice = "upcomingPrice" in p || "upcomingPriceEffectiveAt" in p;
   if (wantsUpcomingPrice) {
-    const nextPrice = p.upcomingPrice ?? undefined;
-    const nextEff = p.upcomingPriceEffectiveAt ?? undefined;
-    let upcomingPrice: number | null | undefined;
-    let upcomingPriceEffectiveAt: Date | null | undefined;
+    const nextPrice = p.upcomingPrice;
+    const nextEff = p.upcomingPriceEffectiveAt;
 
-    if (nextPrice === null || nextEff === null) {
-      upcomingPrice = null;
-      upcomingPriceEffectiveAt = null;
-    } else if (typeof nextPrice === "number" && typeof nextEff === "string") {
-      const effDate = new Date(nextEff);
+    if (nextPrice === null && nextEff === null) {
+      await writeUpcomingPriceForUserSubscription(prisma, {
+        userId: authUser.id,
+        subscriptionId: id,
+        upcomingPrice: null,
+        upcomingPriceEffectiveAt: null,
+      });
+    } else if (typeof nextPrice === "number" && typeof nextEff === "string" && nextEff.trim().length > 0) {
+      const effDate = parseSubscriptionCalendarDateInput(nextEff.trim());
       if (Number.isNaN(effDate.getTime())) {
         return NextResponse.json({ error: "Invalid upcomingPriceEffectiveAt" }, { status: 400 });
       }
-      upcomingPrice = nextPrice;
-      upcomingPriceEffectiveAt = effDate;
-    } else if (nextPrice !== undefined || nextEff !== undefined) {
+      await writeUpcomingPriceForUserSubscription(prisma, {
+        userId: authUser.id,
+        subscriptionId: id,
+        upcomingPrice: nextPrice,
+        upcomingPriceEffectiveAt: effDate,
+      });
+    } else {
       return NextResponse.json(
         { error: "Provide both upcomingPrice and upcomingPriceEffectiveAt, or set both to null to remove." },
         { status: 400 },
       );
-    }
-
-    if (upcomingPrice !== undefined && upcomingPriceEffectiveAt !== undefined) {
-      await writeUpcomingPriceForUserSubscription(prisma, {
-        userId: authUser.id,
-        subscriptionId: id,
-        upcomingPrice,
-        upcomingPriceEffectiveAt,
-      });
     }
   }
 
@@ -120,6 +127,7 @@ export async function PATCH(
     ...sub,
     startDate: sub.startDate.toISOString(),
     nextRenewal: sub.nextRenewal.toISOString(),
+    planEndsAt: sub.planEndsAt?.toISOString() ?? null,
     upcomingPrice: upcoming?.upcomingPrice ?? null,
     upcomingPriceEffectiveAt: upcoming?.upcomingPriceEffectiveAt?.toISOString() ?? null,
     createdAt: sub.createdAt.toISOString(),

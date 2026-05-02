@@ -2,8 +2,8 @@
 
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { formatCurrency } from "@/lib/utils";
-import { pricePerMonthAt } from "@/lib/subscriptionBilling";
+import { formatCurrency, formatDate } from "@/lib/utils";
+import { hasPlanEnded, pricePerMonthAt } from "@/lib/subscriptionBilling";
 import { getEffectiveRenewal } from "@/lib/subscriptionRenewal";
 import {
   accentHueForName,
@@ -167,6 +167,19 @@ export function SubscriptionCard({
             <p className="text-xs text-text-tertiary mt-1">
               Next: {renewal.displayLine}
             </p>
+            {subscription.planEndsAt ? (
+              <p className="text-xs text-text-tertiary mt-0.5">
+                Plan ends:{" "}
+                <span className="text-text-secondary">
+                  {hasPlanEnded(
+                    subscription.planEndsAt ? new Date(subscription.planEndsAt) : null,
+                    new Date(),
+                  )
+                    ? `ended ${formatDate(subscription.planEndsAt)}`
+                    : formatDate(subscription.planEndsAt)}
+                </span>
+              </p>
+            ) : null}
           </div>
         </div>
         <div className="flex w-full min-w-0 flex-wrap gap-2 sm:w-auto sm:shrink-0">

@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
-import { pricePerMonthAt, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
+import { pricePerMonthAt, hasSubscriptionStarted, hasPlanEnded } from "@/lib/subscriptionBilling";
 import { readUpcomingPriceRowsForUser, upcomingPriceMap } from "@/lib/subscriptionUpcomingSql";
 
 export type BudgetStatus = {
@@ -23,7 +23,14 @@ export async function GET(req: Request) {
     prisma.budget.findMany({ where: { userId: authUser.id }, orderBy: { createdAt: "asc" } }),
     prisma.subscription.findMany({
       where: { userId: authUser.id, status: "active" },
-      select: { id: true, category: true, price: true, billingCycle: true, startDate: true },
+      select: {
+        id: true,
+        category: true,
+        price: true,
+        billingCycle: true,
+        startDate: true,
+        planEndsAt: true,
+      },
     }),
   ]);
 
@@ -34,7 +41,8 @@ export async function GET(req: Request) {
   const spendByCategory = new Map<string, number>();
   let totalMonthlySpend = 0;
   for (const sub of subs) {
-    if (!hasSubscriptionStarted(new Date(sub.startDate))) continue;
+    if (!hasSubscriptionStarted(new Date(sub.startDate)) || hasPlanEnded(sub.planEndsAt, new Date()))
+      continue;
     const u = upcoming.get(sub.id);
     const monthly = pricePerMonthAt(
       {

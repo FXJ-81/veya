@@ -7,7 +7,7 @@ import { AppIcons } from "@/lib/icons";
 import type { BudgetStatus } from "@/app/api/budgets/status/route";
 import type { Subscription } from "@/types";
 import { formatCurrency } from "@/lib/utils";
-import { hasSubscriptionStarted, pricePerMonthAt } from "@/lib/subscriptionBilling";
+import { hasPlanEnded, hasSubscriptionStarted, pricePerMonthAt } from "@/lib/subscriptionBilling";
 import { useBudgetStatuses } from "@/hooks/useBudgetStatus";
 
 type Suggestion = {
@@ -40,7 +40,10 @@ export function SavingsOpportunitiesCard({
 
     const list = subs;
     const activeStarted = list.filter(
-      (s) => s.status === "active" && hasSubscriptionStarted(new Date(s.startDate)),
+      (s) =>
+        s.status === "active" &&
+        hasSubscriptionStarted(new Date(s.startDate)) &&
+        !hasPlanEnded(s.planEndsAt ? new Date(s.planEndsAt) : null, new Date()),
     );
     const paused = list.filter((s) => s.status === "paused");
 

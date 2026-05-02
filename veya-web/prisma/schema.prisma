@@ -112,6 +112,8 @@ model Subscription {
   billingCycle String
   startDate   DateTime
   nextRenewal DateTime
+  /// Optional last day the plan is active (UTC calendar day); null = ongoing.
+  planEndsAt  DateTime?
   status      String   @default("active")
   logoUrl     String?
   notes       String?

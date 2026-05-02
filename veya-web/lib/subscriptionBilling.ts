@@ -48,7 +48,10 @@ export function subscriptionPriceAt(sub: PriceChangeSchedule, asOf: Date = new D
   if (!eff) return base;
   const effDate = eff instanceof Date ? eff : new Date(eff);
   if (Number.isNaN(effDate.getTime()) || Number.isNaN(asOf.getTime())) return base;
-  return asOf.getTime() >= effDate.getTime() ? next : base;
+  const effKey = utcCalendarDateKey(effDate);
+  const asKey = utcCalendarDateKey(asOf);
+  if (!effKey || !asKey) return base;
+  return asKey >= effKey ? next : base;
 }
 
 export function pricePerMonthAt(sub: PriceChangeSchedule, asOf: Date = new Date()): number {
@@ -67,6 +70,65 @@ export function startOfLocalDay(d: Date): Date {
 export function utcCalendarDateKey(d: Date): string {
   if (Number.isNaN(d.getTime())) return "";
   return d.toISOString().slice(0, 10);
+}
+
+/** Last UTC calendar day of `(year, monthIndex)` as YYYY-MM-DD (lex-comparable). */
+export function utcLastCalendarDayKeyOfMonth(year: number, monthIndex: number): string {
+  const d = new Date(Date.UTC(year, monthIndex + 1, 0));
+  return utcCalendarDateKey(d);
+}
+
+/** First UTC calendar day of `(year, monthIndex)` as YYYY-MM-DD (lex-comparable). */
+export function utcFirstCalendarDayKeyOfMonth(year: number, monthIndex: number): string {
+  const m = String(monthIndex + 1).padStart(2, "0");
+  return `${year}-${m}-01`;
+}
+
+/**
+ * True when UTC calendar month `(year, monthIndex)` overlaps an active plan that ends on
+ * `planEndsAt` (inclusive end day). Ongoing when `planEndsAt` is null/invalid.
+ */
+export function isSubscriptionActiveThroughPlanEnd(
+  planEndsAt: Date | null | undefined,
+  year: number,
+  monthIndex: number
+): boolean {
+  if (planEndsAt == null || Number.isNaN(planEndsAt.getTime())) return true;
+  const endKey = utcCalendarDateKey(planEndsAt);
+  if (!endKey) return true;
+  return endKey >= utcFirstCalendarDayKeyOfMonth(year, monthIndex);
+}
+
+/**
+ * True when `asOf` falls on a UTC calendar day strictly after the plan’s inclusive end day.
+ */
+export function hasPlanEnded(planEndsAt: Date | null | undefined, asOf: Date = new Date()): boolean {
+  if (planEndsAt == null || Number.isNaN(planEndsAt.getTime())) return false;
+  const endKey = utcCalendarDateKey(planEndsAt);
+  const asKey = utcCalendarDateKey(asOf);
+  if (!endKey || !asKey) return false;
+  return asKey > endKey;
+}
+
+/** Last instant of calendar month (UTC), for price-effective-as-of in monthly rollups. */
+export function endOfUtcMonth(year: number, monthIndex: number): Date {
+  return new Date(Date.UTC(year, monthIndex + 1, 0, 23, 59, 59, 999));
+}
+
+/**
+ * Parses `<input type="date" />` values (`YYYY-MM-DD`) and other leading date prefixes as that
+ * civil calendar day at **UTC noon** so the stored instant does not shift to the previous local
+ * calendar day and analytics month boundaries stay aligned with the user-selected date.
+ */
+export function parseSubscriptionCalendarDateInput(value: string): Date {
+  const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(value.trim());
+  if (!m) return new Date(value);
+  const y = Number(m[1]);
+  const mo = Number(m[2]);
+  const d = Number(m[3]);
+  if (!Number.isFinite(y) || !Number.isFinite(mo) || !Number.isFinite(d)) return new Date(value);
+  if (mo < 1 || mo > 12 || d < 1 || d > 31) return new Date(value);
+  return new Date(Date.UTC(y, mo - 1, d, 12, 0, 0, 0));
 }
 
 /**
@@ -104,35 +166,39 @@ export function endOfLocalMonth(year: number, monthIndex: number): Date {
 }
 
 /**
- * Subscription counts toward spend in a calendar month if it has started on or before
- * the last day of that month (and we only consider currently loaded subs — see API).
+ * Subscription counts toward spend in a UTC calendar month if its UTC start date is on or
+ * before the last UTC day of that month (aligns with `utcCalendarDateKey` / HTML date strings).
  */
 export function isSubscriptionActiveInMonth(
   startDate: Date,
   year: number,
   monthIndex: number
 ): boolean {
-  const start = startOfLocalDay(startDate);
-  const monthEnd = endOfLocalMonth(year, monthIndex);
-  return start <= monthEnd;
+  const startKey = utcCalendarDateKey(startDate);
+  if (!startKey) return false;
+  return startKey <= utcLastCalendarDayKeyOfMonth(year, monthIndex);
 }
 
-/** For “current” monthly total: subscription must have started by today (local). */
+/** Subscription has started by `asOf` (compared by UTC calendar day). */
 export function hasSubscriptionStarted(subStart: Date, asOf: Date = new Date()): boolean {
-  return startOfLocalDay(subStart) <= startOfLocalDay(asOf);
+  const a = utcCalendarDateKey(subStart);
+  const b = utcCalendarDateKey(asOf);
+  if (!a || !b) return false;
+  return a <= b;
 }
 
 /**
  * Monthly-equivalent spend from this sub for the given calendar month, or 0 if not active yet.
  */
 export function monthlySpendInCalendarMonth(
-  sub: { startDate: Date } & PriceChangeSchedule,
+  sub: { startDate: Date; planEndsAt?: Date | null } & PriceChangeSchedule,
   year: number,
   monthIndex: number
 ): number {
   if (!isSubscriptionActiveInMonth(sub.startDate, year, monthIndex)) return 0;
+  if (!isSubscriptionActiveThroughPlanEnd(sub.planEndsAt ?? null, year, monthIndex)) return 0;
   // Use price effective by the end of the month for projections.
-  const asOf = endOfLocalMonth(year, monthIndex);
+  const asOf = endOfUtcMonth(year, monthIndex);
   return pricePerMonthAt(sub, asOf);
 }
 

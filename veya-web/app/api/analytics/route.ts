@@ -3,6 +3,7 @@ import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
 import {
   computeSubscriptionHealthScore,
+  hasPlanEnded,
   hasSubscriptionStarted,
   monthlySpendInCalendarMonth,
   pricePerMonth,
@@ -40,6 +41,7 @@ function prismaSubToType(s: {
   billingCycle: string;
   startDate: Date;
   nextRenewal: Date;
+  planEndsAt?: Date | null;
   status: string;
   logoUrl: string | null;
   notes: string | null;
@@ -59,6 +61,7 @@ function prismaSubToType(s: {
     billingCycle: s.billingCycle as Subscription["billingCycle"],
     startDate: s.startDate.toISOString(),
     nextRenewal: s.nextRenewal.toISOString(),
+    planEndsAt: s.planEndsAt?.toISOString() ?? null,
     status: s.status as Subscription["status"],
     logoUrl: s.logoUrl,
     notes: s.notes,
@@ -251,8 +254,9 @@ export async function GET(req: Request) {
   );
 
   const now = new Date();
-  const year = now.getFullYear();
-  const currentMonthIndex = now.getMonth();
+  const subsForCurrentSpend = subsActive.filter((s) => !hasPlanEnded(s.planEndsAt, now));
+  const year = now.getUTCFullYear();
+  const currentMonthIndex = now.getUTCMonth();
 
   const monthlySpend: {
     month: number;
@@ -277,6 +281,7 @@ export async function GET(req: Request) {
       const raw = monthlySpendInCalendarMonth(
         {
           startDate: s.startDate,
+          planEndsAt: s.planEndsAt,
           price: s.price,
           billingCycle: s.billingCycle,
           upcomingPrice: u?.upcomingPrice ?? null,
@@ -304,7 +309,7 @@ export async function GET(req: Request) {
   }
 
   const categoryMap = new Map<string, { total: number; count: number }>();
-  for (const s of subsActive) {
+  for (const s of subsForCurrentSpend) {
     const u = upcoming.get(s.id);
     const perMonth = pricePerMonthAt(
       {
@@ -337,7 +342,7 @@ export async function GET(req: Request) {
 
   /** All **active** subs: normalized $/mo (matches category card & score; avoids $0 when startDate is future). */
   const activeMonthlyTotal = round2(
-    subsActive.reduce(
+    subsForCurrentSpend.reduce(
       (sum, s) => {
         const u = upcoming.get(s.id);
         return (
@@ -361,7 +366,7 @@ export async function GET(req: Request) {
 
   const hasActiveSubscriptions = subsActive.length > 0;
 
-  const activeSubsPricePerMonth = subsActive.map((s) =>
+  const activeSubsPricePerMonth = subsForCurrentSpend.map((s) =>
     pricePerMonthAt(
       {
         price: s.price,
@@ -376,7 +381,7 @@ export async function GET(req: Request) {
   const spendByCategory = new Map<string, number>();
   let totalMonthlySpend = 0;
   for (const s of subsActive) {
-    if (!hasSubscriptionStarted(s.startDate, now)) continue;
+    if (!hasSubscriptionStarted(s.startDate, now) || hasPlanEnded(s.planEndsAt, now)) continue;
     const u = upcoming.get(s.id);
     const monthly = pricePerMonthAt(
       {
@@ -404,14 +409,14 @@ export async function GET(req: Request) {
 
   const score = computeSubscriptionHealthScore({
     monthlyActiveSpend: activeMonthlyTotal,
-    activeSubscriptionCount: subsActive.length,
+    activeSubscriptionCount: subsForCurrentSpend.length,
     pausedSubscriptionCount: pausedCount,
     activeSubsPricePerMonth,
     underBudgetOnAllLimits,
   });
 
   const activeStarted = subsActive
-    .filter((s) => hasSubscriptionStarted(s.startDate, now))
+    .filter((s) => hasSubscriptionStarted(s.startDate, now) && !hasPlanEnded(s.planEndsAt, now))
     .map((s) => {
       const base = prismaSubToType(s);
       const u = upcoming.get(s.id);

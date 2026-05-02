@@ -10,27 +10,65 @@ import { Input } from "@/components/ui/Input";
 import { Button } from "@/components/ui/Button";
 import { toDateInputValue } from "@/lib/utils";
 import type { Subscription } from "@/types";
+import { parseSubscriptionCalendarDateInput, utcCalendarDateKey } from "@/lib/subscriptionBilling";
 
-const schema = z.object({
-  name: z.string().min(1, "Name required"),
-  category: z.string().min(1, "Category required"),
-  price: z.number().positive("Must be positive"),
-  hasUpcomingPriceChange: z.boolean().optional(),
-  upcomingPrice: z.number().positive("Must be positive").optional(),
-  upcomingPriceEffectiveAt: z.string().optional(),
-  billingCycle: z.enum(["monthly", "yearly", "weekly", "custom"]),
-  startDate: z.string().min(1),
-  nextRenewal: z.string().min(1),
-  notes: z.string().optional(),
-}).superRefine((val, ctx) => {
-  if (!val.hasUpcomingPriceChange) return;
-  if (!(typeof val.upcomingPrice === "number" && Number.isFinite(val.upcomingPrice))) {
-    ctx.addIssue({ code: "custom", path: ["upcomingPrice"], message: "New price required" });
-  }
-  if (!val.upcomingPriceEffectiveAt?.trim()) {
-    ctx.addIssue({ code: "custom", path: ["upcomingPriceEffectiveAt"], message: "Effective date required" });
-  }
-});
+const schema = z
+  .object({
+    name: z.string().min(1, "Name required"),
+    category: z.string().min(1, "Category required"),
+    price: z.number().positive("Must be positive"),
+    hasUpcomingPriceChange: z.boolean().optional(),
+    upcomingPrice: z.number().positive("Must be positive").optional(),
+    upcomingPriceEffectiveAt: z.string().optional(),
+    billingCycle: z.enum(["monthly", "yearly", "weekly", "custom"]),
+    startDate: z.string().min(1),
+    nextRenewal: z.string().min(1),
+    planEndsAt: z.string().optional(),
+    notes: z.string().optional(),
+  })
+  .superRefine((val, ctx) => {
+    if (val.hasUpcomingPriceChange) {
+      if (!(typeof val.upcomingPrice === "number" && Number.isFinite(val.upcomingPrice))) {
+        ctx.addIssue({ code: "custom", path: ["upcomingPrice"], message: "New price required" });
+      }
+      if (!val.upcomingPriceEffectiveAt?.trim()) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["upcomingPriceEffectiveAt"],
+          message: "Effective date required",
+        });
+      }
+    }
+    const endRaw = val.planEndsAt?.trim();
+    if (!endRaw) return;
+    const end = parseSubscriptionCalendarDateInput(endRaw);
+    const start = parseSubscriptionCalendarDateInput(val.startDate);
+    const endKey = utcCalendarDateKey(end);
+    const startKey = utcCalendarDateKey(start);
+    if (!endKey || !startKey) {
+      ctx.addIssue({ code: "custom", path: ["planEndsAt"], message: "Invalid end date." });
+      return;
+    }
+    if (endKey < startKey) {
+      ctx.addIssue({
+        code: "custom",
+        path: ["planEndsAt"],
+        message: "End date cannot be before start date.",
+      });
+    }
+    if (val.hasUpcomingPriceChange && val.upcomingPriceEffectiveAt?.trim()) {
+      const effKey = utcCalendarDateKey(
+        parseSubscriptionCalendarDateInput(val.upcomingPriceEffectiveAt.trim()),
+      );
+      if (effKey && endKey < effKey) {
+        ctx.addIssue({
+          code: "custom",
+          path: ["planEndsAt"],
+          message: "Plan cannot end before the new price takes effect.",
+        });
+      }
+    }
+  });
 
 type FormData = z.infer<typeof schema>;
 
@@ -50,6 +88,8 @@ export function EditSubscriptionModal({
   const {
     register,
     handleSubmit,
+    watch,
+    setValue,
     formState: { errors, isSubmitting },
     reset,
   } = useForm<FormData>({
@@ -65,8 +105,11 @@ export function EditSubscriptionModal({
       hasUpcomingPriceChange: false,
       upcomingPrice: undefined,
       upcomingPriceEffectiveAt: "",
+      planEndsAt: "",
     },
   });
+
+  const hasUpcomingPriceChange = watch("hasUpcomingPriceChange");
 
   useEffect(() => {
     if (!open || !subscription) return;
@@ -89,6 +132,7 @@ export function EditSubscriptionModal({
       billingCycle,
       startDate: toDateInputValue(subscription.startDate),
       nextRenewal: toDateInputValue(subscription.nextRenewal),
+      planEndsAt: subscription.planEndsAt ? toDateInputValue(subscription.planEndsAt) : "",
       notes: subscription.notes ?? "",
     });
   }, [open, subscription, reset]);
@@ -171,7 +215,13 @@ export function EditSubscriptionModal({
             <input
               type="checkbox"
               className="mt-1 rounded border-border"
-              {...register("hasUpcomingPriceChange")}
+              checked={!!hasUpcomingPriceChange}
+              onChange={(e) =>
+                setValue("hasUpcomingPriceChange", e.target.checked, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
             />
             <span className="min-w-0">
               <span className="block font-medium">Upcoming price change</span>
@@ -181,32 +231,33 @@ export function EditSubscriptionModal({
             </span>
           </label>
 
-          {/* Future price inputs */}
-          <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">
-                New price
-              </label>
-              <Input
-                type="number"
-                step="0.01"
-                {...register("upcomingPrice", { valueAsNumber: true })}
-                placeholder="12.99"
-              />
-              {errors.upcomingPrice && (
-                <p className="mt-1 text-sm text-danger">{errors.upcomingPrice.message}</p>
-              )}
+          {hasUpcomingPriceChange ? (
+            <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">
+                  New price
+                </label>
+                <Input
+                  type="number"
+                  step="0.01"
+                  {...register("upcomingPrice", { valueAsNumber: true })}
+                  placeholder="12.99"
+                />
+                {errors.upcomingPrice && (
+                  <p className="mt-1 text-sm text-danger">{errors.upcomingPrice.message}</p>
+                )}
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-text-secondary mb-1">
+                  Effective date
+                </label>
+                <Input type="date" {...register("upcomingPriceEffectiveAt")} />
+                {errors.upcomingPriceEffectiveAt && (
+                  <p className="mt-1 text-sm text-danger">{errors.upcomingPriceEffectiveAt.message}</p>
+                )}
+              </div>
             </div>
-            <div>
-              <label className="block text-sm font-medium text-text-secondary mb-1">
-                Effective date
-              </label>
-              <Input type="date" {...register("upcomingPriceEffectiveAt")} />
-              {errors.upcomingPriceEffectiveAt && (
-                <p className="mt-1 text-sm text-danger">{errors.upcomingPriceEffectiveAt.message}</p>
-              )}
-            </div>
-          </div>
+          ) : null}
         </div>
         <div className="grid grid-cols-2 gap-4">
           <div>
@@ -224,6 +275,18 @@ export function EditSubscriptionModal({
               <p className="mt-1 text-sm text-danger">{errors.nextRenewal.message}</p>
             )}
           </div>
+        </div>
+        <div>
+          <label className="block text-sm font-medium text-text-secondary mb-1">
+            Plan ends on (optional)
+          </label>
+          <Input type="date" {...register("planEndsAt")} />
+          <p className="mt-1 text-xs text-text-tertiary">
+            Leave blank if this subscription has no fixed end date.
+          </p>
+          {errors.planEndsAt && (
+            <p className="mt-1 text-sm text-danger">{errors.planEndsAt.message}</p>
+          )}
         </div>
         <div>
           <label className="block text-sm font-medium text-text-secondary mb-1">

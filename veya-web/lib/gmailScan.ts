@@ -13,6 +13,7 @@ import { scoreSubscription } from "@/lib/emailSubscription/scoreSubscription";
 import { normalizeEmailBody, stripHtmlToPlain } from "@/lib/emailSubscription/normalize";
 import { resolveServiceNameAndCategory } from "@/lib/emailSubscription/resolveMerchant";
 import { getGoogleOAuthRedirectUri } from "@/lib/googleOAuthCallback";
+import { parseSubscriptionCalendarDateInput } from "@/lib/subscriptionBilling";
 
 export function normalizeSubName(name: string): string {
   return name.trim().toLowerCase().replace(/\s+/g, " ");
@@ -480,8 +481,8 @@ async function importGmailMessageIdsInternal(
         category: c.category,
         price: c.price,
         billingCycle: c.billingCycle,
-        startDate: new Date(dates.startDate),
-        nextRenewal: new Date(dates.nextRenewal),
+        startDate: parseSubscriptionCalendarDateInput(dates.startDate),
+        nextRenewal: parseSubscriptionCalendarDateInput(dates.nextRenewal),
         status: "active",
         notes: "Added from Gmail",
         logoUrl: c.logoUrl ?? null,

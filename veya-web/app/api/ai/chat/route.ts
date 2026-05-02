@@ -3,7 +3,11 @@ import OpenAI from "openai";
 import { Prisma } from "@prisma/client";
 import { getAuthUser } from "@/lib/getAuthUser";
 import { prisma } from "@/lib/prisma";
-import { pricePerMonth, hasSubscriptionStarted } from "@/lib/subscriptionBilling";
+import {
+  pricePerMonth,
+  hasSubscriptionStarted,
+  parseSubscriptionCalendarDateInput,
+} from "@/lib/subscriptionBilling";
 import { SUBSCRIPTION_CATEGORIES } from "@/lib/categories";
 import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
 import { consumeAiMessageForPlan, planLimitResponse } from "@/lib/planLimits";
@@ -612,9 +616,11 @@ async function executeAction(
     );
     const category = (data.category as string | undefined) ?? (action.category as string | undefined) ?? "Other";
     const notes = data.notes as string | undefined;
-    const startDate = data.startDate ? new Date(data.startDate as string) : new Date();
+    const startDate = data.startDate
+      ? parseSubscriptionCalendarDateInput(String(data.startDate))
+      : new Date();
     const nextRenewal = data.nextRenewal
-      ? new Date(data.nextRenewal as string)
+      ? parseSubscriptionCalendarDateInput(String(data.nextRenewal))
       : addCycle(startDate, billingCycle);
 
     let created: Awaited<ReturnType<typeof createSubscriptionForUser>>;

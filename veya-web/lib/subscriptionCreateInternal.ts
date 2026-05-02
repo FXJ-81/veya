@@ -12,6 +12,7 @@ export type CreateSubscriptionInput = {
   billingCycle: "monthly" | "yearly" | "weekly" | "custom";
   startDate: Date;
   nextRenewal: Date;
+  planEndsAt?: Date | null;
   status?: string;
   notes?: string | null;
   isShared?: boolean;
@@ -37,6 +38,7 @@ export async function createSubscriptionForUser(
       billingCycle: data.billingCycle,
       startDate: data.startDate,
       nextRenewal: data.nextRenewal,
+      planEndsAt: data.planEndsAt ?? undefined,
       status: data.status ?? "active",
       notes: data.notes ?? undefined,
       isShared: data.isShared ?? false,

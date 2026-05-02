@@ -5,6 +5,7 @@ import { z } from "zod";
 import { createSubscriptionForUser } from "@/lib/subscriptionCreateInternal";
 import { getSubscriptionLimitStatus, planLimitResponse } from "@/lib/planLimits";
 import { readUpcomingPriceRowsForUser, upcomingPriceMap } from "@/lib/subscriptionUpcomingSql";
+import { parseSubscriptionCalendarDateInput } from "@/lib/subscriptionBilling";
 
 const createSchema = z.object({
   name: z.string().min(1),
@@ -13,6 +14,7 @@ const createSchema = z.object({
   billingCycle: z.enum(["monthly", "yearly", "weekly", "custom"]),
   startDate: z.string(),
   nextRenewal: z.string(),
+  planEndsAt: z.union([z.string(), z.null()]).optional(),
   status: z.enum(["active", "paused", "cancelled"]).optional(),
   notes: z.string().optional(),
   isShared: z.boolean().optional(),
@@ -34,6 +36,7 @@ export async function GET(req: Request) {
       ...s,
       startDate: s.startDate.toISOString(),
       nextRenewal: s.nextRenewal.toISOString(),
+      planEndsAt: s.planEndsAt?.toISOString() ?? null,
       upcomingPrice: upcoming.get(s.id)?.upcomingPrice ?? null,
       upcomingPriceEffectiveAt: upcoming.get(s.id)?.upcomingPriceEffectiveAt?.toISOString() ?? null,
       createdAt: s.createdAt.toISOString(),
@@ -67,8 +70,14 @@ export async function POST(req: Request) {
       category: data.category,
       price: data.price,
       billingCycle: data.billingCycle,
-      startDate: new Date(data.startDate),
-      nextRenewal: new Date(data.nextRenewal),
+      startDate: parseSubscriptionCalendarDateInput(data.startDate),
+      nextRenewal: parseSubscriptionCalendarDateInput(data.nextRenewal),
+      planEndsAt: (() => {
+        const v = data.planEndsAt;
+        if (v === undefined || v === null) return undefined;
+        const t = v.trim();
+        return t === "" ? null : parseSubscriptionCalendarDateInput(t);
+      })(),
       status: data.status ?? "active",
       notes: data.notes,
       isShared: data.isShared ?? false,
@@ -85,6 +94,7 @@ export async function POST(req: Request) {
     ...sub,
     startDate: sub.startDate.toISOString(),
     nextRenewal: sub.nextRenewal.toISOString(),
+    planEndsAt: sub.planEndsAt?.toISOString() ?? null,
     createdAt: sub.createdAt.toISOString(),
     updatedAt: sub.updatedAt.toISOString(),
   });

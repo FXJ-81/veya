@@ -307,15 +307,17 @@ function SubscriptionsContent() {
       billingCycle: "monthly" | "yearly" | "weekly" | "custom";
       startDate: string;
       nextRenewal: string;
+      planEndsAt?: string;
       notes?: string;
     }
   ) => {
-    const wantsUpcoming = !!data.hasUpcomingPriceChange;
+    const { hasUpcomingPriceChange, upcomingPrice, upcomingPriceEffectiveAt, ...rest } = data;
     await update.mutateAsync({
       id,
-      ...data,
-      upcomingPrice: wantsUpcoming ? data.upcomingPrice : null,
-      upcomingPriceEffectiveAt: wantsUpcoming ? data.upcomingPriceEffectiveAt : null,
+      ...rest,
+      planEndsAt: data.planEndsAt?.trim() ? data.planEndsAt : null,
+      upcomingPrice: hasUpcomingPriceChange ? upcomingPrice : null,
+      upcomingPriceEffectiveAt: hasUpcomingPriceChange ? upcomingPriceEffectiveAt ?? null : null,
     });
   };
 
